@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from app.api.v1 import api_v1_router
 from app.core.config import settings
 from app.core.security import validate_secrets
 from app.observability.logging import init_logging
@@ -59,6 +60,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         metrics_enabled=settings.PROMETHEUS_METRICS_ENABLED,
     )
 
+    # 4. Bootstrap built-in provider presets (ADR-010: scope='system', idempotent)
+    try:
+        from app.core.database import SessionLocal
+        from app.services.provider_service import ProviderService
+
+        with SessionLocal() as db:
+            inserted = ProviderService.bootstrap_presets(db)
+            logger.info(
+                "prism.provider_bootstrap",
+                inserted=inserted,
+                message=f"Provider presets bootstrapped ({inserted} new).",
+            )
+    except Exception as exc:
+        # Bootstrap 失败不阻止启动(DB 可能未就绪);运行时懒加载
+        logger.warning(
+            "prism.provider_bootstrap_failed",
+            error=str(exc),
+            message="Provider preset bootstrap failed (DB may not be ready). Will retry on first request.",
+        )
+
     logger.info("prism.ready", message="Prism v2 is ready to serve requests.")
 
     yield  # application serves requests here
@@ -76,6 +97,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Register v1 API router
+app.include_router(api_v1_router)
 
 # CORS — development only; tighten in production via PRISM_ENV guard
 app.add_middleware(
