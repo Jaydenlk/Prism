@@ -1613,4 +1613,54 @@
   - REGISTRY generate_latest() 输出 74 HELP 行 PASS
 - **下游影响**: Task 12.7 前端上报追加 prism_frontend_errors_total / prism_web_vitals_seconds 到已定义占位; Task 12.8 AlertDispatcher 追加 prism_alert_dispatched_total 到 metrics.py
 
-> **最后更新**: 2026-04-19(DOC-12 Task 12.4 — Prometheus 68 metrics + 4 Grafana dashboards ADR-116; 38/51 Task 完成)
+---
+
+## DOC-12 Task 12.5: OTel Tracing 跨进程 W3C（ADR-117）
+
+## ADR-117: OTel TracerProvider + OTLP/Stdout + W3C 跨进程传播（DOC-12 Task 12.5）
+- **来源**: PRD v4 DOC-12 Task 12.5 Part A ADR-117；Batch 5 §B5-I
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/observability/tracing.py` — backend TracerProvider 初始化
+    - `init_tracing(settings)`: Resource(service.name=prism-backend) + OTLP BatchSpanProcessor(非空时) or ConsoleSpanExporter(dev 降级)
+    - `get_traceparent()`: 从当前活跃 span inject W3C traceparent 头字符串
+    - `extract_traceparent(tp)`: 解析 W3C traceparent → OTel Context（用于子进程继续 trace）
+    - `SpanAttr`: ADR-117 全部属性常量（run.id / session.id / user.id / agent.type / route.mode / tool.name / provider.name / model.id / harness.guardrail_triggered / harness.permission_decision 等）
+    - `SpanName`: 核心 span 树常量（run / taor_turn / prompt_assembly / model_request / tool_use / hook.pre_tool_use / permission.check / tool.execute / middleware_chain / compaction）
+    - 最佳努力自动 instrument: FastAPIInstrumentor + HTTPXClientInstrumentor（未安装则跳过）
+  - `executor/observability/tracing.py` — executor TracerProvider 初始化
+    - `init_tracing(otlp_endpoint, traceparent, prism_env)`: 同 backend 但 service.name=prism-executor；接受 traceparent 参数 → `extract({"traceparent": tp})` → 返回 Context（子进程 span 链接到 backend trace）
+    - `get_traceparent()`: coordinator fork 时可再次传播
+    - `SpanAttr` / `SpanName`: 与 backend 一致镜像（双进程各自独立，避免 import 跨进程边界）
+  - `backend/app/observability/__init__.py` — 导出 init_tracing / get_traceparent / extract_traceparent / SpanAttr / SpanName / tracer
+  - `executor/observability/__init__.py` — 导出同上（executor 版）
+  - `backend/app/main.py` — lifespan step 2b 调用 `init_tracing(settings)` + 结构化日志 `prism.tracing_initialized`
+  - `backend/app/services/process_manager.py` — `_build_command()` 改用 `get_traceparent()` 注入当前 W3C traceparent 到 `--otel-trace-id` argv（替换原有 `getattr(run, "otel_trace_id", None)` 读 DB 字段）
+  - `executor/__main__.py` — `init_tracing(otlp_endpoint, traceparent=args.otel_trace_id, prism_env)` 初始化；在 step 8 "执行"阶段用 `_parent_ctx` 开启根 `SpanName.RUN` span，标注 run.id / session.id / user.id
+- **实施 commit**: (本 Task feat commit)
+- **偏离点**:
+  1. backend `tracing.py` 在模块级写 `tracer = trace.get_tracer("prism-backend")`（初始为 no-op）；`init_tracing()` 设置真实 provider 后用 `global tracer` 覆盖，与 PRD 示例写法等价但更明确
+  2. ProcessManager 使用运行时 `get_traceparent()` 而非读 `run.otel_trace_id` DB 字段（DB 中无此列；W3C traceparent 从当前活跃 span 的 context 动态提取，更符合 OTel 标准做法）
+  3. executor auto-instrument 因进程边界限制不做 FastAPI/httpx（executor 无这些框架），保留扩展注释
+- **验证结果**: 16 项验证全部 PASS
+  - T1 backend tracing imports OK
+  - T2 SpanAttr ADR-117 常量（10个）全为字符串
+  - T3 SpanName span 树（10个）全为字符串
+  - T4 executor tracing imports OK
+  - T5 executor init_tracing 返回 Context（无 endpoint = stdout）
+  - T6 W3C traceparent 提取返回 Context
+  - T7 backend init_tracing 空 endpoint 降级 stdout
+  - T8 get_traceparent() 返回 str|None
+  - T9 extract_traceparent roundtrip OK
+  - T10 executor observability package 导出正常
+  - T11 backend observability package 导出正常
+  - T12a W3C traceparent 格式 00-<32hex>-<16hex>-flags 合规（in-memory exporter 验证）
+  - T12b 跨进程 trace_id 匹配（backend span = executor span 同 trace_id）
+  - T12c 2 个 span 导出（span 树捕获）
+  - T13/T14 process_manager + __main__ AST parse OK + OTel 注入点存在
+  - T15/T16 main.py init_tracing 注入 + OTLP 降级路径确认
+- **下游影响**:
+  - DOC-12 Task 12.6 structlog 日志事件名约定（run.started/tool.invoked 等）已与 SpanName 对齐，无冲突
+  - 未来 QueryEngine.run() 集成时按 SpanAttr/SpanName 常量注入 agent.type / provider.name / model.id 等属性即可
+
+> **最后更新**: 2026-04-19(DOC-12 Task 12.5 — OTel Tracing W3C 跨进程传播 ADR-117; 39/51 Task 完成)

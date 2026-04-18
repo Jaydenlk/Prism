@@ -35,6 +35,38 @@
 
 ---
 
+## 2026-04-19 -- DOC-12 Task 12.5 COMPLETED
+
+### 本次 session 做了什么
+- 新建 backend/app/observability/tracing.py — init_tracing(settings) + get_traceparent() + extract_traceparent() + SpanAttr/SpanName 常量 + FastAPI/httpx 最佳努力 auto-instrument
+- 新建 executor/observability/tracing.py — executor-side TracerProvider; init_tracing(otlp_endpoint, traceparent, prism_env) 接收 --otel-trace-id argv → extract() W3C TraceContext → 返回 parent Context; SpanAttr/SpanName 镜像(遵进程边界)
+- 更新 backend/app/observability/__init__.py + executor/observability/__init__.py — 导出 5 个符号
+- 更新 backend/app/main.py — lifespan step 2b 调用 init_tracing(settings) + prism.tracing_initialized 日志
+- 更新 backend/app/services/process_manager.py — _build_command() 改用 get_traceparent() 动态注入 W3C traceparent（原来读 run.otel_trace_id DB 字段；DB 无此列，修正为从当前 span context 提取）
+- 更新 executor/__main__.py — step 1b 调用 init_tracing; step 8 用 SpanName.RUN + _parent_ctx 开启根 span
+
+### 验证结果
+- Part B 验证步骤: 16 项 PASS
+  - T1-T3 backend imports / SpanAttr(10) / SpanName(10) 常量 PASS
+  - T4-T6 executor imports / init_tracing returns Context / W3C extract PASS
+  - T7-T11 init_tracing 降级 / get_traceparent / extract roundtrip / 两 package 导出 PASS
+  - T12a-c W3C traceparent 格式合规 / 跨进程 trace_id 匹配 / 2 span 导出 PASS
+  - T13-T16 AST parse / OTel 注入点 / main.py wiring / OTLP 降级 PASS
+- 质量门 10 项: PASS
+
+### 下一个 Task 需要注意
+- DOC-12 Task 12.6: structlog + contextvars。backend/app/observability/logging.py 已存在基础版本；Task 12.6 需要补全 contextvars 绑定中间件（request_id / user_id 自动注入）+ QueryEngine bind run_id/session_id + 事件名 {domain}.{action} 规范；注意与本 Task SpanName 常量对齐（run.started → SpanName.RUN）
+- executor/observability/tracing.py 的 SpanAttr/SpanName 与 backend 版本故意镜像（遵进程边界 ADR-020），不要合并
+
+### 遗留风险 / 未决事项
+- FastAPI/httpx auto-instrument 需要 opentelemetry-instrumentation-fastapi / opentelemetry-instrumentation-httpx 包；已做 best-effort try/except，缺包时静默跳过；后续若要精确 HTTP span 需在 requirements.txt 追加这两个包
+- QueryEngine 集成 span（taor_turn / prompt_assembly / model_request / tool_use / middleware_chain / compaction）需在 DOC-03 QueryEngine 完整接入时补全；当前 executor/__main__.py 仅有根 SpanName.RUN span
+
+### Commit
+- `648113a` — `feat(v4): opentelemetry tracing with cross-process W3C propagation (ADR-117, DOC-12 Task 12.5)`
+
+---
+
 ## 2026-04-19 -- DOC-12 Task 12.4 COMPLETED
 
 ### 本次 session 做了什么

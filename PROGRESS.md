@@ -137,7 +137,7 @@
 | DOC-12 Task 12.2: Harness Analytics + Entropy(8 信号) | completed | 2026-04-19 | 2026-04-19 | 67d17a7 | 2新文件+1修改: harness_analytics.py(HarnessAnalytics aggregate+offset_days P0+cache_stats+compute_signal_p90); entropy_detector.py(EntropyDetector 8信号+ThresholdCalibrator ADR-112/113); harness.py(3新端点); 10项验证全PASS |
 | DOC-12 Task 12.3: /health 3 子端点 + Docker 资源限制 | completed | 2026-04-19 | 2026-04-19 | 526af9c | 2新文件+3修改: health.py(3子端点 live/ready/detailed ADR-114); docker-compose.yml(4服务limits+reservations+healthcheck ADR-115); nginx/nginx.conf(SSE透传 X-Accel-Buffering+3600s+chunked off); api/v1/__init__+main.py更新; 8项验证全PASS |
 | DOC-12 Task 12.4: Prometheus Metrics(60+) + 4 Grafana Dashboard | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 1修改+6新建: metrics.py(68指标 16维度); monitoring/docker-compose.monitoring.yml; prometheus/prometheus.yml(3 scrape jobs); grafana/provisioning/{datasources,dashboards}; 4 dashboard JSON(overview/harness/models/agents); 全部验证PASS; ADR-116落地 |
-| DOC-12 Task 12.5: OTel Tracing(跨进程 W3C) | pending | — | — | — | — |
+| DOC-12 Task 12.5: OTel Tracing(跨进程 W3C) | completed | 2026-04-19 | 2026-04-19 | 648113a | 2新文件+5修改: backend/tracing.py(TracerProvider+OTLP/stdout+get_traceparent+extract_traceparent+SpanAttr/SpanName ADR-117); executor/tracing.py(executor-side init+W3C extract+parent ctx); backend/__init__.py+executor/__init__.py导出; main.py step 2b init_tracing; process_manager._build_command()动态get_traceparent(); __main__.py init_tracing+SpanName.RUN span+_parent_ctx; 16项验证全PASS |
 | DOC-12 Task 12.6: 结构化日志(structlog + contextvars) | pending | — | — | — | — |
 | DOC-12 Task 12.7: 前端错误上报端点 | pending | — | — | — | — |
 | DOC-12 Task 12.8: AlertDispatcher(severity 分档) | pending | — | — | — | — |
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 38
+- **已完成**: 39
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 14
+- **pending**: 13
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-12 Task 12.4 完成: Prometheus 68 metrics + 4 Grafana dashboards ADR-116; 38/51 Task 完成）
-> **下一个动作**: DOC-12 Task 12.5 — OTel Tracing(跨进程 W3C)
+> **最后更新**: 2026-04-19（DOC-12 Task 12.5 完成: OTel Tracing W3C 跨进程 ADR-117; 39/51 Task 完成）
+> **下一个动作**: DOC-12 Task 12.6 — 结构化日志(structlog + contextvars)
