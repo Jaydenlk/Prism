@@ -1362,4 +1362,21 @@
   2. token 未配置时跳过签名校验（适合内网部署场景）
 - **验证结果**: SHA1 签名校验 PASS（合法/非法两种场景）; URL验证流程 PASS; 消息截断至 2048 字符 PASS
 
-> **最后更新**: 2026-04-19(DOC-08 Task 8.2 — FeishuAdapter+WeComAdapter+TelegramAdapter+ADR-072/073; 30/51 Task 完成)
+## ADR-071 落地补强: IMBindingService 服务层 + _handle_pairing 重构(DOC-08 Task 8.3)
+- **来源**: PRD v4 DOC-08 Task 8.3 Part A — ADR-071 im_bindings 三元组唯一约束（原 ADR-071 在 Task 8.1 DB schema 层落地，Task 8.3 补全服务层实现）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/im_binding_service.py` — IMBindingService
+    - `generate_pairing_code(user_id, channel)`: 6位数字 + 碰撞重试3次 + upsert未完成绑定 + 5分钟TTL via created_at
+    - `pair(channel, platform_user_id, platform_chat_id, code)`: TTL校验 + 一次性使用校验 + IntegrityError捕获ADR-071三元组冲突
+    - `list_bindings(user_id)`: 按created_at降序
+    - `unbind(user_id, binding_id)`: 所有权校验 + 物理删除
+    - `expires_at()`: 路由层辅助方法
+  - `backend/app/api/v1/im.py` — 3个绑定端点全部委托IMBindingService；移除内联secrets.randbelow业务逻辑
+  - `backend/app/services/im_gateway.py` — `_handle_pairing()` 重构为调用 `IMBindingService.pair()`；传入 platform_chat_id 支持多群聊
+- **实施 commit**: 177ee65
+- **偏离点**: 无。PRD Part B 规范完整落地；pair() 返回 bool 而非抛异常，符合 IMGateway 异步流程需求。
+- **验证结果**: 12项验证全PASS（py_compile×3 + 常量校验 + 方法签名 + ValueError校验 + im.py路由结构 + 无内联逻辑 + 三元组UniqueConstraint + platform_chat_id传递 + TTL常量）
+- **下游影响**: DOC-08 完整收官 3/3；DOC-11 Task 11.3 前端 IM 绑定 UX 可直接对接这 3 个端点
+
+> **最后更新**: 2026-04-19(DOC-08 Task 8.3 — IMBindingService + 三元组唯一 + DOC-08 DONE 3/3; 31/51 Task 完成)

@@ -91,7 +91,7 @@
 |---|---|---|---|---|---|
 | DOC-08 Task 8.1: IMAdapter + 消息路由 + Webhook 幂等 | completed | 2026-04-19 | 2026-04-19 | f9d8e3f | 5新文件+2修改: im_adapter.py(IMAdapter ABC 4方法+IMIncomingMessage msg_id字段ADR-070); im_dedup.py(IMDedupService DB方案+IMDedupRedisService备选 ADR-070); im_gateway.py(IMGateway统一路由 dedup→pairing→binding→session→TaskService同链路); schemas/im.py(5 schema); api/v1/im.py(7路由 channel/webhook/bindings); metrics.py(+2 IM指标 ADR-070 B5-I); api/v1/__init__注册im_router; 17项验证全PASS; ADR-070/071落地 |
 | DOC-08 Task 8.2: 飞书 + 企微 + Telegram 适配器 | completed | 2026-04-19 | 2026-04-19 | 7f85b76 | 3新文件+2修改: im_feishu.py(FeishuAdapter WebSocket/Webhook+HMAC-SHA256签名+AES-CBC-256解密+token刷新); im_wecom.py(WeComAdapter msg_signature SHA1+AES-CBC-256 XML解密+URL验证GET+REST发送); im_telegram.py(TelegramAdapter Long Polling asyncio.Task+update_id offset+sendMessage); api/v1/im.py(POST /webhook/feishu签名验证+GET /webhook/wecom URL验证+POST /webhook/wecom签名验证+适配器懒获取); requirements.txt pycryptodome>=3.20.0; 9项验证全PASS; ADR-072/073落地 |
-| DOC-08 Task 8.3: 用户绑定(三元组) | pending | — | — | — | — |
+| DOC-08 Task 8.3: 用户绑定(三元组) | completed | 2026-04-19 | 2026-04-19 | 177ee65 | 1新文件+2修改: im_binding_service.py(IMBindingService 4方法+expires_at+碰撞重试+TTL校验+ADR-071三元组IntegrityError捕获); im.py(3端点委托service，移除内联逻辑); im_gateway.py(_handle_pairing重构调用service.pair()+platform_chat_id); 12项验证全PASS; DOC-08完整收官3/3 |
 
 ### DOC-09: MCP/Provider/Admin(3 Task)
 
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 30
+- **已完成**: 31
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 21
+- **pending**: 20
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-08 Task 8.2 完成: FeishuAdapter + WeComAdapter + TelegramAdapter + Webhook签名校验 + AES解密; 30/51 Task 完成）
-> **下一个动作**: DOC-08 Task 8.3 — 用户绑定（三元组）
+> **最后更新**: 2026-04-19（DOC-08 Task 8.3 完成: IMBindingService + 配对码流程 + ADR-071三元组唯一; 31/51 Task 完成; DOC-08 DONE 3/3）
+> **下一个动作**: DOC-09 Task 9.1 — MCP Server 管理

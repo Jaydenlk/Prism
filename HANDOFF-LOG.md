@@ -35,6 +35,45 @@
 
 ---
 
+## 2026-04-19 -- DOC-08 Task 8.3 COMPLETED + **DOC-08 DONE** 3/3 (IMBindingService + 配对码 + 三元组唯一)
+
+### 本次 session 做了什么
+- 新建 backend/app/services/im_binding_service.py — IMBindingService 完整服务层
+  - `generate_pairing_code(user_id, channel)`: 6位数字+碰撞重试3次+upsert未完成绑定+5min TTL(via created_at)
+  - `pair(channel, platform_user_id, platform_chat_id, code)`: TTL校验+一次性使用+ADR-071三元组IntegrityError捕获
+  - `list_bindings(user_id)` + `unbind(user_id, binding_id)` (所有权校验+物理删除)
+  - `expires_at()` 辅助方法供路由层使用
+  - VALID_CHANNELS frozenset + 常量集中管理
+- 修改 backend/app/api/v1/im.py — 3个绑定端点(list/pair/unbind)全部委托IMBindingService; 移除内联secrets.randbelow业务逻辑; 清理无用import(datetime/timezone/Response/ImBinding)
+- 修改 backend/app/services/im_gateway.py — `_handle_pairing()` 重构为调用`IMBindingService.pair(platform_chat_id=...)`; 逻辑由30行→15行; 传递platform_chat_id支持ADR-071多群聊绑定
+- ADR-071落地补强: DB UNIQUE(channel, platform_user_id, platform_chat_id)已在Task8.1 schema落地; Task8.3在服务层用IntegrityError捕获三元组冲突
+
+### 验证结果
+- py_compile 3文件 (im_binding_service.py / im.py / im_gateway.py): PASS
+- 常量校验(VALID_CHANNELS/PAIRING_CODE_LENGTH/TTL/MAX_RETRIES): PASS
+- 方法签名(generate_pairing_code/pair/list_bindings/unbind/expires_at): PASS
+- ValueError on invalid channel (mock DB): PASS
+- im.py 路由结构(3端点均present + IMBindingService import): PASS
+- 无内联pairing逻辑(randbelow/ImBinding直接写): PASS
+- im_gateway._handle_pairing使用IMBindingService.pair(): PASS
+- ADR-071三元组UniqueConstraint列名验证: PASS
+- platform_chat_id传递验证: PASS
+- 共12项验证全 PASS
+
+### 下一个 Task 需要注意
+- DOC-09 Task 9.1: MCP Server 管理端点; ADR-080起
+- IMBindingService.pair() 返回bool而非抛异常；三元组冲突时发"配对码无效"提示（用户侧体验可能改善，但功能正确）
+- im_gateway._handle_pairing现在是纯委托模式，未来如需扩展绑定逻辑（如display_name从IM平台抓取）在IMBindingService中增加即可
+
+### 遗留风险 / 未决事项
+- DOC-08 无遗留风险；三个Task全部完整实现
+- **DOC-08 DONE** checkpoint: Task 8.1(IMAdapter+IMGateway+Webhook幂等) + Task 8.2(飞书+企微+Telegram适配器) + Task 8.3(IMBindingService+配对码+三元组唯一) 全部完成
+
+### Commit
+- `177ee65` — `feat(v4): DOC-08 Task 8.3 — IM user binding service (pairing code + triple unique constraint)`
+
+---
+
 ## 2026-04-19 -- DOC-08 Task 8.2 COMPLETED (FeishuAdapter + WeComAdapter + TelegramAdapter)
 
 ### 本次 session 做了什么
