@@ -97,7 +97,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-09 Task 9.1: MCP Server 管理 | pending | — | — | — | — |
+| DOC-09 Task 9.1: MCP Server 管理 | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 3新文件+3修改: schemas/mcp.py(5 schema); services/mcp_service.py(MCPService 9方法+register_builtin_servers+env masking); api/v1/mcp.py(8路由); models/mcp_server.py(+user_id FK nullable); alembic/004(ADD user_id to mcp_servers); main.py(MCP bootstrap); api/v1/__init__.py(mcp_router); scope二值强制(system→403/user→owner only); 铁律4全覆盖; UNIQUE409捕获; 10项验证全PASS |
 | DOC-09 Task 9.2: Provider 配置 + 用量 API(cache tokens) | pending | — | — | — | — |
 | DOC-09 Task 9.3: Admin 审计 + 系统统计 + 用户管理 | pending | — | — | — | — |
 
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 31
+- **已完成**: 32
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 20
+- **pending**: 19
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-08 Task 8.3 完成: IMBindingService + 配对码流程 + ADR-071三元组唯一; 31/51 Task 完成; DOC-08 DONE 3/3）
-> **下一个动作**: DOC-09 Task 9.1 — MCP Server 管理
+> **最后更新**: 2026-04-19（DOC-09 Task 9.1 完成: MCP Server CRUD + install/uninstall + scope二值 + 铁律4 + builtin bootstrap; 32/51 Task 完成）
+> **下一个动作**: DOC-09 Task 9.2 — Provider 配置 + 用量 API(cache tokens)

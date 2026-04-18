@@ -1380,3 +1380,27 @@
 - **下游影响**: DOC-08 完整收官 3/3；DOC-11 Task 11.3 前端 IM 绑定 UX 可直接对接这 3 个端点
 
 > **最后更新**: 2026-04-19(DOC-08 Task 8.3 — IMBindingService + 三元组唯一 + DOC-08 DONE 3/3; 31/51 Task 完成)
+
+---
+
+## Phase 2: DOC-09 MCP/Provider/Admin
+
+## ADR-MCP-SCOPE: MCP Server scope二值权限矩阵(DOC-09 Task 9.1)
+- **来源**: PRD v4 DOC-09 Task 9.1 Part A — scope='system'(内置不可删) + scope='user'(owner-only)
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/schemas/mcp.py` — 5 Pydantic schema (CreateMCPServerRequest / MCPServerResponse / InstallMCPRequest / MCPInstallResponse / UpdateMCPInstallRequest / MCPTestResponse)
+  - `backend/app/services/mcp_service.py` — MCPService 9方法 + register_builtin_servers staticmethod
+    - scope='system': 全局可见，delete→403 Forbidden
+    - scope='user': 仅 owner 可见/删改 (铁律4: user_id 过滤)
+    - create_server() 强制 scope='user'
+    - 系统 env 值在 _to_server_response() 中掩码为 '***'
+  - `backend/app/api/v1/mcp.py` — 8路由 (/mcp-servers GET/POST + /{id} DELETE + /{id}/test POST + /mcp-installs GET/POST + /{id} PATCH/DELETE)
+  - `backend/app/models/mcp_server.py` — 追加 user_id Mapped[str | None] FK(nullable)
+  - `backend/alembic/versions/004_add_user_id_to_mcp_servers.py` — ADD COLUMN user_id + INDEX + FK + downgrade
+  - `backend/app/main.py` — lifespan 追加 MCP bootstrap (register_builtin_servers)
+  - `backend/app/api/v1/__init__.py` — include_router(mcp_router)
+- **实施 commit**: (feat commit)
+- **偏离点**: McpServer 原始 ORM model 无 user_id 字段 → 新增 migration 004 + 更新 ORM model。PRD 未明确说明需要 migration，但 user-scope 功能必须有 user_id 列才能实现铁律4隔离，属必要扩展非越界。
+- **验证结果**: 10项验证全PASS（py_compile×3 + schema字段 + 服务方法签名 + 路由结构8端点 + scope守护逻辑 + builtin bootstrap + ORM+migration + main.py wiring）
+- **下游影响**: DOC-09 Task 9.2 可在 provider_service.py 追加健康状态读取；DOC-05 MCPClient 通过 user_mcp_installs 动态加载用户启用的 MCP Server

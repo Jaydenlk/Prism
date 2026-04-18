@@ -35,6 +35,43 @@
 
 ---
 
+## 2026-04-19 -- DOC-09 Task 9.1 COMPLETED (MCP Server CRUD + install/uninstall + scope权限 + builtin bootstrap)
+
+### 本次 session 做了什么
+- 新建 backend/app/schemas/mcp.py — 5 schema: CreateMCPServerRequest / MCPServerResponse / InstallMCPRequest / MCPInstallResponse / UpdateMCPInstallRequest / MCPTestResponse
+- 新建 backend/app/services/mcp_service.py — MCPService 9方法(list_servers/get_server/create_server/delete_server/test_server/list_installs/install/update_install/uninstall) + register_builtin_servers staticmethod(web_search + filesystem 两内置); system scope env值在响应层掩码'***'; UNIQUE(409)通过IntegrityError捕获; 铁律4全覆盖
+- 新建 backend/app/api/v1/mcp.py — 8路由: GET/POST /mcp-servers + DELETE/POST(test) /mcp-servers/{id} + GET/POST /mcp-installs + PATCH/DELETE /mcp-installs/{id}
+- 修改 backend/app/models/mcp_server.py — 追加 user_id Mapped[str|None] FK nullable (system→NULL, user→owner UUID)
+- 新建 backend/alembic/versions/004_add_user_id_to_mcp_servers.py — ADD COLUMN + INDEX + downgrade
+- 修改 backend/app/main.py — lifespan step 4b: MCP bootstrap (register_builtin_servers)
+- 修改 backend/app/api/v1/__init__.py — 导入并注册 mcp_router
+
+### 验证结果
+- py_compile 3新文件(schemas/mcp.py + services/mcp_service.py + api/v1/mcp.py): PASS
+- schema字段验证(CreateMCPServerRequest / UpdateMCPInstallRequest partial / MCPTestResponse): PASS
+- 服务方法签名(9方法 + register_builtin_servers static): PASS
+- 路由结构验证(8端点 AST解析): PASS
+- scope守护逻辑(scope='user'强制 + system→403 + user_id!=owner→403 + 409 IntegrityError): PASS
+- builtin bootstrap(web_search + npx + idempotent skip): PASS
+- ORM model + migration(user_id FK nullable + down_revision链): PASS
+- main.py + __init__.py wiring: PASS
+- 共10项验证全 PASS
+
+### 下一个 Task 需要注意
+- DOC-09 Task 9.2: Provider 配置补充 + 用量 API; ADR-080/081/082
+- provider_service.py 已有 list_providers() — Task 9.2 新增 list_providers_with_health(redis_client) + get_usage_stats()
+- usage_service.py 需新建; runs 表有 input_tokens/output_tokens/cost_usd 字段可直接聚合
+- ADR-080 Provider scope 字段已在 Task 2.3 实现(scope='system'|'user'); Task 9.2 重点是 Redis 熔断状态读取 + cache tokens 三字段
+
+### 遗留风险 / 未决事项
+- McpServer.user_id 迁移(Migration 004)需要运行 alembic upgrade head 才能在 DB 生效；开发环境未连接 DB 故未运行，属正常
+- test_server() 当前为 stub，返回 detected_capabilities=['tools']；完整探测需 DOC-05 MCPClient 集成
+
+### Commit
+- (feat commit) — `feat(v4): DOC-09 Task 9.1 — MCP Server CRUD + install/uninstall + scope权限矩阵 + builtin bootstrap`
+
+---
+
 ## 2026-04-19 -- DOC-08 Task 8.3 COMPLETED + **DOC-08 DONE** 3/3 (IMBindingService + 配对码 + 三元组唯一)
 
 ### 本次 session 做了什么
