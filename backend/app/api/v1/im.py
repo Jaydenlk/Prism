@@ -6,13 +6,15 @@ Prism v2 — IM API 端点 (DOC-08 Task 8.1 skeleton / Task 8.2 Webhook 实现)
   PATCH  /im/channels/{channel}    — 更新渠道配置（admin only）
 
 Webhook 端点（Task 8.2 实现，企微/飞书平台直接回调，public + 平台签名验证）：
-  POST   /im/webhook/feishu        — 飞书事件回调
-  POST   /im/webhook/wecom         — 企业微信事件回调
+  POST   /im/webhook/feishu        — 飞书事件回调（含 URL 验证 + 签名校验）
+  GET    /im/webhook/wecom         — 企业微信 URL 验证（返回 echostr 解密值）
+  POST   /im/webhook/wecom         — 企业微信事件回调（含签名验证 + XML 解密）
 
 设计要点：
   - Webhook 端点 public（IM 平台直接调用），用平台签名替代 JWT
   - 渠道 config 管理需要 admin 权限（包含 app_secret 等密钥）
   - GET /im/channels 不返回 config JSONB 的 secret 字段（脱敏）
+  - 适配器实例从 app.state.im_gateway 懒获取（由 lifespan 注入）
 """
 from __future__ import annotations
 
@@ -20,7 +22,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db, require_admin
@@ -129,8 +132,7 @@ def update_channel(
 
 # ---------------------------------------------------------------------------
 # Webhook endpoints (public, platform signature verification)
-# Task 8.2 will add FeishuAdapter / WeComAdapter routing logic here.
-# Task 8.1 provides the skeleton with 200 OK stubs.
+# Task 8.2: FeishuAdapter + WeComAdapter real implementations.
 # ---------------------------------------------------------------------------
 
 @router.post(
@@ -142,31 +144,101 @@ async def webhook_feishu(
     request: Request,
 ) -> dict[str, Any]:
     """
-    飞书 Webhook / Event Callback 入口。
+    飞书 Webhook / Event Callback 入口（Task 8.2 完整实现）。
 
-    Task 8.1 skeleton：立即返回 {"challenge": ...} 用于 URL 验证；
-    真实事件处理由 Task 8.2 FeishuAdapter 实现并注入 IMGateway。
+    安全流程：
+      1. 读取 body bytes（用于签名验证）
+      2. 若 X-Lark-Signature 存在，验证签名（HMAC-SHA256）
+      3. 若 encrypt 字段存在，解密消息（AES-CBC-256）
+      4. URL 验证：响应 {"challenge": "..."}
+      5. 真实事件：交由 FeishuAdapter.handle_webhook() 处理并路由到 IMGateway
 
     飞书 URL 验证流程：
       POST body 包含 {"challenge": "xxx", "type": "url_verification"}
       → 响应 {"challenge": "xxx"}
     """
-    body: dict[str, Any] = {}
+    body_bytes = await request.body()
+
+    # 获取 FeishuAdapter 实例（从 IMGateway 中查找）
+    adapter = _get_feishu_adapter(request)
+
+    # 快速路径：若无适配器（未配置），兼容 URL 验证
+    if adapter is None:
+        try:
+            import json as _json
+            body: dict[str, Any] = _json.loads(body_bytes) if body_bytes else {}
+        except Exception:
+            body = {}
+        if body.get("type") == "url_verification":
+            return {"challenge": body.get("challenge", "")}
+        logger.warning("im.webhook.feishu.adapter_not_found")
+        return {"status": "ok"}
+
+    # 签名验证（X-Lark-Signature 存在时）
+    signature = request.headers.get("X-Lark-Signature", "")
+    timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
+    nonce = request.headers.get("X-Lark-Request-Nonce", "")
+
+    if signature:
+        if not adapter.verify_signature(timestamp, nonce, body_bytes, signature):
+            logger.warning(
+                "im.webhook.feishu.signature_mismatch",
+                timestamp=timestamp,
+            )
+            # 返回 200 OK 避免飞书重试风暴，但不处理消息
+            return {"status": "ok"}
+
+    # 解析 body JSON（可能含 encrypt 字段，handle_webhook 内部处理）
     try:
-        body = await request.json()
+        import json as _json
+        body = _json.loads(body_bytes) if body_bytes else {}
     except Exception:
-        pass
+        body = {}
 
-    # URL verification challenge (飞书要求)
-    if body.get("type") == "url_verification":
-        return {"challenge": body.get("challenge", "")}
-
-    # TODO-Task8.2: 验证 X-Lark-Signature，解析事件，调用 IMGateway._handle_message()
+    result = await adapter.handle_webhook(body)
     logger.info(
-        "im.webhook.feishu.received",
-        event_type=body.get("header", {}).get("event_type", "unknown"),
+        "im.webhook.feishu.processed",
+        event_type=body.get("header", {}).get("event_type", body.get("type", "unknown")),
     )
-    return {"status": "ok"}
+    return result
+
+
+@router.get(
+    "/webhook/wecom",
+    include_in_schema=False,
+    summary="企业微信 URL 验证（GET 请求）",
+)
+async def webhook_wecom_verify(
+    request: Request,
+    msg_signature: str = Query(default=""),
+    timestamp: str = Query(default=""),
+    nonce: str = Query(default=""),
+    echostr: str = Query(default=""),
+) -> PlainTextResponse:
+    """
+    企业微信 URL 验证（GET 请求）。
+
+    企业微信在配置回调 URL 时发送 GET 请求：
+      ?msg_signature=xxx&timestamp=xxx&nonce=xxx&echostr=xxx
+    → 验证 msg_signature → 解密 echostr → 响应解密后的明文
+
+    若验证失败，返回空字符串（企业微信将提示 URL 不合法）。
+    """
+    adapter = _get_wecom_adapter(request)
+    if adapter is None:
+        logger.warning("im.webhook.wecom.adapter_not_found")
+        return PlainTextResponse("")
+
+    decrypted = adapter.verify_url(msg_signature, timestamp, nonce, echostr)
+    if not decrypted:
+        logger.warning(
+            "im.webhook.wecom.url_verify_failed",
+            timestamp=timestamp,
+        )
+        return PlainTextResponse("")
+
+    logger.info("im.webhook.wecom.url_verified")
+    return PlainTextResponse(decrypted)
 
 
 @router.post(
@@ -176,19 +248,66 @@ async def webhook_feishu(
 )
 async def webhook_wecom(
     request: Request,
-) -> Any:
+    msg_signature: str = Query(default=""),
+    timestamp: str = Query(default=""),
+    nonce: str = Query(default=""),
+) -> PlainTextResponse:
     """
-    企业微信 Webhook / Callback 入口。
+    企业微信 Webhook / Callback 入口（Task 8.2 完整实现）。
 
-    Task 8.1 skeleton：返回 "success" 字符串（企微要求）。
-    真实事件处理由 Task 8.2 WeComAdapter 实现并注入 IMGateway。
+    安全流程：
+      1. 读取 body bytes（XML 格式）
+      2. 解析外层 XML，提取 <Encrypt> 字段
+      3. 验证 msg_signature（SHA1 签名）
+      4. 解密消息（AES-CBC-256）
+      5. 解析内层 XML，提取消息内容，路由到 IMGateway
 
-    企微 URL 验证流程（GET 请求）：
-      msg_signature / timestamp / nonce / echostr → 返回 echostr 解密值
+    企业微信要求响应 "success" 字符串。
     """
-    # TODO-Task8.2: 验证 msg_signature，解密消息，调用 IMGateway._handle_message()
-    logger.info("im.webhook.wecom.received")
-    return "success"
+    body_bytes = await request.body()
+    adapter = _get_wecom_adapter(request)
+
+    if adapter is None:
+        logger.warning("im.webhook.wecom.adapter_not_found")
+        return PlainTextResponse("success")
+
+    result = await adapter.handle_webhook(body_bytes, msg_signature, timestamp, nonce)
+    logger.info("im.webhook.wecom.processed")
+    return PlainTextResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# Adapter helpers (懒获取适配器实例)
+# ---------------------------------------------------------------------------
+
+def _get_feishu_adapter(request: Request):
+    """
+    从 app.state.im_gateway 获取 FeishuAdapter 实例。
+
+    若 IMGateway 未初始化或未注册 feishu 适配器，返回 None。
+    """
+    try:
+        gateway = getattr(request.app.state, "im_gateway", None)
+        if gateway is None:
+            return None
+        return gateway.get_adapter("feishu")
+    except Exception:
+        return None
+
+
+def _get_wecom_adapter(request: Request):
+    """
+    从 app.state.im_gateway 获取 WeComAdapter 实例。
+
+    若 IMGateway 未初始化或未注册 wecom 适配器，返回 None。
+    """
+    try:
+        gateway = getattr(request.app.state, "im_gateway", None)
+        if gateway is None:
+            return None
+        return gateway.get_adapter("wecom")
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
