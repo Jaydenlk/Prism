@@ -1695,4 +1695,39 @@
   - DOC-12 Task 12.7/12.8 可直接使用 structlog.get_logger() 和 bind_contextvars，无需额外配置
   - heartbeat.stale / harness.compaction.tier{N} / callback.received 等事件名已在既有代码中符合规范
 
-> **最后更新**: 2026-04-19(DOC-12 Task 12.6 — structlog + contextvars + JSON/Console ADR-118; 40/51 Task 完成)
+---
+
+## DOC-12 Task 12.7: 前端错误上报端点（ADR-119）
+
+## ADR-119: POST /frontend-errors 端点 + FrontendErrorPayload schema + IP rate limit（DOC-12 Task 12.7）
+- **来源**: PRD v4 DOC-12 Task 12.7 Part A ADR-119；Batch 5 §B5-I
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/schemas/frontend.py` — FrontendErrorPayload (11 字段: message/stack/name/url/user_agent/viewport/user_id/session_id/context/severity/timestamp)
+  - `backend/app/api/v1/frontend.py` — POST /frontend-errors (204); _classify_viewport (mobile/tablet/desktop/unknown); _get_client_ip (X-Forwarded-For); Redis SETNX counter 60/IP/min; AuditLog写入; prism_frontend_errors_total.inc(); structlog 4 级 dispatch
+  - `backend/app/api/v1/__init__.py` — 注册 frontend_router
+- **实施 commit**: (本 session commit hash)
+- **偏离点**:
+  - 前端集成部分（DOC-10 Task 10.3 ErrorBoundary / apiClient 调用）**不在本 Task 范围**，由 DOC-10 Task 10.3 负责实现
+  - Redis SETNX 使用 INCR + EXPIRE(nx=True) pipeline 实现，Redis 不可用时 fail-open（继续处理，记录 warning 日志）
+  - `session_id` 字段（PRD Part B 代码片段中含此字段但文字描述未提及）按 schema 注释保留，存入 resource_id 列
+- **验证结果**: 14 项验证全 PASS
+  - T1 FrontendErrorPayload 默认字段 PASS
+  - T2 FrontendErrorPayload 全字段 PASS
+  - T3 invalid severity 被 Pydantic 拒绝 PASS
+  - T4 _classify_viewport 8 案例全 PASS（None/empty/bad → unknown; <640 → mobile; 640~1023 → tablet; ≥1024 → desktop）
+  - T5 prism_frontend_errors_total{severity,viewport} Counter generate_latest 含 label PASS
+  - T6 AuditLog 7 字段存在 PASS
+  - T7 frontend_router import + include_router 注册 PASS
+  - T8 rate limit 常量 (60/IP/min) + 429 状态码 PASS
+  - T9 204 + action=frontend.error + message[:500] + stack[:2000] 截断 PASS
+  - T10 structlog 4 级分发 + frontend.error.reported 事件名 PASS
+  - T11 无 f-string log calls PASS
+  - T12 X-Forwarded-For real IP 提取 PASS
+  - T13 Redis fail-open 降级 PASS
+  - T14 3 文件 py_compile PASS
+- **下游影响**:
+  - DOC-10 Task 10.3 (apiClient + ErrorBoundary) 负责从浏览器调用此端点 — **前端集成不在本 Task 范围**
+  - DOC-12 Task 12.8 AlertDispatcher 可在 report_frontend_error 中 severity=critical 时追加 AlertDispatcher.dispatch() 调用
+
+> **最后更新**: 2026-04-19(DOC-12 Task 12.7 — 前端错误上报端点 ADR-119; 41/51 Task 完成)

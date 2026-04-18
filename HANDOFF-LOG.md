@@ -35,6 +35,45 @@
 
 ---
 
+## 2026-04-19 -- DOC-12 Task 12.7 COMPLETED
+
+### 本次 session 做了什么
+- 新建 backend/app/schemas/frontend.py — FrontendErrorPayload(11字段: message/stack/name/url/user_agent/viewport/user_id/session_id/context/severity Literal/timestamp); Pydantic BaseModel
+- 新建 backend/app/api/v1/frontend.py — POST /frontend-errors 204; _classify_viewport(None/empty/bad→unknown, <640→mobile, 640-1023→tablet, ≥1024→desktop); _get_client_ip(X-Forwarded-For+client.host); Redis SETNX counter(INCR + EXPIRE nx=True pipeline, 60/IP/min, 429 on exceed, fail-open when Redis unavailable); AuditLog(action="frontend.error", details message[:500]+stack[:2000]+viewport_bucket+context+timestamp, ip_address); prism_frontend_errors_total{severity,viewport}.inc(); structlog 4级dispatch(critical/error/warning/info); {domain}.{action}="frontend.error.reported"
+- 更新 backend/app/api/v1/__init__.py — import frontend_router; api_v1_router.include_router(frontend_router)
+
+### 验证结果
+- Part B 验证步骤: 14 项全 PASS
+  - T1-T3 FrontendErrorPayload schema 字段 / 全字段 / invalid severity 拒绝 PASS
+  - T4 _classify_viewport 8 案例全 PASS（4 分档）
+  - T5 prism_frontend_errors_total Counter labels + generate_latest PASS
+  - T6 AuditLog 7 字段存在 PASS
+  - T7 frontend_router import + include_router 注册 PASS
+  - T8 rate limit 常量 60/IP/min + 429 PASS
+  - T9 204 + action=frontend.error + 截断 500/2000 PASS
+  - T10 structlog 4 级分发 + frontend.error.reported PASS
+  - T11 无 f-string log calls PASS
+  - T12 X-Forwarded-For IP 提取 PASS
+  - T13 Redis fail-open 降级 PASS
+  - T14 3 文件 py_compile PASS
+- 质量门 10 项: PASS
+
+### 下一个 Task 需要注意
+- DOC-12 Task 12.8: AlertDispatcher severity 分档(ADR-120)
+  - DOC-07 Task 7.4 已建 alert_dispatcher.py 骨架，本 Task 补全 IM 格式化 + email + admin config 端点 + 集成 EntropyDetector/HeartbeatMonitor/ResourceMonitor
+  - ALERT_IM_CHANNEL 配置需要 settings 支持或 alert_configs 表
+  - 可在 report_frontend_error 的 severity=critical 分支追加 AlertDispatcher.dispatch() 调用（预留钩子，非本 Task 强制要求）
+- 前端集成（DOC-10 Task 10.3 ErrorBoundary + apiClient 调用 /frontend-errors）**不在 DOC-12 Task 12.7 范围**，由 DOC-10 Task 10.3 负责
+
+### 遗留风险 / 未决事项
+- session_id 字段存入 resource_id 列（VARCHAR 36），若 session_id 超 36 字符会被截断；实际 UUID7 为 36 字符，无风险
+- Redis INCR+EXPIRE(nx=True) pipeline：EXPIRE nx=True 仅在 Redis 6.0+ 支持；若版本低需降级为 SETNX+TTL 模式（docker-compose 已锁定 redis:7.x，无风险）
+
+### Commit
+- (feat commit hash) — feat(v4): frontend error reporter endpoint + rate limit + audit + prom metric (ADR-119, DOC-12 Task 12.7)
+
+---
+
 ## 2026-04-19 -- DOC-12 Task 12.6 COMPLETED
 
 ### 本次 session 做了什么
