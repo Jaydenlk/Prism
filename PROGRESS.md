@@ -60,7 +60,7 @@
 | DOC-05 Task 5.1: Skill 三级加载 | completed | 2026-04-19 | 2026-04-19 | (见 commit) | 2新文件+1修改: skill_types.py(SkillMetadata+SkillContent); skill_loader.py(SkillLoader Level 0/1/2 + agents过滤ADR-044 + audit emit ADR-045); plugins/__init__.py 导出; plugins/skills/.gitkeep; pyproject.toml pyyaml>=6.0; ADR-043/044/045 落地; 全部7项验证PASS |
 | DOC-05 Task 5.2: MCP Server(双通道 + scope) | completed | 2026-04-19 | 2026-04-19 | (见 commit) | 1新文件+2修改: mcp_client.py(MCPClient asyncio双通道+scope+ADR-046/047; MCPToolWrapper mcp__s__t命名; filter_mcp_tools_for_agent); prompt_assembler.py(invalidate_static_cache+update_tools); plugins/__init__.py导出5新符号; Part B验证3项全PASS |
 | DOC-05 Task 5.3: Hook 治理(4 handler) | completed | 2026-04-19 | 2026-04-19 | (见 commit) | 1新文件+3修改: namespace.py(PluginNamespace ADR-049); events.py(PHASE1/2_EVENTS ADR-048); system.py(priority+hook_id三元组+unregister+unregister_by_prefix+Phase1过滤); skill_loader.py(Task5.1 unregister_by_prefix stub解决); hooks/__init__导出PHASE1/2_EVENTS; plugins/__init__导出PluginNamespace; 全部验证PASS |
-| DOC-05 Task 5.4: PluginHost(变量替换) | pending | — | — | — | — |
+| DOC-05 Task 5.4: PluginHost(变量替换) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 2新文件+1修改: plugin_types.py(PluginConfig+PluginScope 三级); host.py(PluginHost+PluginVariableExpander+ENV_WHITELIST sandbox); plugins/__init__导出5新符号; 变量替换9种${VAR}; CC兼容${CLAUDE_PLUGIN_ROOT}; Platform/User/Session冲突检测+audit; shutdown()解Task5.2 MCPClient.stop() TODO; ADR-050落地; 全部验证PASS |
 | DOC-05 Task 5.5: Skills Registry(Local+GitHub) | pending | — | — | — | — |
 | DOC-05 Task 5.6: Skills CLI + Agent Tool(仅搜索) | pending | — | — | — | — |
 | DOC-05 Task 5.7: CC 兼容层(ConversionReport) | pending | — | — | — | — |
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 18
+- **已完成**: 19
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 33
+- **pending**: 32
 
 ---
 
-> **最后更新**: 2026-04-19(DOC-05 Task 5.3 完成: Hook 治理层 + Plugin 命名空间 + ADR-048/049)
-> **下一个动作**: DOC-05 Task 5.4 — PluginHost 统一管理与垂类特调
+> **最后更新**: 2026-04-19(DOC-05 Task 5.4 完成: PluginHost 统一管理 + 变量替换系统 + ADR-050)
+> **下一个动作**: DOC-05 Task 5.5 — Skills Registry（Local + GitHub 两源）

@@ -752,7 +752,39 @@
   - DOC-05 Task 5.4 PluginHost 加载 Plugin 时使用 PluginNamespace 实例管理资源命名
   - DOC-05 Task 5.5 SkillRegistry 注册 Skill 时使用 qualify() 生成命名空间限定名
 
-> **最后更新**: 2026-04-19（DOC-05 Task 5.3 — Hook 治理层 + Plugin 命名空间 + ADR-048/049）
+---
+
+## DOC-05 Task 5.4: PluginHost 统一管理 + 变量替换系统（ADR-050）
+
+## ADR-050: PluginHost 统一生命周期 + Plugin 变量替换系统（DOC-05 Task 5.4）
+- **来源**: PRD v4 DOC-05 Task 5.4 Part A ADR-046（PRD 原标 ADR-046；注意 DOC-06 也预留了 ADR-050~055 范围，此处平移存在编号冲突，见 blocker.md 说明，实施仍采用 ADR-050 编号，DOC-06 Task 6.1 落地时须向后平移至 ADR-051+）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/plugin_types.py` — PluginScope 枚举（PLATFORM/USER/SESSION，含 priority 属性）+ PluginConfig 数据类（8 字段：name/description/version/skills_dir/hooks_config/mcp_servers/agent_overrides/scope/plugin_root/user_config）
+  - `executor/plugins/host.py` — PluginVariableExpander（expand/expand_dict/expand_list，ENV_WHITELIST sandbox，secret.X Phase 1 留桩）+ PluginHost（load_plugin/unload_plugin/unload_all/shutdown/get_skill_descriptions/get_mcp_instructions/get_agent_overrides）
+  - `executor/plugins/__init__.py` — 导出 PluginConfig/PluginScope/PluginHost/PluginVariableExpander/ENV_WHITELIST
+- **实施 commit**: (本 Task feat commit)
+- **偏离点**:
+  1. ADR 编号从 PRD 原标 046 平移至 ADR-050（原 ADR-046/047 已被 DOC-05 Task 5.2 MCP 双通道/agent 白名单占用，见 blocker.md）
+  2. PRD Part B 完成后行"记录 ADR-022"为笔误（ADR-022 是 DOC-03 Task 3.1 Redis 直通），实际记录 ADR-050
+  3. unload_plugin() Phase 1 简化：MCP Client 不按 Plugin 精确追踪，shutdown() 统一停止所有 MCPClient.stop()（解 Task 5.2 TODO）；Phase 2 可细化按 Plugin 追踪
+  4. ${secret.X} Phase 1 留桩（原样保留）；跨进程场景需走 security.decrypt_value（DOC-06 Task 6.1 落地后激活）
+  5. PluginVariableExpander.expand_dict() 不展开 agent_overrides（语义敏感）；skills_dir/mcp_servers/hooks_config 全递归展开
+- **验证结果**: 全部验证 PASS
+  - py_compile plugin_types.py / host.py PASS
+  - Empty PluginHost：get_skill_descriptions() str，get_mcp_instructions() == {}，get_agent_overrides() == {} PASS
+  - 变量替换：PRISM_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT CC 兼容 / PRISM_SESSION_ID / PRISM_USER_ID / user_config.X / env.HOME（白名单）PASS
+  - sandbox：env.SECRET_KEY（非白名单保持原样）/ secret.DB_PASSWORD（留桩）PASS
+  - expand_dict 递归展开 PASS
+  - Platform→User→Session 三级冲突检测：高优先级覆盖 + audit log / 低优先级跳过 PASS
+  - shutdown() 统一清理 MCP + 清空 loaded_plugins PASS
+  - 无实际 backend.app import / 无 TODO: 占位符 PASS
+- **下游影响**:
+  - DOC-05 Task 5.5/5.6 SkillRegistry 可通过 PluginHost.load_plugin() 加载 GitHub Skill
+  - DOC-06 Task 6.1 落地三密钥 ADR 时，须将原 DOC-06 ADR-050 编号平移至 ADR-051（已在 blocker.md 标注）
+  - DOC-07 Task 7.4 executor 子进程 finally 块调用 await plugin_host.shutdown() 保证 MCP 子进程清理
+
+> **最后更新**: 2026-04-19（DOC-05 Task 5.4 — PluginHost 统一管理 + 变量替换系统 + ADR-050）
 
 ---
 

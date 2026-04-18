@@ -77,6 +77,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **DOC-05 Task 5.3 原标 ADR-043（Hook 4 种 handler）用 ADR-048/049**（PRD ADR-043 已被 DOC-05 Task 5.1 Skill 三级加载规范占用。Task 5.3 的两条 ADR 依次平移为 ADR-048/049：HookSystem 优先级+Phase1过滤+scoped注销=ADR-048；Plugin 命名空间=ADR-049）。后续 DOC-05 Task 5.4+ 的 ADR 从 ADR-050 接续（须检查与 DOC-06 ADR-050~055 三密钥/SSE ticket 范围是否冲突）。
 
+**DOC-05 Task 5.4 原标 ADR-046（Plugin 命名空间 + 变量替换系统）用 ADR-050**（PRD ADR-046 已被 DOC-05 Task 5.2 MCP instructions 双通道注入占用。Task 5.4 的 PluginHost 统一生命周期 + 变量替换系统平移至 ADR-050）。⚠️ 编号冲突警告：DOC-06 原规划 ADR-050~055 范围用于三密钥独立/SSE ticket/Refresh cookie，因 DOC-05 Task 5.4 已占用 ADR-050，DOC-06 Task 6.1+ 的 ADR 须从 ADR-051 接续。后续 DOC-05 Task 5.5+ 的 ADR 从 ADR-051 接续（亦须检查与 DOC-06 剩余范围是否冲突）。
+
 ---
 
 ### Action required from human reviewer
