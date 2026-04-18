@@ -1,5 +1,5 @@
 """
-Prism v2 — IM API 端点 (DOC-08 Task 8.1 skeleton / Task 8.2 Webhook 实现)
+Prism v2 — IM API 端点 (DOC-08 Task 8.1 / 8.2 / 8.3)
 
 路由表：
   GET    /im/channels              — 已配置的 IM 渠道列表（admin only）
@@ -10,24 +10,29 @@ Webhook 端点（Task 8.2 实现，企微/飞书平台直接回调，public + �
   GET    /im/webhook/wecom         — 企业微信 URL 验证（返回 echostr 解密值）
   POST   /im/webhook/wecom         — 企业微信事件回调（含签名验证 + XML 解密）
 
+绑定端点（Task 8.3 IMBindingService 实现）：
+  GET    /im/bindings              — 当前用户的 IM 绑定列表
+  POST   /im/bindings/pair         — 生成配对码（6 位，5 分钟有效）
+  DELETE /im/bindings/{binding_id} — 解除绑定（物理删除）
+
 设计要点：
   - Webhook 端点 public（IM 平台直接调用），用平台签名替代 JWT
   - 渠道 config 管理需要 admin 权限（包含 app_secret 等密钥）
   - GET /im/channels 不返回 config JSONB 的 secret 字段（脱敏）
   - 适配器实例从 app.state.im_gateway 懒获取（由 lifespan 注入）
+  - 绑定逻辑全部委托给 IMBindingService（Task 8.3 重构）
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db, require_admin
-from app.models.im import ImBinding, ImChannelConfig
+from app.models.im import ImChannelConfig
 from app.models.user import User
 from app.schemas.common import ApiResponse
 from app.schemas.im import (
@@ -36,6 +41,7 @@ from app.schemas.im import (
     IMChannelConfigUpdate,
     PairingCodeResponse,
 )
+from app.services.im_binding_service import IMBindingService
 
 logger = structlog.get_logger(__name__)
 
@@ -312,7 +318,7 @@ def _get_wecom_adapter(request: Request):
 
 # ---------------------------------------------------------------------------
 # User binding endpoints (authenticated)
-# Full implementation in Task 8.3; stubs here for Task 8.1 completeness.
+# Task 8.3: Full implementation via IMBindingService.
 # ---------------------------------------------------------------------------
 
 @router.get(
@@ -325,12 +331,8 @@ def list_bindings(
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[IMBindingResponse]]:
     """列出当前用户所有 IM 绑定记录（含未完成绑定）。"""
-    bindings = (
-        db.query(ImBinding)
-        .filter(ImBinding.user_id == user.id)
-        .order_by(ImBinding.created_at.desc())
-        .all()
-    )
+    svc = IMBindingService(db)
+    bindings = svc.list_bindings(user.id)
     return ApiResponse(
         data=[
             IMBindingResponse(
@@ -359,89 +361,34 @@ def generate_pairing_code(
     db: Session = Depends(get_db),
 ) -> ApiResponse[PairingCodeResponse]:
     """
-    生成配对码（Task 8.3 IMBindingService 将提供完整实现）。
-
-    Task 8.1 skeleton：直接在此路由中实现基础逻辑，供后续 Task 8.3 重构。
+    生成配对码（Task 8.3 IMBindingService 实现）。
 
     流程：
-      1. 若已有未完成绑定记录 → 覆盖旧配对码
-      2. 创建/更新 im_bindings 记录（platform_user_id 暂为空字符串）
+      1. IMBindingService.generate_pairing_code() 处理碰撞重试（最多 3 次）
+      2. 若已有未完成绑定记录 → 覆盖旧配对码并重置 created_at
       3. 返回配对码 + 过期时间
     """
-    import secrets
-    from datetime import timedelta
-
-    VALID_CHANNELS = {"feishu", "wecom", "telegram"}
-    if channel not in VALID_CHANNELS:
+    svc = IMBindingService(db)
+    try:
+        code = svc.generate_pairing_code(user_id=user.id, channel=channel)
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid channel. Must be one of: {', '.join(VALID_CHANNELS)}",
-        )
-
-    # 生成 6 位数字配对码（碰撞重试最多 3 次）
-    code: str = ""
-    for _ in range(3):
-        candidate = "".join(str(secrets.randbelow(10)) for _ in range(6))
-        # 检查是否存在相同有效码
-        conflict = (
-            db.query(ImBinding)
-            .filter(
-                ImBinding.channel == channel,
-                ImBinding.pairing_code == candidate,
-                ImBinding.paired_at.is_(None),
-            )
-            .first()
-        )
-        if conflict is None:
-            code = candidate
-            break
-    if not code:
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to generate unique pairing code. Please retry.",
-        )
-
-    now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(minutes=5)
-
-    # 查找当前用户在该渠道的未完成绑定记录
-    existing = (
-        db.query(ImBinding)
-        .filter(
-            ImBinding.user_id == user.id,
-            ImBinding.channel == channel,
-            ImBinding.paired_at.is_(None),
-        )
-        .first()
-    )
-
-    if existing:
-        existing.pairing_code = code
-        existing.created_at = now  # 重置过期时间
-    else:
-        binding = ImBinding(
-            user_id=user.id,
-            channel=channel,
-            platform_user_id="",  # 由 IM 端配对时填入
-            platform_chat_id="",  # 由 IM 端配对时填入
-            pairing_code=code,
-            created_at=now,
-        )
-        db.add(binding)
+            detail=str(exc),
+        ) from exc
 
     db.commit()
-
-    logger.info(
-        "im.binding.pairing_code_generated",
-        user_id=user.id,
-        channel=channel,
-    )
 
     return ApiResponse(
         data=PairingCodeResponse(
             pairing_code=code,
             channel=channel,
-            expires_at=expires_at,
+            expires_at=svc.expires_at(),
         )
     )
 
@@ -457,21 +404,14 @@ def unbind(
     db: Session = Depends(get_db),
 ) -> None:
     """解除绑定（物理删除）。只能删除属于当前用户的绑定。"""
-    binding = db.get(ImBinding, binding_id)
-    if binding is None or binding.user_id != user.id:
+    svc = IMBindingService(db)
+    deleted = svc.unbind(user_id=user.id, binding_id=binding_id)
+    if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Binding {binding_id} not found.",
         )
-    db.delete(binding)
     db.commit()
-
-    logger.info(
-        "im.binding.unpaired",
-        binding_id=binding_id,
-        user_id=user.id,
-        channel=binding.channel,
-    )
 
 
 # ---------------------------------------------------------------------------

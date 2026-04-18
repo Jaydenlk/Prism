@@ -313,28 +313,36 @@ class IMGateway:
         pairing_code: str,
     ) -> None:
         """
-        处理配对请求。
+        处理配对请求（Task 8.3：委托给 IMBindingService.pair()）。
 
-        查找 im_bindings 中 channel + pairing_code 匹配的未配对记录，
-        填入 platform_user_id + platform_chat_id + paired_at + 清除 pairing_code。
+        IMBindingService 负责：
+          - 配对码有效性校验（未使用、未过期）
+          - 三元组唯一约束冲突处理（ADR-071）
+          - 填写 platform_user_id / platform_chat_id / paired_at / 清空 pairing_code
         """
-        from datetime import datetime, timezone
+        from app.services.im_binding_service import IMBindingService
 
         adapter = self._adapters.get(msg.channel)
         if not adapter:
             return
 
-        binding = (
-            db.query(ImBinding)
-            .filter(
-                ImBinding.channel == msg.channel,
-                ImBinding.pairing_code == pairing_code,
-                ImBinding.paired_at.is_(None),
-            )
-            .first()
+        svc = IMBindingService(db)
+        success = svc.pair(
+            channel=msg.channel,
+            platform_user_id=msg.platform_user_id,
+            platform_chat_id=msg.platform_chat_id,
+            code=pairing_code,
         )
 
-        if binding is None:
+        if success:
+            await adapter.send(
+                IMOutgoingMessage(
+                    channel=msg.channel,
+                    platform_chat_id=msg.platform_chat_id,
+                    text="绑定成功！现在可以直接发消息使用 Prism 了。",
+                )
+            )
+        else:
             await adapter.send(
                 IMOutgoingMessage(
                     channel=msg.channel,
@@ -342,48 +350,6 @@ class IMGateway:
                     text="配对码无效或已过期，请在 Web 端重新生成。",
                 )
             )
-            return
-
-        # 检查是否过期（pairing_code TTL 由 im_binding_service 在 created_at 上约束）
-        from datetime import timedelta
-        ttl_minutes = 5
-        if binding.created_at:
-            from datetime import timezone as tz
-            created = binding.created_at
-            if created.tzinfo is None:
-                created = created.replace(tzinfo=tz.utc)
-            if datetime.now(tz.utc) > created + timedelta(minutes=ttl_minutes):
-                await adapter.send(
-                    IMOutgoingMessage(
-                        channel=msg.channel,
-                        platform_chat_id=msg.platform_chat_id,
-                        text="配对码已过期（有效期 5 分钟），请在 Web 端重新生成。",
-                    )
-                )
-                return
-
-        # 完成绑定
-        binding.platform_user_id = msg.platform_user_id
-        binding.platform_chat_id = msg.platform_chat_id
-        binding.paired_at = datetime.now(timezone.utc)
-        binding.pairing_code = None
-        db.flush()
-
-        logger.info(
-            "im.binding.paired",
-            channel=msg.channel,
-            user_id=binding.user_id,
-            platform_user_id=msg.platform_user_id,
-            platform_chat_id=msg.platform_chat_id,
-        )
-
-        await adapter.send(
-            IMOutgoingMessage(
-                channel=msg.channel,
-                platform_chat_id=msg.platform_chat_id,
-                text="绑定成功！现在可以直接发消息使用 Prism 了。",
-            )
-        )
 
     # ------------------------------------------------------------------
     # Run result delivery
