@@ -35,6 +35,45 @@
 
 ---
 
+## 2026-04-19 -- DOC-12 Task 12.4 COMPLETED
+
+### 本次 session 做了什么
+- 扩展 backend/app/observability/metrics.py — 16 维度 68 个 prism_ 命名指标(原 13 个,现 68 个); 全部保留前序 Task 落地指标; 新增 Auth/Queue/Cache/Config+Skill/Fork+Coord 5 个额外分组; REGISTRY.generate_latest() 输出 74 HELP 行
+- 新建 monitoring/docker-compose.monitoring.yml — Prometheus(v2.52)+Grafana(10.4.2) 监控栈; 两服务均有 resource limits + healthcheck; 接入 prism-net 外部网络
+- 新建 monitoring/prometheus/prometheus.yml — 3 scrape jobs: prism_backend(:8000)/prism_executor(:9091)/prometheus self; 15d 保留; --web.enable-lifecycle
+- 新建 monitoring/grafana/provisioning/datasources/prometheus.yml + dashboards/dashboards.yml — 自动注册 Prometheus DS + 自动加载 4 套 dashboard
+- 新建 4 Grafana Dashboard JSON(均可直接导入 v10.x):
+  - prism-overview.json (8 panel: Runs/s, Errors/s, P95, Sessions, Run duration, Queue)
+  - prism-harness.json (9 panel: Guardrail, Permission, Compaction, Hook, Tool duration)
+  - prism-models.json (10 panel: Tokens, Latency P50/P95, Provider health, Cache ratio, Cost)
+  - prism-agents.json (10 panel: SubProcess lifecycle, Fork, Heartbeat, Coordinator, TAOR)
+
+### 验证结果
+- py_compile metrics.py: PASS
+- prism_ metrics count = 68 (>= 60): PASS
+- 4 JSON valid + importable (json.load PASS; uid/panels/title 字段完整): PASS
+- prometheus.yml valid YAML (3 scrape_configs keys): PASS
+- REGISTRY generate_latest() 74 HELP 行: PASS
+- 共 5 项核心验证全 PASS
+
+### 下一个 Task 需要注意
+- DOC-12 Task 12.5: OTel Tracing(跨进程 W3C)
+  - backend/app/observability/tracing.py — TracerProvider + OTLPSpanExporter; dev 模式 ConsoleSpanExporter
+  - executor/observability/tracing.py — 子进程继承 traceparent(--otel-trace-id 参数, ADR-117)
+  - 核心 span 树: run → taor_turn → prompt_assembly → model_request → tool_use → middleware_chain
+  - 关键属性: run.id / session.id / user.id / agent.type / route.mode / tool.name / provider.name
+- /metrics 端点目前无 require_admin 守卫(main.py 保持开放便于 Prometheus 无 token scrape); Task 12.5 若需要 admin 守卫可加 Authorization header 到 prometheus.yml scrape_configs
+
+### 遗留风险 / 未决事项
+- prism_agent_subprocess_running 与 prism_executor_processes_active 语义重叠(均追踪活跃子进程); 前者是 PRD Part A 明确列出的指标名, 后者是 DOC-03 Task 3.1 落地名; 两者并存, 调用方按 agent 侧 / backend 侧分别更新
+- monitoring/ 下的 rules/*.yml 目录尚为空(prometheus.yml rule_files 引用但目录未建); Task 12.8 AlertDispatcher 落地时补充告警规则
+
+### Commit
+- `6155ab7` — `feat(v4): DOC-12 Task 12.4 — Prometheus 68 metrics (10 dims) + 4 Grafana dashboards (ADR-116)`
+- `18d3188` — `docs: update state files for DOC-12 Task 12.4 (PROGRESS/DECISIONS/ADR-116)`
+
+---
+
 ## 2026-04-19 -- DOC-12 Task 12.3 COMPLETED
 
 ### 本次 session 做了什么
