@@ -534,6 +534,41 @@
 
 ---
 
+---
+
+## DOC-04 Task 4.4: TaskRouter 6 agent_type + keyword routing（ADR-041）
+
+## ADR-041: TaskRouter Phase 1 关键词路由——确定性规则优先，Phase 2 升级 LLM 分类（DOC-04 Task 4.4）
+- **来源**: PRD v4 DOC-04 Task 4.4 Part A ADR-037（PRD 原标 ADR-037，因 DOC-04 Task 4.2 Fork capability-based 已占用 ADR-037，平移至 ADR-041）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/router.py` — TaskRouter 类 + RouteDecision dataclass（mode/agent_type/reason 3字段）+ COORDINATOR_PATTERNS（11条，中英文）+ AGENT_TYPE_PATTERNS（4种：explore/planner/verifier/plugin_builder，含中英文关键词）+ AGENT_TYPE_ALIASES（3条别名：chat→general/research→explore/build→general）
+  - `executor/__main__.py` — 追加 `from executor.router import TaskRouter` import + routing stub（commented，待 DOC-07 Task 7.4 DB 集成后激活）
+- **实施 commit**: TBD
+- **偏离点**:
+  - ADR 编号从 PRD 原标 037 平移到 041（见 blocker.md 编号平移链；037 已被 DOC-04 Task 4.2 占用）
+  - PRD Part B 验证步骤 line 1548 断言 `r.agent_type == 'research'`（PRD 内部笔误），实际 AGENT_TYPE_PATTERNS key 为 `"explore"`（Task 4.1 canonical type），验证断言修正为 `== 'explore'`；AGENT_TYPE_ALIASES 提供 research→explore 别名映射，通过 explicit_agent_type 路径规范化
+  - Phase 2 LLM fallback（Haiku 意图分类）仅在 Part A 声明，本 Task 不实现（注释说明）
+  - 文件路径：PRD Part B 顶部目录图标注 `executor/router.py`（非 `executor/routing/task_router.py`），按 Part B 落地
+- **验证结果**: 全部 8 项 PASS
+  - py_compile executor/router.py PASS
+  - Simple task direct/general PASS
+  - Search task direct/explore PASS
+  - Verify task direct/verifier PASS
+  - Complex task coordinator PASS
+  - Explicit planner PASS
+  - plugin_builder keyword PASS
+  - alias research→explore PASS
+  - alias chat→general PASS
+  - py_compile executor/__main__.py PASS
+  - grep `from backend.app` in router/main: 0 命中 PASS
+- **下游影响**:
+  - DOC-07 Task 7.4：子进程入口激活 TaskRouter 路由（取消 __main__.py 中的注释，从 DB 读取 run.prompt + run.agent_type）
+  - DOC-04 Task 4.5：PluginBuilder 由 AGENT_TYPE_PATTERNS["plugin_builder"] 路由，无需 Coordinator 模式
+  - DOC-12 Task 12.x：RouteDecision.reason 写入 audit_logs（当前仅 stub，DOC-07 实现后激活）
+
+---
+
 ## Phase 2: Backend 模块(待实施)
 
 > (占位)

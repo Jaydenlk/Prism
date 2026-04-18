@@ -35,6 +35,33 @@
 
 ---
 
+## 2026-04-19 -- DOC-04 Task 4.4 completed (TaskRouter 6 agent_type + keyword routing)
+
+### 本次 session 做了什么
+- Created executor/router.py — TaskRouter 类 + RouteDecision dataclass(mode/agent_type/reason) + COORDINATOR_PATTERNS(11条中英文) + AGENT_TYPE_PATTERNS(4种:explore/planner/verifier/plugin_builder,含中英文关键词) + AGENT_TYPE_ALIASES(3条别名:chat→general/research→explore/build→general)
+- Modified executor/__main__.py — 追加 `from executor.router import TaskRouter` import + TaskRouter routing stub(注释块,待 DOC-07 Task 7.4 DB 集成激活)
+- ADR-041 落地 DECISIONS.md(PRD 原标 ADR-037 平移;Fork capability-based ADR-037 已占用)
+- blocker.md 末尾追加 Task 4.4 ADR 编号平移链记录
+- PROGRESS.md Task 4.4 行更新为 completed + session notes
+
+### 验证结果
+- Part B 验证步骤: PASS(8项路由测试全通过,2项 py_compile PASS,1项 grep PASS)
+- 质量门: PASS — 进程边界(0 backend.app import)、密度达标、无 TODO 占位、对齐 PRD Part B
+
+### 下一个 Task 需要注意 — DOC-04 Task 4.5 (PluginBuilder 完整度打分)
+- TaskRouter 的 AGENT_TYPE_PATTERNS["plugin_builder"] 已预置关键词路由，Task 4.5 不需要再修改 router.py
+- ADR-038 原编号在 PRD 被 PluginBuilder 打分使用，但 DOC-04 Task 4.2 已用 ADR-038 落地 Fork 3 条约束；Task 4.5 的 ADR 需从 ADR-042 起编号
+- PRD Part B 验证步骤 line 1548 有笔误(断言 'research' 但路由返回 'explore')；已在 DECISIONS.md ADR-041 偏离点说明，Task 4.5 实施者无需修改 router.py
+
+### 遗留风险 / 未决事项
+- __main__.py 中 TaskRouter routing stub 为注释状态，待 DOC-07 Task 7.4 DB 集成后取消注释并接入 run.prompt/run.agent_type
+- RouteDecision.reason 写入 audit_logs 逻辑尚未实现(DOC-07 Task 7.3/7.4 负责)
+
+### Commit
+- TBD(git commit 下一步执行)
+
+---
+
 ## 2026-04-19 -- DOC-04 Task 4.3 completed (Coordinator + Plan checkpoint)
 
 ### 本次 session 做了什么

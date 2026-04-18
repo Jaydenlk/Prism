@@ -67,6 +67,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **DOC-04 Task 4.3 原标 ADR-036 用 ADR-040**（PRD ADR-036 被 DOC-04 Task 4.1 Verifier VERDICT 占用，Task 4.3 的 Coordinator Plan checkpoint 持久化平移至 ADR-040）。后续 DOC-04 Task 4.4/4.5 的 ADR 从 ADR-041 接续（DOC-05 原定 ADR-040~050 范围已被 Task 4.3 吃掉一个编号，后续 DOC-05 从 ADR-041 起编号）。
 
+**DOC-04 Task 4.4 原标 ADR-037 用 ADR-041**（PRD ADR-037 被 DOC-04 Task 4.2 Fork capability-based 工具白名单占用，Task 4.4 的 TaskRouter Phase 1 关键词路由平移至 ADR-041）。后续 DOC-04 Task 4.5 的 ADR 从 ADR-042 接续；DOC-05 后续 ADR 继续从 ADR-042 起编号（需继续平移检查）。
+
 ---
 
 ### Action required from human reviewer

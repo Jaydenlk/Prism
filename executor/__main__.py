@@ -173,6 +173,14 @@ async def main() -> None:
 
     # 3. BackendCallback（双通道：Redis 高频直通 + HTTP 关键事件重试）
     from executor.callbacks.backend_callback import BackendCallback
+    from executor.router import TaskRouter
+
+    # 5. TaskRouter 路由决策（ADR-041 Phase 1 关键词匹配）
+    # FROM_DB: prompt = run.prompt, explicit_agent_type = run.agent_type (if pre-set)
+    # _router = TaskRouter()
+    # _route = _router.route(run.prompt, explicit_agent_type=run.agent_type or None)
+    # agent_type = _route.agent_type
+    # use_coordinator = (_route.mode == "coordinator")
 
     callback = BackendCallback(
         callback_url=args.callback_url,
