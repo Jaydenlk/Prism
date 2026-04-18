@@ -35,6 +35,34 @@
 
 ---
 
+## 2026-04-19 -- DOC-05 Task 5.5 completed (Skills Registry Local+GitHub + ADR-051)
+
+### 本次 session 做了什么
+- 新建 executor/plugins/skills_registry.py — SkillPackage/SkillBundle/InstalledSkill 3 个 dataclass；SkillSource ABC（search/fetch/get_versions 抽象方法）；LocalSource（.skills/ + .prism/skills/ 双目录扫描，YAML frontmatter 解析，关键词匹配 name/description/tags）；GitHubSource（httpx 调用 GitHub API Code Search + git/trees + raw.githubusercontent.com，支持 user/repo#branch/@tag/subpath 4 种格式，无 token 优雅降级）；SkillsRegistry（asyncio.gather 并行搜索 + name 去重 + installed 优先排序 + registry.json 原子写 + install/uninstall/update/list_installed）
+- 修改 executor/plugins/__init__.py — 新增导出 7 个符号 + Task 5.5 注释
+- ADR-051 落地 DECISIONS.md；blocker.md 追加 Task 5.5 ADR 平移链（DOC-06 Task 6.1 须从 ADR-052 起）
+- PROGRESS.md 更新（Task 5.5 completed，20/51）；HANDOFF-LOG.md 本记录
+
+### 验证结果
+- Part B 验证步骤（9 项全 PASS）：py_compile × 2 / dataclass 实例化 × 3 / LocalSource search+fetch+versions / SkillsRegistry 并行搜索+installed排序+install+uninstall / registry.json 格式 / has_hooks/has_mcp 检测 / GitHubSource._parse_package_id 4 种格式 / 进程边界检查
+- 质量门 10 项：PASS（无 backend.app import / 无 TODO 占位 / ADR-051 注释 / Phase 2 占位注释 / Literal 类型正确）
+
+### 下一个 Task 需要注意
+- Task 5.6 SkillsCLI + SkillsSearchTool：从 ADR-052 起编号（不要用 ADR-051，已被本 Task 占用）
+- Task 5.6 Backend API `/skills/search` 调用 SkillsRegistry.search()；`/skills/install` 写 skill_installs 表（DOC-01 §4.2 已建）
+- skill_install_service 写 skill_installs 表字段：user_id / skill_name / source / source_url / version / installed_at / install_path / has_hooks / has_mcp / status（ADR-049 in PRD，平移后须检查是否已占用）
+- Redis 缓存 key：`skill_install:status:{user_id}:{skill_name}` TTL 600s（Task 5.6 实现）
+
+### 遗留风险 / 未决事项
+- GitHubSource.search() 需要 GITHUB_TOKEN（无 token 返回空列表 + warning，Phase 1 可接受）
+- GitHubSource.fetch() 在大仓库 recursive tree 可能超时（_DEFAULT_GITHUB_TIMEOUT=30s，PRD 未规定具体值）
+
+### Commit
+- `1e70ba2` — `feat(v5): Skills Registry multi-source aggregation (Local+GitHub) — DOC-05 Task 5.5`
+- `7b9586b` — `docs: update state files for DOC-05 Task 5.5 (PROGRESS/DECISIONS/HANDOFF/blocker)`
+
+---
+
 ## 2026-04-19 -- DOC-05 Task 5.4 completed (PluginHost 统一管理 + 变量替换系统 + ADR-050)
 
 ### 本次 session 做了什么
