@@ -223,3 +223,31 @@ class PromptAssembler:
             self._static_cache = self._build_static()
             self._tools_hash = current_hash
         return self._static_cache
+
+    def invalidate_static_cache(self) -> None:
+        """使静态 cache 失效（Task 5.2 MCP 热加载，ADR-046）。
+
+        调用时机：
+        - MCP 工具注册/注销后（工具列表变了，tool_grammar_section 需要重建）
+        - Skill 加载/卸载后（如果 Skill 影响了工具集）
+
+        下次 build() 或 get_static_prefix() 时会重新构建静态 section。
+        将 _static_cache 置 None，_tools_hash 置 None 使双重条件均失效。
+        """
+        self._static_cache = None
+        self._tools_hash = None
+
+    def update_tools(self, tools: list[ToolDefinition]) -> None:
+        """更新工具列表并使静态 cache 失效（Task 5.2 MCP 热加载，ADR-046）。
+
+        用于 MCP 热加载场景：
+        1. MCP 工具注册到 ToolRegistry
+        2. 调用 assembler.update_tools(registry.list_definitions())
+        3. 静态 cache 自动失效（invalidate_static_cache() 内部调用）
+        4. 下次 build() 使用新的工具列表，tool_grammar_section 包含 MCP 工具
+
+        Args:
+            tools: 新的工具定义列表（来自 ToolRegistry.list_definitions()）
+        """
+        self._tools = tools
+        self.invalidate_static_cache()
