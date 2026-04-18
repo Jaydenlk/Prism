@@ -6,8 +6,9 @@ Startup sequence (lifespan):
   2. init_logging()            — ADR-118: structlog JSON + contextvars
   3. Import metrics registry   — ADR-116: registers all Prometheus metrics
   4. Bootstrap provider presets + admin user
-  5. Start HeartbeatMonitor    — ADR-065: 每 10s 扫 harness:heartbeat:*，超 30s 标记 crashed
+  5. Initialize ProcessManager — ADR-066: subprocess scheduler (MAX_CONCURRENT_RUNS)
   6. Log "Prism v2 is ready"
+  7. Start HeartbeatMonitor    — ADR-065: 每 10s 扫 harness:heartbeat:*，超 30s 标记 crashed
 
 Health endpoints (ADR-115, DOC-12 Task 12.3):
   GET /health/live     — liveness probe (always 200 if process is alive)
@@ -102,9 +103,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             message="Admin bootstrap failed (DB may not be ready). Will retry on next startup.",
         )
 
+    # 6. Initialize ProcessManager singleton (ADR-066 subprocess scheduler)
+    try:
+        from app.services.process_manager import ProcessManager
+
+        process_manager = ProcessManager(settings)
+        app.state.process_manager = process_manager
+        logger.info(
+            "prism.process_manager_started",
+            max_concurrent=settings.MAX_CONCURRENT_RUNS,
+            timeout=settings.RUN_TIMEOUT_SECONDS,
+            message="ProcessManager initialized (ADR-066).",
+        )
+    except Exception as exc:
+        app.state.process_manager = None
+        logger.warning(
+            "prism.process_manager_failed",
+            error=str(exc),
+            message="ProcessManager failed to initialize. Subprocess scheduling disabled.",
+        )
+
     logger.info("prism.ready", message="Prism v2 is ready to serve requests.")
 
-    # 6. Start HeartbeatMonitor background task (ADR-065)
+    # 7. Start HeartbeatMonitor background task (ADR-065)
     heartbeat_task: asyncio.Task | None = None
     heartbeat_monitor = None
     try:
@@ -133,6 +154,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     yield  # application serves requests here
+
+    # Shutdown: stop ProcessManager (ADR-066) — kill all subprocesses
+    try:
+        if getattr(app.state, "process_manager", None) is not None:
+            app.state.process_manager.shutdown()
+            logger.info("prism.process_manager_shutdown", message="ProcessManager shut down.")
+    except Exception as exc:
+        logger.warning("prism.process_manager_shutdown_failed", error=str(exc))
 
     # Shutdown: stop HeartbeatMonitor
     if heartbeat_monitor is not None:

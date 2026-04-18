@@ -12,7 +12,7 @@ Routers:
   plugins    — Plugin load/validate/export-cc (DOC-05 Task 5.7)
   sessions   — Session CRUD + message incremental + SSE stream + permission-answer (DOC-07 Task 7.1/7.3)
   tasks      — POST /tasks + queue + cancel (DOC-07 Task 7.2)
-  runs       — GET /runs/{id} + /sessions/{id}/runs (DOC-07 Task 7.2)
+  runs       — GET /runs/{id} + /sessions/{id}/runs + POST /runs/{id}/resume (DOC-07 Task 7.2/7.4)
   internal   — Callback + run-crashed (DOC-07 Task 7.3, ADR-063)
 """
 from fastapi import APIRouter

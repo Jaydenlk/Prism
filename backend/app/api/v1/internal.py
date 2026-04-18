@@ -131,15 +131,28 @@ async def handle_callback(
             detail=f"Database commit failed: {exc}",
         )
 
-    # 返回 promoted_run_id 给调用方（DOC-07 Task 7.4 负责启动新子进程）
-    # 当前 Task 7.3 仅返回信息，不启动子进程（Task 7.4 实现）
-    if result.get("promoted_run_id"):
+    # 启动 promoted run 的子进程（ADR-066 标准化参数）
+    promoted_run_id = result.get("promoted_run_id")
+    if promoted_run_id:
         logger.info(
             "callback.run_promoted",
             run_id=run_id,
-            promoted_run_id=result["promoted_run_id"],
-            message="New run promoted from queue; subprocess launch deferred to Task 7.4",
+            promoted_run_id=promoted_run_id,
         )
+        # 从 app.state 获取 ProcessManager 单例，启动新子进程
+        process_manager = getattr(request.app.state, "process_manager", None)
+        if process_manager is not None:
+            process_manager.start_run(promoted_run_id)
+            logger.info(
+                "callback.promoted_subprocess_started",
+                promoted_run_id=promoted_run_id,
+            )
+        else:
+            logger.warning(
+                "callback.process_manager_unavailable",
+                promoted_run_id=promoted_run_id,
+                message="ProcessManager not in app.state; promoted run subprocess not started",
+            )
 
     return result
 

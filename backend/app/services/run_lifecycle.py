@@ -124,10 +124,15 @@ class RunLifecycle:
     # State transitions
     # ------------------------------------------------------------------
 
-    def mark_running(self, run_id: str) -> None:
+    def mark_running(self, run_id: str, pid: int | None = None) -> None:
         """
         子进程启动成功后调用。
         pending → running
+
+        Args:
+            run_id: 目标 Run 的 UUID。
+            pid:    子进程 PID（ADR-066；写入 runs.subprocess_pid，
+                    供 cancel 三模式 SIGTERM/SIGKILL 使用）。
         """
         run = self._get_run(run_id)
         if run.status != "pending":
@@ -137,6 +142,8 @@ class RunLifecycle:
             )
         run.status = "running"
         run.started_at = datetime.now(timezone.utc)
+        if pid is not None:
+            run.subprocess_pid = pid
         self._db.flush()
 
     def complete_and_promote(

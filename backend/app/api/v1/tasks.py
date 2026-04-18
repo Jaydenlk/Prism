@@ -1,5 +1,5 @@
 """
-Prism v2 — Task API 端点 (DOC-07 Task 7.2)
+Prism v2 — Task API 端点 (DOC-07 Task 7.2 / Task 7.4)
 
 路由表：
   POST   /tasks                          — 提交任务（核心入口）
@@ -9,12 +9,13 @@ Prism v2 — Task API 端点 (DOC-07 Task 7.2)
 
 设计要点：
   - POST /tasks 返回 202 Accepted（不论立即执行还是排队）
-  - 子进程启动在事务 commit 后异步执行（Task 7.4 实现 _start_agent_subprocess）
+  - 子进程启动在事务 commit 后调用 ProcessManager.start_run()（ADR-066）
+  - ProcessManager 从 request.app.state.process_manager 获取（lifespan 单例）
   - 铁律 4：所有操作强制校验 user_id 归属
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -31,21 +32,6 @@ router = APIRouter(tags=["tasks"])
 
 
 # ---------------------------------------------------------------------------
-# Placeholder — 子进程启动将在 Task 7.4 实现
-# ---------------------------------------------------------------------------
-
-def _start_agent_subprocess(run_id: str) -> None:
-    """
-    启动 Executor CLI 子进程（Task 7.4 实现）。
-
-    此函数在事务 commit 后调用，保证 Run 记录已落库后再启动进程。
-    当前为 stub，Task 7.4 将替换为完整实现。
-    """
-    # TODO(Task 7.4): 启动 CLI executor 子进程，传入 run_id + 标准化参数
-    pass
-
-
-# ---------------------------------------------------------------------------
 # POST /tasks — 提交任务
 # ---------------------------------------------------------------------------
 
@@ -56,6 +42,7 @@ def _start_agent_subprocess(run_id: str) -> None:
     summary="提交任务（核心入口）",
 )
 def submit_task(
+    request: Request,
     data: SubmitTaskRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -68,13 +55,26 @@ def submit_task(
     - `accepted_type="queued_query"`: session 繁忙，已加入队列
 
     202 Accepted 表示任务已接受，不代表已完成执行。
+
+    子进程启动（ADR-066）：
+      事务 commit 后从 app.state.process_manager 调用 start_run()。
+      ProcessManager 在 lifespan 中初始化为单例。
     """
     result = TaskService(db, settings).submit(user.id, data)
     db.commit()
 
     if result.accepted_type == "immediate" and result.run_id:
-        # 事务已提交，安全启动子进程（Task 7.4 实现）
-        _start_agent_subprocess(result.run_id)
+        # 事务已提交，安全启动子进程（ADR-066 标准化参数）
+        process_manager = getattr(request.app.state, "process_manager", None)
+        if process_manager is not None:
+            process_manager.start_run(result.run_id)
+        else:
+            import logging
+            logging.getLogger(__name__).warning(
+                "tasks.process_manager_unavailable",
+                run_id=result.run_id,
+                message="ProcessManager not in app.state; subprocess not started",
+            )
 
     return ApiResponse(data=result)
 

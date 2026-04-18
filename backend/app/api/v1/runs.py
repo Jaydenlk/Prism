@@ -1,17 +1,19 @@
 """
-Prism v2 — Run API 端点 (DOC-07 Task 7.2)
+Prism v2 — Run API 端点 (DOC-07 Task 7.2 / Task 7.4)
 
 路由表：
-  GET /runs/{id}            — Run 详情（含 harness_summary JSONB）
-  GET /sessions/{id}/runs   — Session 下的 Run 列表
+  GET  /runs/{id}            — Run 详情（含 harness_summary JSONB）
+  GET  /sessions/{id}/runs   — Session 下的 Run 列表
+  POST /runs/{id}/resume     — v4 ADR-067: coordinator_recovery 从 checkpoint 重启
 
 铁律 4：所有查询强制校验 user_id 归属。
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.common import ApiResponse, PagedResponse
@@ -112,3 +114,56 @@ def list_session_runs(
     items = [_run_to_list_response(r) for r in runs]
     paged = PagedResponse.from_query(items, total, page, per_page)
     return ApiResponse(data=paged)
+
+
+# ---------------------------------------------------------------------------
+# POST /runs/{run_id}/resume — Coordinator Recovery（ADR-067）
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/resume",
+    response_model=ApiResponse[dict],
+    summary="从 coordinator checkpoint 恢复崩溃的 Run（ADR-067）",
+)
+def resume_run(
+    run_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> ApiResponse[dict]:
+    """
+    v4 ADR-067: 从 coordinator_plans 表读 checkpoint 重启崩溃的 Run。
+
+    适用场景：
+      - Run status='failed' + error_message 含 'heartbeat_stale'
+      - coordinator_plans 表有对应 checkpoint（current_step_index）
+
+    成功时：
+      - 创建新 Run（继承原 Run 的 session/model/provider/prompt）
+      - 启动子进程，传 --resume-from-step=N
+      - 返回 {"new_run_id": "..."}
+
+    错误时：
+      - 404: Run 不存在或无 checkpoint
+      - 409: Run 状态不符合恢复条件
+    """
+    from app.services.coordinator_recovery import CoordinatorRecoveryService
+
+    # 从 app.state 获取 ProcessManager（lifespan 中注册）
+    process_manager = getattr(request.app.state, "process_manager", None)
+    if process_manager is None:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=503,
+            detail="ProcessManager not available (service starting up)",
+        )
+
+    svc = CoordinatorRecoveryService(
+        db=db,
+        process_manager=process_manager,
+        settings=settings,
+    )
+    new_run_id = svc.resume(run_id=run_id, user_id=user.id)
+    return ApiResponse(data={"original_run_id": run_id, "new_run_id": new_run_id})
