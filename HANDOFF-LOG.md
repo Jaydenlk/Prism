@@ -35,6 +35,36 @@
 
 ---
 
+## 2026-04-19 -- DOC-05 Task 5.4 completed (PluginHost 统一管理 + 变量替换系统 + ADR-050)
+
+### 本次 session 做了什么
+- 新建 executor/plugins/plugin_types.py — PluginScope 枚举（PLATFORM/USER/SESSION，含 priority 属性）+ PluginConfig 数据类（10字段）
+- 新建 executor/plugins/host.py — PluginVariableExpander（9种变量类型 + ENV_WHITELIST sandbox + ${CLAUDE_PLUGIN_ROOT} CC兼容 + ${secret.X} Phase1留桩 + expand_dict/expand_list 递归展开）+ PluginHost（load_plugin含冲突检测+audit / unload_plugin / unload_all / shutdown 统一清理 / get_skill_descriptions/get_mcp_instructions/get_agent_overrides）
+- 修改 executor/plugins/__init__.py — 新增导出 PluginConfig/PluginScope/PluginHost/PluginVariableExpander/ENV_WHITELIST
+- ADR-050 落地 DECISIONS.md；blocker.md 追加 Task 5.4 ADR 编号平移链 + DOC-06 ADR-050 冲突警告
+- 解 Task 5.2 的 TODO：MCPClient.stop() 统一由 PluginHost.shutdown() finally 块调用
+
+### 验证结果
+- Part B 验证步骤：PASS（3项全PASS：py_compile 2文件/Empty PluginHost全方法/All checks passed）
+- 额外验证：变量替换9种（PRISM_PLUGIN_ROOT/DATA/SKILL_DIR/SESSION_ID/USER_ID/user_config.X/env.HOME白名单/env.SECRET_KEY非白名单/secret.X留桩）全PASS
+- Platform/User/Session三级冲突检测+shutdown()清理 PASS
+- 质量门：PASS — 无实际 backend.app import；无 TODO: 占位；进程边界严格
+
+### 下一个 Task 需要注意 — DOC-05 Task 5.5 (Skills Registry Local+GitHub 两源)
+- ADR 编号从 ADR-051 起（ADR-050 已被本 Task 占用；DOC-06 须从 ADR-051 接续，见 blocker.md）
+- SkillRegistry 实现后可通过 PluginHost.load_plugin() 加载 GitHub Skill（host.py 已就绪）
+- PluginHost.shutdown() 接口已就绪，DOC-07 Task 7.4 executor __main__.py finally 块调用 await plugin_host.shutdown()
+
+### 遗留风险 / 未决事项
+- ${secret.X} Phase 1 留桩（原样保留字符串）；DOC-06 Task 6.1 security.decrypt_value 落地后需回来激活
+- DOC-06 Task 6.1 原规划 ADR-050~055 三密钥/SSE ticket，因本 Task ADR-050 已占用，DOC-06 须从 ADR-051 起
+
+### Commit
+- `2bd50f1` — `feat(v5.4): PluginHost unified lifecycle + variable substitution system (ADR-050)`
+- `559768d` — `docs: update state files for DOC-05 Task 5.4 (PROGRESS/DECISIONS/HANDOFF/blocker)`
+
+---
+
 ## 2026-04-19 -- DOC-05 Task 5.3 completed (Hook 治理层 + Plugin 命名空间 + ADR-048/049)
 
 ### 本次 session 做了什么
