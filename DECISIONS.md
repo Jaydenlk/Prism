@@ -46,15 +46,54 @@
 
 ## ADR-004: 三密钥独立 — 启动校验落地(DOC-02 Task 2.1 / DOC-06 ADR-050)
 - **来源**: PRD v4 DOC-02 Task 2.1 Part B Step 5; DOC-06 ADR-050
-- **实施状态**: in_progress 2026-04-18
+- **实施状态**: ✅ 2026-04-18
 - **落地位置**:
   - `backend/app/core/security.py` — `validate_secrets(jwt_secret, encryption_key, callback_secret)`
   - `backend/app/main.py` — lifespan 首步调用 `validate_secrets()`
   - `.env.example` — 三密钥分区注释,各有独立占位符
-- **实施 commit**: 5c689df
+- **实施 commit**: 5c689df(Phase 1); Phase 2 commit TBD
 - **偏离点**: 无。三密钥均要求 >= 32 字符且互不相等,不满足则 RuntimeError 阻止启动。
 - **验证结果**: 四场景单元测试全 PASS(短密钥 / 两两相同 / 三者相同 / 合法输入)
 - **下游影响**: DOC-06 Task 6.1 实现 SSE ticket 时需引用 `CALLBACK_SECRET`;DOC-02 Task 2.3 Provider encrypt 时需引用 `ENCRYPTION_KEY`
+
+## ADR-004 第二阶段落地: Schema 对齐 18 表 ORM + Alembic 迁移(DOC-02 Task 2.1 Phase 2)
+- **来源**: DOC-01 v4 §4.2; DOC-02 Task 2.1 Part B Step 2-3 + Step 6
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `backend/app/core/database.py` — engine + SessionLocal + get_db()
+  - `backend/app/core/dependencies.py` — get_db / get_redis(NotImplementedError) / get_current_user / require_admin
+  - `backend/app/schemas/common.py` — ApiResponse[T] / ErrorDetail / ErrorResponse / PagedResponse[T]
+  - `backend/app/models/base.py` — Base + TimestampMixin + generate_uuid() (uuid_extensions.uuid7)
+  - `backend/app/models/{user,session,run,message,tool_execution,provider,mcp_server,im,audit}.py` — 13 base tables
+  - `backend/app/models/{skill_install,coordinator_plan,permission_request,im_dedup,user_memory}.py` — 5 v4 new tables
+  - `backend/app/models/__init__.py` — aggregated import of all 18 tables
+  - `backend/alembic.ini` — Alembic config
+  - `backend/alembic/env.py` — env.py reading Base.metadata
+  - `backend/alembic/versions/001_initial_tables.py` — hand-written migration (18 tables + all indexes + constraints)
+- **实施 commit**: TBD
+- **偏离点**:
+  1. PRD heading says "19 张表" but §4.2 defines only 18 unique tables (13 base + 5 v4-new). See `blocker.md` for full analysis. Implemented exactly what §4.2 defines (18 tables).
+  2. `uuid7` pip package installs as Python module `uuid_extensions` (not `uuid7`). Used `from uuid_extensions import uuid7` in base.py. requirements.txt retains `uuid7>=0.1.0` (correct pip name).
+  3. `sessions.blocking_run_id` circular FK (sessions→runs→sessions) handled by creating sessions first without FK, then `ALTER TABLE` after runs table created.
+- **验证结果**: DDL 静态检查 PASS
+  - `from backend.app.models import *` — 18 tables, 0 errors
+  - `alembic upgrade head --sql` — 331-line DDL generated, all key constraints present:
+    - `CHECK ((scope = 'system' AND user_id IS NULL) OR (scope = 'user' AND user_id IS NOT NULL))`
+    - `UNIQUE (channel, platform_user_id, platform_chat_id)`
+    - `cache_hit_tokens`, `cache_creation_tokens`, `harness_summary` fields in runs
+    - `permission_decision`, `hook_modified` in tool_executions
+    - `is_skill_context`, `skill_name` in messages
+  - 注：未实测 DB (docker 未启动), 仅 DDL 静态检查
+- **下游影响**: DOC-02 Task 2.2 可直接使用 Run / Message / Provider ORM; DOC-06 Task 6.1 使用 User / InviteCode ORM
+
+## ADR-017: is_skill_context 字段落地(DOC-01 v4 §5 / DOC-05 ADR-042)
+- **来源**: DOC-01 v4 §5 PrismMessage 结构; 任务指令明确要求
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**: `backend/app/models/message.py` — `is_skill_context: Mapped[bool]` + `skill_name: Mapped[str | None]`
+- **实施 commit**: TBD
+- **偏离点**: 无。字段按 DOC-01 v4 §5 定义精确添加,与 PrismMessage dataclass 字段对齐。
+- **验证结果**: DDL 包含 `is_skill_context BOOLEAN DEFAULT 'false' NOT NULL, skill_name VARCHAR(200)`
+- **下游影响**: DOC-03 Task 3.5 Compaction Engine 使用 `is_skill_context` 优先保留 Skill 注入的上下文消息
 
 ---
 
@@ -83,4 +122,4 @@
 
 ---
 
-> **最后更新**: 2026-04-18(初始化骨架)
+> **最后更新**: 2026-04-18(DOC-02 Task 2.1 Phase 2 — 18 表 ORM + alembic + ADR-017)

@@ -19,11 +19,11 @@
 
 ---
 
-## Phase 1 Prelude: 项目骨架(DOC-02 Task 2.1 partial)
+## Phase 1 Prelude: 项目骨架(DOC-02 Task 2.1)
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | in_progress | 2026-04-18 | — | 5c689df | 骨架 + 最小 FastAPI 完成,19 表 ORM/alembic 留给下一个 session |
+| DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | completed | 2026-04-18 | 2026-04-18 | TBD | Phase 1: 骨架 commit 5c689df; Phase 2: 18 表 ORM + alembic migration — DDL 静态验证 PASS |
 
 ---
 
@@ -144,12 +144,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 0(Phase 0 文档阶段不计入)
-- **in_progress**: 1(DOC-02 Task 2.1)
+- **已完成**: 1(DOC-02 Task 2.1)
+- **in_progress**: 0
 - **blocked**: 0
 - **pending**: 50
 
 ---
 
-> **最后更新**: 2026-04-18(骨架 + 最小 FastAPI session)
-> **下一个动作**: DOC-02 Task 2.1 第二步 — 19 表 ORM + alembic 迁移
+> **最后更新**: 2026-04-18(DOC-02 Task 2.1 完成: 18 表 ORM + alembic migration)
+> **下一个动作**: DOC-02 Task 2.2 — PrismMessage 与双协议 Driver(Anthropic + OpenAI)
