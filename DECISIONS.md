@@ -1570,4 +1570,47 @@
 - **验证结果**: docker-compose.yml 4服务 limits/reservations/healthcheck 关键词全部出现 ≥4 次 PASS; nginx.conf SSE 4项关键字检查 PASS; 共8项验证全 PASS
 - **下游影响**: DOC-12 Task 12.4 docker-compose.monitoring.yml 可直接 extends 此 docker-compose.yml 结构
 
-> **最后更新**: 2026-04-19(DOC-12 Task 12.3 — /health 3子端点 + Docker资源限制 ADR-114/115; 37/51 Task 完成)
+---
+
+## DOC-12 Task 12.4: Prometheus Metrics 60+ + 4 Grafana Dashboard (ADR-116)
+
+## ADR-116: Prometheus metrics 10 维度覆盖 + Grafana 4 dashboard (DOC-12 Task 12.4)
+- **来源**: PRD v4 DOC-12 Task 12.4 Part A; Batch 5 §A12-8
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/observability/metrics.py` — 扩展至 68 个 prism_ 命名指标(含 16 个维度分组):
+      Run 级(5): prism_runs_total / prism_run_duration_seconds / prism_run_turn_count / prism_run_tokens_total / prism_run_cost_usd_total
+      TAOR 级(4): prism_taor_turns_total / prism_turn_duration_seconds / prism_turn_stop_reason_total / prism_harness_turn_total
+      工具级(5): prism_tool_invocations_total / prism_tool_duration_seconds / prism_tool_errors_total / prism_tool_truncation_total / prism_tool_parallel_invocations
+      Harness 级(8): prism_harness_compaction_total / prism_harness_permission_asks_total / prism_harness_guardrail_triggers_total / prism_harness_hook_invocations_total / prism_harness_feedback_total / prism_harness_memory_extracted_total / prism_permission_answered_total / prism_callback_dlq_total
+      Model 级(5): prism_model_tokens_total / prism_model_request_duration_seconds / prism_model_cache_hit_ratio / prism_model_errors_total / prism_model_stream_chunks_total
+      Session 级(5): prism_active_sessions / prism_sessions_active / prism_session_queue_length / prism_sse_tickets_issued_total / prism_sse_connections_active
+      Provider 级(4): prism_provider_healthy / prism_provider_failover_total / prism_provider_circuit_breaks_total / prism_provider_latency_seconds
+      IM 级(5): prism_im_messages_total / prism_im_webhook_duplicates_total / prism_im_bindings_active / prism_im_outbound_messages_total / prism_im_pairing_codes_total
+      子进程级(5): prism_executor_processes_active / prism_agent_subprocess_running / prism_agent_heartbeat_stale_total / prism_agent_subprocess_crashed_total / prism_agent_fork_total
+      HTTP 级(4): prism_http_requests_total / prism_http_request_duration_seconds / prism_http_errors_total / prism_http_active_connections
+      Frontend(2) / Cache(3) / Auth(3) / Queue(3) / Config/Skill(3) / Fork/Coord(4) 各分组
+  - `executor/observability/metrics.py` — 已有 11 个 Executor 独立 Registry 指标(DOC-03 前置,不变)
+  - `monitoring/docker-compose.monitoring.yml` — Prometheus + Grafana 监控栈
+  - `monitoring/prometheus/prometheus.yml` — 3 个 scrape job (prism_backend / prism_executor / prometheus)
+  - `monitoring/grafana/provisioning/datasources/prometheus.yml` — 自动注册 Prometheus 数据源
+  - `monitoring/grafana/provisioning/dashboards/dashboards.yml` — 自动加载 4 套 dashboard
+  - `monitoring/grafana/dashboards/prism-overview.json` — 8 panel: Runs/s, Errors/s, P95 latency, Queue, Routes
+  - `monitoring/grafana/dashboards/prism-harness.json` — 9 panel: Guardrail, Permission, Compaction, Hook, Tool
+  - `monitoring/grafana/dashboards/prism-models.json` — 10 panel: Tokens, Cache ratio, Cost, Provider health
+  - `monitoring/grafana/dashboards/prism-agents.json` — 10 panel: SubProcess, Fork, Heartbeat, Coordinator, TAOR
+- **实施 commit**: (本 Task feat commit)
+- **偏离点**:
+  1. metrics.py 共 68 指标(超出 PRD 60 下限),额外分组含 Auth/Queue/Cache/Config/Skill/Fork/Coord
+  2. prism_harness_turn_total 保留为 DOC-03 向后兼容别名(与 prism_taor_turns_total 并存,不删除)
+  3. executor/observability/metrics.py 独立 Registry 不变,不合并到 backend REGISTRY(进程边界原则 ADR-020)
+  4. /metrics 端点在 main.py 保持开放(无 require_admin 守卫); PRD Part B 示例带 admin guard 但注释说明"skeleton phase open"; Task 12.4 保持开放以便 Prometheus 无 token scrape
+- **验证结果**: 全部验证 PASS
+  - py_compile metrics.py PASS
+  - prism_ metrics count = 68 (>= 60) PASS
+  - 4 Grafana dashboard JSON valid / importable PASS
+  - prometheus.yml valid YAML / 3 scrape jobs PASS
+  - REGISTRY generate_latest() 输出 74 HELP 行 PASS
+- **下游影响**: Task 12.7 前端上报追加 prism_frontend_errors_total / prism_web_vitals_seconds 到已定义占位; Task 12.8 AlertDispatcher 追加 prism_alert_dispatched_total 到 metrics.py
+
+> **最后更新**: 2026-04-19(DOC-12 Task 12.4 — Prometheus 68 metrics + 4 Grafana dashboards ADR-116; 38/51 Task 完成)
