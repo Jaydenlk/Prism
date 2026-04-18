@@ -413,7 +413,7 @@
   - `executor/harness/middleware/feedback_capture.py` — FeedbackEvent dataclass (event_type 5枚举 + severity 4枚举 + context dict + timestamp ISO 8601) + FeedbackCaptureMiddleware
   - `executor/harness/middleware/__init__.py` — 导出 FeedbackEvent / FeedbackCaptureMiddleware
   - `executor/observability/metrics.py` — prism_harness_feedback_total{event_type,severity} Counter + prism_harness_memory_extracted_total Counter
-- **实施 commit**: (Task 3.4 commit hash)
+- **实施 commit**: affb44b
 - **偏离点**: 无。event_type 严格 5 值，severity 严格 4 值，与 ADR-029 完全对齐。
 - **验证结果**: 全部 12 项验证 PASS
   - tool_error 提取 / custom_data feedback_signals 追加 / get_run_summary 正确汇总 PASS
@@ -426,7 +426,7 @@
 - **落地位置**:
   - `executor/harness/lifecycle.py` — HarnessRuntime.on_session_end(): turn_count>5 时 LLM complete → callback.harness_event("user_memory_extracted", {content, source_session_id, source_run_id})
   - `executor/observability/metrics.py` — prism_harness_memory_extracted_total
-- **实施 commit**: (Task 3.4 commit hash)
+- **实施 commit**: affb44b
 - **偏离点**:
   1. HarnessLifecycle Task 3.3 类名替换为 HarnessRuntime(PRD v4 Part B §2 原文类名)，保留 `HarnessLifecycle = HarnessRuntime` 别名。
   2. __init__ 参数从 Task 3.3 的 5 参数扩展为 8 参数 (run_id, session_id, user_id, callback, redis_client, redis_url, adapter, settings)。

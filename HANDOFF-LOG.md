@@ -84,7 +84,7 @@
 - LoopDetection does NOT write to ctx.custom_data["feedback_signals"] yet — Entropy Detector (DOC-12 Task 12.2) will wire this
 
 ### Commit
-- TBD (committed after this log entry)
+- affb44b — feat(v4): Feedback Capture + HarnessRuntime lifecycle + user_memory extraction (DOC-03 Task 3.4)
 
 ---
 
