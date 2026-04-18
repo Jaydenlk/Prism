@@ -37,6 +37,7 @@ from app.core.config import settings
 from app.core.security import validate_secrets
 from app.observability.logging import init_logging
 from app.observability.metrics import REGISTRY  # triggers metric registration
+from app.observability.tracing import init_tracing
 
 logger = structlog.get_logger(__name__)
 
@@ -58,6 +59,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # 2. Structured logging (ADR-118)
     init_logging(level="DEBUG" if settings.PRISM_ENV == "development" else "INFO")
+
+    # 2b. OTel Tracing (ADR-117, DOC-12 Task 12.5)
+    init_tracing(settings)
+    logger.info(
+        "prism.tracing_initialized",
+        otlp_endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT or "stdout(dev)",
+        service_name=settings.OTEL_SERVICE_NAME,
+    )
 
     # 3. Prometheus registry is already populated by the import above
     logger.info(

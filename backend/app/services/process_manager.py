@@ -306,10 +306,16 @@ class ProcessManager:
         ]
         if resume_from_step is not None:
             cmd.append(f"--resume-from-step={resume_from_step}")
-        # OTel trace propagation（字段可能不存在）
-        trace_id = getattr(run, "otel_trace_id", None)
-        if trace_id:
-            cmd.append(f"--otel-trace-id={trace_id}")
+        # OTel trace propagation: inject current W3C traceparent (ADR-117)
+        # get_traceparent() reads from the currently-active OTel span context so
+        # the executor subprocess continues the same distributed trace.
+        try:
+            from app.observability.tracing import get_traceparent
+            traceparent = get_traceparent()
+        except Exception:
+            traceparent = None
+        if traceparent:
+            cmd.append(f"--otel-trace-id={traceparent}")
         return cmd
 
     def _build_env(self) -> dict[str, str]:

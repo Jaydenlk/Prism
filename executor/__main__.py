@@ -171,6 +171,24 @@ async def main() -> None:
     # assembler = PromptAssembler(agent_type=run.agent_type, tools=registry.list_definitions())
     # pipeline = ToolExecutionPipeline(registry, budget)
 
+    # 1b. OTel Tracing setup (ADR-117, DOC-12 Task 12.5)
+    # init_tracing() returns a Context derived from the traceparent argv so all
+    # spans in this process are children of the Backend "run" span.
+    from executor.observability.tracing import SpanAttr, SpanName, init_tracing  # noqa: F401
+
+    _otel_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    _prism_env = os.environ.get("PRISM_ENV", "production")
+    _parent_ctx = init_tracing(
+        otlp_endpoint=_otel_endpoint or None,
+        traceparent=args.otel_trace_id,
+        prism_env=_prism_env,
+    )
+    logger.info(
+        "harness.tracing.initialized",
+        otlp_endpoint=_otel_endpoint or "stdout(dev)",
+        has_parent_context=bool(args.otel_trace_id),
+    )
+
     # 3. BackendCallback（双通道：Redis 高频直通 + HTTP 关键事件重试）
     from executor.callbacks.backend_callback import BackendCallback
     from executor.router import TaskRouter
@@ -235,20 +253,34 @@ async def main() -> None:
 
     signal.signal(signal.SIGTERM, _sigterm)
 
-    # 8. 执行
+    # 8. 执行 — root span wraps the entire run (ADR-117 span tree)
+    from opentelemetry import trace as _otel_trace
+
+    _tracer = _otel_trace.get_tracer("prism-executor")
     try:
-        # FROM_DB: 执行入口（DOC-07 Task 7.4 实现）
-        # if args.resume_from_step is not None:
-        #     # Coordinator Recovery（DOC-04 v4 Task 4.3，DOC-07 v4 Task 7.4）
-        #     await engine.resume(from_step=args.resume_from_step)
-        # else:
-        #     await engine.run(run.prompt)
-        logger.info(
-            "harness.subprocess.started",
-            run_id=args.run_id,
-            session_id=args.session_id,
-            note="DB integration pending DOC-07 Task 7.4",
-        )
+        with _tracer.start_as_current_span(
+            SpanName.RUN,
+            context=_parent_ctx,
+            attributes={
+                SpanAttr.RUN_ID: args.run_id,
+                SpanAttr.SESSION_ID: args.session_id,
+                SpanAttr.USER_ID: args.user_id,
+                # agent_type / route_mode populated from DB in full integration
+            },
+        ):
+            # FROM_DB: 执行入口（DOC-07 Task 7.4 实现）
+            # if args.resume_from_step is not None:
+            #     # Coordinator Recovery（DOC-04 v4 Task 4.3，DOC-07 v4 Task 7.4）
+            #     await engine.resume(from_step=args.resume_from_step)
+            # else:
+            #     await engine.run(run.prompt)
+            logger.info(
+                "harness.subprocess.started",
+                run_id=args.run_id,
+                session_id=args.session_id,
+                otel_traceparent=args.otel_trace_id or "none",
+                note="DB integration pending DOC-07 Task 7.4",
+            )
     finally:
         stop_event.set()
         await heartbeat_task
