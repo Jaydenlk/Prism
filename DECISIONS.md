@@ -1663,4 +1663,36 @@
   - DOC-12 Task 12.6 structlog 日志事件名约定（run.started/tool.invoked 等）已与 SpanName 对齐，无冲突
   - 未来 QueryEngine.run() 集成时按 SpanAttr/SpanName 常量注入 agent.type / provider.name / model.id 等属性即可
 
-> **最后更新**: 2026-04-19(DOC-12 Task 12.5 — OTel Tracing W3C 跨进程传播 ADR-117; 39/51 Task 完成)
+---
+
+## DOC-12 Task 12.6: 结构化日志 structlog + contextvars（ADR-118）
+
+## ADR-118: structlog + contextvars 自动绑定 + JSON/Console 输出（DOC-12 Task 12.6）
+- **来源**: PRD v4 DOC-12 Task 12.6 Part A ADR-118；Batch 5 §B5-I
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/observability/logging.py` — init_logging(level, dev_mode) JSON/ConsoleRenderer; bind_request_context(request_id, user_id); bind_run_context(run_id, session_id, user_id, agent_type, trace_id); clear_contextvars(); StructlogRequestMiddleware ASGI middleware
+  - `backend/app/observability/__init__.py` — 导出 5 个新 logging 符号
+  - `backend/app/main.py` — register StructlogRequestMiddleware + dev_mode param to init_logging
+  - `executor/observability/logging.py` — 进程边界镜像版：init_logging + bind_run_context + clear_contextvars（禁止 import backend.app.*）
+  - `executor/observability/__init__.py` — 导出 3 个新 logging 符号
+  - `executor/__main__.py` — 1b 步调用 init_logging + bind_run_context（在 OTel Tracing 之前）
+  - `executor/engine/query_engine.py` — run() 入口 bind_contextvars; run.started/completed/failed + tool.invoked/exception 结构化事件
+- **实施 commit**: 96d4ad5
+- **偏离点**:
+  - `StructlogRequestMiddleware` 从 `X-Prism-User-Id` 内部头提取 user_id（JWT 在 ASGI 层无 DB 访问，Auth 路由在后置层 bind 用户 ID）；架构上合理，生产级 JWT 解析在 dependency 层完成后可通过 bind_contextvars(user_id=...) 追加补全。
+  - dev_mode 参数按 PRD "JSON 生产 / human-readable 开发" 精神落地（PRD Part B 代码片段仅示例 JSONRenderer，此处扩展支持 ConsoleRenderer）。
+- **验证结果**: 17 项验证全 PASS
+  - T1-T4 两侧 imports 全部可用（backend 5 符号 + executor 3 符号）
+  - T5-T6 init_logging + bind_request_context → JSON 输出含 request_id/user_id/event/timestamp/level PASS
+  - T7 bind_run_context 5 字段注入 PASS；T8 clear_contextvars 清除 PASS
+  - T9 executor side 等效 PASS；T10 dev_mode ConsoleRenderer PASS
+  - T11 event names: run.started/completed/failed/tool.invoked/tool.exception PASS
+  - T12 StructlogRequestMiddleware callable PASS；T13 main.py wiring PASS
+  - T14 executor/__main__ wiring PASS；T15 无 f-string logger calls PASS
+  - T16 {domain}.{action} 约定 PASS；T17 7 文件编译 PASS
+- **下游影响**:
+  - DOC-12 Task 12.7/12.8 可直接使用 structlog.get_logger() 和 bind_contextvars，无需额外配置
+  - heartbeat.stale / harness.compaction.tier{N} / callback.received 等事件名已在既有代码中符合规范
+
+> **最后更新**: 2026-04-19(DOC-12 Task 12.6 — structlog + contextvars + JSON/Console ADR-118; 40/51 Task 完成)

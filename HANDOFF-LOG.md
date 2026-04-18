@@ -35,6 +35,42 @@
 
 ---
 
+## 2026-04-19 -- DOC-12 Task 12.6 COMPLETED
+
+### 本次 session 做了什么
+- 扩展 backend/app/observability/logging.py — 完整 ADR-118 实现：init_logging(level, dev_mode) 支持 JSON(生产)/ConsoleRenderer(开发)；bind_request_context(request_id, user_id)；bind_run_context(run_id, session_id, user_id, agent_type, trace_id)；clear_contextvars()；StructlogRequestMiddleware ASGI middleware（从 X-Prism-User-Id 头提取 user_id）
+- 新建 executor/observability/logging.py — 进程边界镜像版：同等 init_logging + bind_run_context + clear_contextvars，禁止 import backend.app.*
+- 更新 backend/app/observability/__init__.py — 追加 5 个新 logging 符号
+- 更新 executor/observability/__init__.py — 追加 3 个新 logging 符号
+- 更新 backend/app/main.py — StructlogRequestMiddleware 注册为 ASGI 中间件；init_logging 传 dev_mode 参数
+- 更新 executor/__main__.py — 步骤 1b 先调 init_logging + bind_run_context，然后才初始化 OTel Tracing（顺序确保首个 logger.info 已有 JSON 格式）
+- 更新 executor/engine/query_engine.py — run() 入口 bind_contextvars(run/session/user/agent_type)；添加 run.started/completed/failed/tool.invoked/tool.exception 结构化事件；{domain}.{action} 规范全面应用
+
+### 验证结果
+- Part B 验证步骤: 17 项全 PASS
+  - T1-T4 两侧 imports PASS（backend 5 符号 + executor 3 符号）
+  - T5-T6 JSON 输出含 request_id/user_id/event/timestamp/level PASS
+  - T7 bind_run_context 5 字段 PASS；T8 clear_contextvars PASS
+  - T9 executor side PASS；T10 dev_mode ConsoleRenderer PASS
+  - T11-T16 event names / middleware / wiring / no-f-string / {domain}.{action} 全 PASS
+  - T17 7 文件 py_compile PASS
+- 质量门 10 项: PASS
+
+### 下一个 Task 需要注意
+- DOC-12 Task 12.7: 前端错误上报 POST /api/v1/frontend-errors (ADR-119)
+  - FrontendErrorPayload schema + 写 audit_logs + prism_frontend_errors_total{severity,viewport} + IP rate limit Redis SETNX
+  - viewport 三分档：<640=mobile / <1024=tablet / ≥1024=desktop
+  - 无认证要求，但防滥用 (≤60/IP/min)
+- StructlogRequestMiddleware 中 user_id 目前从 X-Prism-User-Id 内部头读取（ASGI 层无 DB）；全链路 JWT→user_id 注入需在 auth dependency 完成后追加 bind_contextvars(user_id=...) 实现补全，此为 Phase 2 改进点
+
+### 遗留风险 / 未决事项
+- structlog cache_logger_on_first_use=True：首次调用后处理器链被缓存，若需动态切换 level 需重新 configure()；生产环境 level 固定，无风险
+
+### Commit
+- `96d4ad5` — `feat(v4): structured logging with structlog + contextvars (ADR-118, DOC-12 Task 12.6)`
+
+---
+
 ## 2026-04-19 -- DOC-12 Task 12.5 COMPLETED
 
 ### 本次 session 做了什么
