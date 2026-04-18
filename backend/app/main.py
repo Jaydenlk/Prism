@@ -84,6 +84,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             message="Provider preset bootstrap failed (DB may not be ready). Will retry on first request.",
         )
 
+    # 4b. Bootstrap built-in MCP Servers (DOC-09 Task 9.1: scope='system', idempotent)
+    try:
+        from app.core.database import SessionLocal
+        from app.services.mcp_service import MCPService
+
+        with SessionLocal() as db:
+            inserted = MCPService.register_builtin_servers(db)
+            logger.info(
+                "prism.mcp_bootstrap",
+                inserted=inserted,
+                message=f"MCP built-in servers bootstrapped ({inserted} new).",
+            )
+    except Exception as exc:
+        logger.warning(
+            "prism.mcp_bootstrap_failed",
+            error=str(exc),
+            message="MCP built-in server bootstrap failed (DB may not be ready). Will retry on next startup.",
+        )
+
     # 5. Ensure admin user exists (DOC-06 Task 6.1 — idempotent, ADR-050)
     try:
         from app.core.database import SessionLocal

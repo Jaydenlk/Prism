@@ -5,6 +5,11 @@ mcp_servers: global registry of MCP servers (system or user-defined).
 user_mcp_installs: per-user enablement + config override.
 
 Unique constraint on user_mcp_installs: (user_id, mcp_server_id)
+
+DOC-09 Task 9.1: Added user_id column (nullable) to mcp_servers.
+  scope='system': user_id IS NULL  (built-ins, undeletable by users)
+  scope='user':   user_id = owner  (user-custom, owner-only access, 铁律 4)
+Migration: 004_add_user_id_to_mcp_servers
 """
 from __future__ import annotations
 
@@ -33,6 +38,7 @@ class McpServer(Base):
     mcp_servers table — DOC-01 v4 §4.2
 
     ``scope`` = 'system' (built-in) | 'user' (user-defined).
+    ``user_id`` is NULL for system-scope; set to owner UUID for user-scope.
     ``command`` + ``args`` define how to launch the MCP server process.
     ``env`` holds environment variables passed to the child process.
     """
@@ -46,6 +52,12 @@ class McpServer(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     scope: Mapped[str] = mapped_column(
         String(20), nullable=False, default="system"
+    )
+    # DOC-09 Task 9.1: user_id for user-scoped servers (nullable for system)
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
     )
     command: Mapped[str] = mapped_column(String(500), nullable=False)
     args: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
