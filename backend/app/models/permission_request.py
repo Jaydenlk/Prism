@@ -75,6 +75,9 @@ class PermissionRequest(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending"
     )
+    decision: Mapped[str | None] = mapped_column(
+        String(10), nullable=True  # 'allow' | 'deny' | None (pending)
+    )
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

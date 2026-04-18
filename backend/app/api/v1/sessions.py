@@ -1,17 +1,28 @@
 """
-Prism v2 — Session & Message API Endpoints (DOC-07 Task 7.1)
+Prism v2 — Session & Message API Endpoints (DOC-07 Task 7.1 + 7.3)
 
 Routes (all under /api/v1):
-  GET    /sessions                     — paginated session list (pinned first)
-  POST   /sessions                     — create a new empty session
-  GET    /sessions/{session_id}        — session detail
-  PATCH  /sessions/{session_id}        — update session (title / pin / config)
-  DELETE /sessions/{session_id}        — delete session (cascades runs + messages)
-  GET    /sessions/{session_id}/messages — message list (supports incremental query)
+  GET    /sessions                          — paginated session list (pinned first)
+  POST   /sessions                          — create a new empty session
+  GET    /sessions/{session_id}             — session detail
+  PATCH  /sessions/{session_id}             — update session (title / pin / config)
+  DELETE /sessions/{session_id}             — delete session (cascades runs + messages)
+  GET    /sessions/{session_id}/messages    — message list (supports incremental query)
+
+  (v4 Task 7.3):
+  GET    /sessions/{session_id}/stream      — SSE event stream (ticket auth + last_event_id)
+  POST   /sessions/{session_id}/permission-answer — 用户回答 permission ask (ADR-064)
 
 Incremental message query (ADR-060):
   ?after_sequence_no=N  — returns only messages with sequence_no > N
   ?limit=N              — max items to return (1–500, default 100)
+
+SSE (ADR-063 / ADR-057):
+  ?ticket=X             — 一次性 SSE ticket（不走 JWT，防 URL 泄漏）
+  ?last_event_id=Y      — 断线重连补发 Y 之后的事件
+
+Permission answer (ADR-064):
+  校验 request_id 归属 → UPDATE permission_requests → RPUSH perm_answer:{request_id}
 
 Ownership:
   All routes enforce user_id ownership via SessionService.get_session()
@@ -19,14 +30,20 @@ Ownership:
 """
 from __future__ import annotations
 
+import json
 import logging
-from typing import Annotated
+from datetime import datetime, timezone
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.models.permission_request import PermissionRequest
 from app.models.user import User
 from app.schemas.common import ApiResponse, PagedResponse
 from app.schemas.message import MessageResponse
@@ -37,6 +54,7 @@ from app.schemas.session import (
     UpdateSessionRequest,
 )
 from app.services.session_service import SessionService
+from app.services.sse_manager import SSEManager
 
 logger = logging.getLogger(__name__)
 
@@ -214,3 +232,205 @@ def list_messages(
     ]
 
     return ApiResponse(data=items)
+
+
+# ---------------------------------------------------------------------------
+# v4 Task 7.3: SSE event stream (ADR-063 / ADR-057)
+# ---------------------------------------------------------------------------
+
+def _format_sse(payload: dict[str, Any]) -> str:
+    """格式化单条 SSE 事件为 text/event-stream 协议格式。"""
+    event_id = payload.get("id", "")
+    event_name = payload.get("event", "message")
+    data = payload.get("data", {})
+    return f"id: {event_id}\nevent: {event_name}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.get("/{session_id}/stream")
+async def session_stream(
+    session_id: str,
+    ticket: str = Query(..., description="一次性 SSE ticket（DOC-06 ADR-057）"),
+    last_event_id: str | None = Query(
+        None, description="断线重连时补发此 ID 之后的事件"
+    ),
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> StreamingResponse:
+    """
+    v4 SSE 事件流端点（ADR-063 + ADR-057）。
+
+    认证：用 SSE ticket（一次性，60s TTL），不走 JWT Bearer。
+    断线重连：通过 last_event_id 从 Redis Stream 补发历史事件。
+    Tab 限制：每 session 最多 3 个并发 SSE 连接（ADR-063）。
+
+    SSE 事件格式：
+      id: {event_uuid}
+      event: {event_name}
+      data: {json}
+    """
+    # 1. 消费 ticket（atomic GETDEL，防重放）
+    from app.services.sse_ticket_service import SSETicketService
+    import redis.asyncio as aioredis
+
+    redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=False)
+    ticket_svc = SSETicketService(redis_client, settings)
+
+    try:
+        user_id = await ticket_svc.verify_and_consume(ticket, session_id)
+    except HTTPException:
+        raise
+    finally:
+        # 消费后立即关闭 ticket 验证专用连接（SSEManager 自己管理连接）
+        await redis_client.aclose()
+
+    # 2. 校验 session 归属（铁律 4）
+    svc = SessionService(db)
+    svc.get_session(user_id, session_id)  # 不存在/不归属 → 404
+
+    # 3. 占连接槽（多 tab 限制）
+    sse = SSEManager(settings.REDIS_URL)
+    acquired = await sse.acquire_conn_slot(session_id)
+    if not acquired:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many concurrent SSE connections for this session (max 3)",
+        )
+
+    async def event_gen():
+        """异步 SSE 事件生成器。"""
+        try:
+            # 4. 补发历史事件（若提供 last_event_id）
+            if last_event_id:
+                backfill = await sse.backfill_since(session_id, last_event_id)
+                for evt in backfill:
+                    yield _format_sse(evt)
+
+            # 5. 实时订阅 Redis pub/sub
+            pubsub = await sse.start_subscribe_async(session_id)
+            try:
+                async for message in pubsub.listen():
+                    if message.get("type") != "message":
+                        continue
+                    raw = message.get("data", b"")
+                    if isinstance(raw, bytes):
+                        raw = raw.decode("utf-8", errors="replace")
+                    try:
+                        payload = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    yield _format_sse(payload)
+            finally:
+                await pubsub.unsubscribe(f"sse:{session_id}")
+                await pubsub.aclose()
+        finally:
+            await sse.release_conn_slot(session_id)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# v4 Task 7.3: permission-answer 端点 (ADR-064)
+# ---------------------------------------------------------------------------
+
+class PermissionAnswerRequest(BaseModel):
+    """前端用户回答 permission ask 请求体。"""
+
+    request_id: str
+    decision: str  # "allow" | "deny"
+
+    @field_validator("decision")
+    @classmethod
+    def decision_must_be_valid(cls, v: str) -> str:
+        if v not in ("allow", "deny"):
+            raise ValueError("decision must be 'allow' or 'deny'")
+        return v
+
+
+@router.post(
+    "/{session_id}/permission-answer",
+    status_code=200,
+)
+async def permission_answer(
+    session_id: str,
+    body: PermissionAnswerRequest,
+    user: Annotated[User, Depends(get_current_user)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> dict[str, Any]:
+    """
+    v4 新增（ADR-064）：用户回答 permission ask。
+
+    流程：
+      1. 校验 request_id 属于当前用户的 session（铁律 4）
+      2. UPDATE permission_requests SET status='answered', decision=X, answered_at=now()
+      3. RPUSH perm_answer:{request_id} {decision} → 触发子进程 BLPOP 返回
+      4. 写 audit_log: permission.answered
+
+    Redis key 格式（ADR-028 固定）：perm_answer:{request_id}
+    """
+    import redis.asyncio as aioredis
+
+    # 校验 session 归属（铁律 4）
+    svc = SessionService(db)
+    session = svc.get_session(user.id, session_id)
+
+    # 查找 permission_request（校验归属）
+    req: PermissionRequest | None = (
+        db.query(PermissionRequest)
+        .filter(
+            PermissionRequest.request_id == body.request_id,
+            PermissionRequest.user_id == user.id,
+        )
+        .first()
+    )
+    if req is None or req.run.session_id != session_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Permission request not found",
+        )
+    if req.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Permission request already {req.status}",
+        )
+
+    # 更新 permission_requests
+    req.status = "answered"
+    req.decision = body.decision
+    req.answered_at = datetime.now(timezone.utc)
+    db.flush()
+
+    # 写 audit_log
+    from app.models.audit import AuditLog
+    log = AuditLog(
+        user_id=str(user.id),
+        action="permission.answered",
+        resource_type="permission_request",
+        resource_id=req.id,
+        details={"request_id": body.request_id, "decision": body.decision},
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(log)
+    db.commit()
+
+    # RPUSH perm_answer:{request_id} {decision}（key 格式 ADR-028 固定，不可变）
+    redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        await redis_client.rpush(f"perm_answer:{body.request_id}", body.decision)
+    finally:
+        await redis_client.aclose()
+
+    logger.info(
+        "permission.answered",
+        request_id=body.request_id,
+        user_id=str(user.id),
+        decision=body.decision,
+    )
+
+    return {"success": True}

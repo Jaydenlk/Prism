@@ -5,7 +5,9 @@ Startup sequence (lifespan):
   1. validate_secrets()        — ADR-004/ADR-050: three keys must be distinct >= 32 chars
   2. init_logging()            — ADR-118: structlog JSON + contextvars
   3. Import metrics registry   — ADR-116: registers all Prometheus metrics
-  4. Log "Prism v2 is ready"
+  4. Bootstrap provider presets + admin user
+  5. Start HeartbeatMonitor    — ADR-065: 每 10s 扫 harness:heartbeat:*，超 30s 标记 crashed
+  6. Log "Prism v2 is ready"
 
 Health endpoints (ADR-115, DOC-12 Task 12.3):
   GET /health/live     — liveness probe (always 200 if process is alive)
@@ -17,6 +19,7 @@ Metrics endpoint (ADR-116, DOC-12 Task 12.4):
 """
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -101,7 +104,53 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("prism.ready", message="Prism v2 is ready to serve requests.")
 
+    # 6. Start HeartbeatMonitor background task (ADR-065)
+    heartbeat_task: asyncio.Task | None = None
+    heartbeat_monitor = None
+    try:
+        import redis.asyncio as aioredis
+        from app.core.database import SessionLocal
+        from app.services.heartbeat_monitor import HeartbeatMonitor
+        from app.services.run_lifecycle import RunLifecycle
+
+        _redis_for_hb = aioredis.from_url(settings.REDIS_URL, decode_responses=False)
+        _db_for_hb = SessionLocal()
+        _lifecycle_for_hb = RunLifecycle(_db_for_hb)
+
+        heartbeat_monitor = HeartbeatMonitor(
+            redis_client=_redis_for_hb,
+            lifecycle=_lifecycle_for_hb,
+            scan_interval=10,
+            stale_threshold=30,
+        )
+        heartbeat_task = asyncio.create_task(heartbeat_monitor.run())
+        logger.info("prism.heartbeat_monitor_started", message="HeartbeatMonitor started (ADR-065).")
+    except Exception as exc:
+        logger.warning(
+            "prism.heartbeat_monitor_failed",
+            error=str(exc),
+            message="HeartbeatMonitor failed to start. Zombie Run detection disabled.",
+        )
+
     yield  # application serves requests here
+
+    # Shutdown: stop HeartbeatMonitor
+    if heartbeat_monitor is not None:
+        heartbeat_monitor.stop()
+    if heartbeat_task is not None:
+        try:
+            heartbeat_task.cancel()
+            await asyncio.wait_for(heartbeat_task, timeout=5.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        except Exception:
+            pass
+    # Close dedicated DB session used by heartbeat monitor
+    try:
+        if heartbeat_monitor is not None and hasattr(_db_for_hb, "close"):
+            _db_for_hb.close()
+    except Exception:
+        pass
 
     logger.info("prism.shutdown", message="Prism v2 shutting down.")
 

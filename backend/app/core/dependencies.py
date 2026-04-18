@@ -53,22 +53,27 @@ __all__ = [
 # Redis
 # ---------------------------------------------------------------------------
 
-def get_redis():
+async def get_redis():
     """
-    Yield a Redis client.
+    Yield an async Redis client (redis.asyncio.Redis).
 
-    NOT YET IMPLEMENTED.
-    Redis connection pool initialisation is deferred to DOC-03 / DOC-07
-    (TaskScheduler + IM Gateway tasks) where the full pub/sub lifecycle is
-    defined.  Importing this dependency before that wiring is complete will
-    raise NotImplementedError.
+    DOC-07 Task 7.3: Redis 依赖正式实装。
+    使用 from_url() 连接 settings.REDIS_URL，每次请求创建独立连接并在结束后关闭。
+
+    调用方：
+      - SSE ticket verify / consume (SSETicketService)
+      - permission-answer RPUSH (sessions.py)
+      - HeartbeatMonitor 使用独立连接，不经过此依赖
     """
-    raise NotImplementedError(
-        "get_redis() is not yet initialised. "
-        "Redis client setup is implemented in DOC-03 Task 3.1 / DOC-07 Task 7.1. "
-        "Do not call this dependency until that Task is complete."
-    )
-    yield  # pragma: no cover — generator shape required by FastAPI
+    import redis.asyncio as aioredis
+
+    from app.core.config import settings as _settings
+
+    client = aioredis.from_url(_settings.REDIS_URL, decode_responses=False)
+    try:
+        yield client
+    finally:
+        await client.aclose()
 
 
 # ---------------------------------------------------------------------------
