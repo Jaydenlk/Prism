@@ -1493,4 +1493,27 @@
 - **验证结果**: AdminStatsService content(harness.*+scan_iter+component_health+cache_savings) PASS
 - **下游影响**: DOC-11 Task 11.6 Admin Observability 面板 Dashboard 卡片消费此端点
 
-> **最后更新**: 2026-04-19(DOC-09 Task 9.3 — Admin audit logs + stats dashboard + user management ADR-083/084/085; DOC-09 完整收官 3/3; 34/51 Task 完成)
+## ADR-110: TokenEstimator 精确 tokenizer 直接上(DOC-12 Task 12.1)
+- **来源**: PRD v4 DOC-12 Task 12.1 Part A ADR-110; Batch 5 §A12-1
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/engine/token_estimator.py` — TokenEstimator ABC + AnthropicTokenCounter + TiktokenEstimator + CalibratingCharCountEstimator + create_estimator() 工厂
+  - `executor/engine/__init__.py` — 追加导出 4 个新符号
+  - `executor/engine/token_estimator_adapter.py` — 保留（DOC-03 Task 3.1 实现，DriverTokenEstimator 是 AnthropicTokenCounter 的早期版本，互补）
+- **实施 commit**: (见 feat commit)
+- **偏离点**: Part B code sketch 仅给出 CharCountEstimator + TiktokenEstimator；按 ADR-110 v4 精神补充了 AnthropicTokenCounter（包装 ModelAdapter.count_tokens()）和 CalibratingCharCountEstimator（EMA 校准，observer 模式）。context_budget.py 已有正确 TokenEstimator Protocol 和依赖注入，无需改动。
+- **验证结果**: py_compile PASS + TokenEstimator 3实现测试 PASS + factory PASS + process boundary check PASS
+- **下游影响**: DOC-12 Task 12.2 HarnessAnalytics 聚合可调用 CalibratingCharCountEstimator.observe_usage()
+
+## ADR-111: ResourceMonitor 按百分比阈值(DOC-12 Task 12.1)
+- **来源**: PRD v4 DOC-12 Task 12.1 Part A ADR-111; Batch 5 §A12-2
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/resource_monitor.py` — ResourceMonitor(memory_warn_pct=70.0/memory_critical_pct=85.0/cpu_warn_pct=80.0/cpu_critical_pct=95.0); check_health() 返回 memory_percent/cpu_percent/thresholds; is_memory_warn()/is_memory_critical()
+  - `backend/app/services/route_analytics.py` — RouteAnalytics.get_accuracy_stats(days=30) + get_agent_type_distribution(days=7)
+- **实施 commit**: (见 feat commit)
+- **偏离点**: Part B 中 ResourceMonitor 使用绝对值(500MB/1500MB)；严格按 ADR-111 改为百分比阈值(70%/85%)。check_health() 增加 cpu_percent/child_count/queue_depth/thresholds 字段。
+- **验证结果**: py_compile PASS + ResourceMonitor 百分比阈值检查 PASS + is_memory_warn/critical PASS + RouteAnalytics PASS
+- **下游影响**: DOC-12 Task 12.3 /health/detailed 端点直接调用 ResourceMonitor.check_health()；Task 12.8 AlertDispatcher 可消费 is_memory_critical() 触发告警
+
+> **最后更新**: 2026-04-19(DOC-12 Task 12.1 — TokenEstimator + ResourceMonitor ADR-110/111; 35/51 Task 完成)

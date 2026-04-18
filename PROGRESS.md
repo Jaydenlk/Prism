@@ -133,7 +133,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-12 Task 12.1: TokenEstimator + ResourceMonitor(百分比) | pending | — | — | — | — |
+| DOC-12 Task 12.1: TokenEstimator + ResourceMonitor(百分比) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 3新文件+1修改: token_estimator.py(TokenEstimator ABC+AnthropicTokenCounter+TiktokenEstimator+CalibratingCharCountEstimator+create_estimator ADR-110); resource_monitor.py(百分比阈值70%/85% ADR-111); route_analytics.py(RouteAnalytics 2方法); engine/__init__追加4导出; 8项验证全PASS |
 | DOC-12 Task 12.2: Harness Analytics + Entropy(8 信号) | pending | — | — | — | — |
 | DOC-12 Task 12.3: /health 3 子端点 + Docker 资源限制 | pending | — | — | — | — |
 | DOC-12 Task 12.4: Prometheus Metrics(60+) + 4 Grafana Dashboard | pending | — | — | — | — |
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 34
+- **已完成**: 35
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 18
+- **pending**: 17
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-09 Task 9.3 完成: Admin audit logs + stats dashboard + user management ADR-083/084/085; DOC-09 完整收官 3/3; 34/51 Task 完成）
-> **下一个动作**: DOC-10 Task 10.1 — Next.js 搭建 + 设计系统
+> **最后更新**: 2026-04-19（DOC-12 Task 12.1 完成: TokenEstimator + ResourceMonitor ADR-110/111; 35/51 Task 完成）
+> **下一个动作**: DOC-12 Task 12.2 — Harness Analytics + Entropy Detection(8 信号)

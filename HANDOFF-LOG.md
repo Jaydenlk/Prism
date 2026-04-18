@@ -35,6 +35,44 @@
 
 ---
 
+## 2026-04-19 -- DOC-12 Task 12.1 COMPLETED
+
+### 本次 session 做了什么
+- 新建 executor/engine/token_estimator.py — TokenEstimator ABC + AnthropicTokenCounter(包装 ModelAdapter.count_tokens(), Claude首选) + TiktokenEstimator(cl100k_base, OpenAI/DeepSeek) + CalibratingCharCountEstimator(字符计数+EMA observer校准, fallback) + create_estimator() 工厂 (ADR-110)
+- 修改 executor/engine/__init__.py — 追加导出4新符号: AnthropicTokenCounter / CalibratingCharCountEstimator / TiktokenEstimator / create_estimator
+- 新建 backend/app/services/resource_monitor.py — ResourceMonitor 百分比阈值(memory_warn=70%/critical=85%, cpu_warn=80%/critical=95%); check_health()含thresholds/queue_depth; is_memory_warn()/is_memory_critical() (ADR-111)
+- 新建 backend/app/services/route_analytics.py — RouteAnalytics.get_accuracy_stats(days=30) + get_agent_type_distribution(days=7); 查 runs.harness_summary JSONB route_reason
+
+### 验证结果
+- py_compile token_estimator.py: PASS
+- py_compile resource_monitor.py: PASS
+- py_compile route_analytics.py: PASS
+- TokenEstimator 3实现(CharCount/Tiktoken/CalibratingChar)基本估算: PASS
+- CalibratingCharCountEstimator.observe_usage EMA校准: PASS (6次后 factor=1.038)
+- TiktokenEstimator.estimate_messages dict格式: PASS (22 tokens)
+- executor.engine 4新符号导出 + process boundary check: PASS
+- ResourceMonitor ADR-111百分比阈值(70%/85%) + custom threshold触发: PASS
+- 共8项验证全 PASS
+
+### 下一个 Task 需要注意
+- DOC-12 Task 12.2: HarnessAnalytics + EntropyDetector(8信号)
+  - aggregate() 需加 offset_days 参数，避免窗口重叠(PRD Part A 窗口修复P0)
+  - EntropyDetector 使用 current(days=7,offset=0) vs previous(days=7,offset=7) 非重叠窗口
+  - ThresholdCalibrator 每周扫30天 harness_summary p90，EMA平滑 0.7*current+0.3*p90
+  - CalibratingCharCountEstimator.observe_usage() 在 AnthropicDriver stream结束后调用
+- ResourceMonitor.check_health() 的 queue_depth 参数由调用方注入(避免循环导入 task_service)
+- DOC-12 Task 12.3 /health/detailed 端点直接调用 ResourceMonitor.check_health()
+- context_budget.py 的 TokenEstimator Protocol 已存在且正确，token_estimator.py 的 TokenEstimator ABC 是并存策略实现，无需合并
+
+### 遗留风险 / 未决事项
+- AnthropicTokenCounter 在 token_estimator.py 中与 token_estimator_adapter.py 的 DriverTokenEstimator 功能重叠；两者目前并存，DOC-12 Task 12.2+ 可统一引用 token_estimator.py；无功能冲突
+- TiktokenEstimator 首次调用需下载编码器文件(~1MB)，Docker 环境需预热或预下载
+
+### Commit
+- `702eeb8` — `feat(v4): DOC-12 Task 12.1 — TokenEstimator + ResourceMonitor (ADR-110/111)`
+
+---
+
 ## 2026-04-19 -- DOC-09 Task 9.3 COMPLETED + DOC-09 DONE 收官 checkpoint
 
 ### 本次 session 做了什么
