@@ -140,19 +140,19 @@
 | DOC-12 Task 12.5: OTel Tracing(跨进程 W3C) | completed | 2026-04-19 | 2026-04-19 | 648113a | 2新文件+5修改: backend/tracing.py(TracerProvider+OTLP/stdout+get_traceparent+extract_traceparent+SpanAttr/SpanName ADR-117); executor/tracing.py(executor-side init+W3C extract+parent ctx); backend/__init__.py+executor/__init__.py导出; main.py step 2b init_tracing; process_manager._build_command()动态get_traceparent(); __main__.py init_tracing+SpanName.RUN span+_parent_ctx; 16项验证全PASS |
 | DOC-12 Task 12.6: 结构化日志(structlog + contextvars) | completed | 2026-04-19 | 2026-04-19 | 96d4ad5 | 1新文件+6修改: backend/logging.py(5符号 init_logging/bind_request_context/bind_run_context/clear_contextvars/StructlogRequestMiddleware ADR-118); executor/logging.py(镜像3符号); 两侧__init__.py更新; main.py添加StructlogRequestMiddleware+dev_mode; executor/__main__: init_logging+bind_run_context在tracing前; query_engine.py: bind_contextvars+run.started/completed/failed/tool.invoked/tool.exception; 17项验证全PASS |
 | DOC-12 Task 12.7: 前端错误上报端点 | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 2新文件+1修改: schemas/frontend.py(FrontendErrorPayload 11字段); api/v1/frontend.py(POST /frontend-errors 204; _classify_viewport mobile/tablet/desktop; _get_client_ip XFF; Redis SETNX 60/IP/min 429; AuditLog action=frontend.error; prism_frontend_errors_total{severity,viewport}; structlog 4级dispatch); api/v1/__init__.py注册frontend_router; ADR-119落地; 14项验证全PASS; 前端集成不在本Task范围 |
-| DOC-12 Task 12.8: AlertDispatcher(severity 分档) | pending | — | — | — | — |
+| DOC-12 Task 12.8: AlertDispatcher(severity 分档) | completed | 2026-04-19 | 2026-04-19 | c6dd8c5 | 5修改+1新建: alert_dispatcher.py(ADR-120 完整 4 档; _format_im_message Markdown+链接; EmailService SMTP Phase 1); config.py(+7 alert fields); admin.py(GET+PATCH /alerts/config); entropy_detector.py(detect+alert_dispatcher); heartbeat_monitor.py(stale→dispatch critical); resource_monitor.py(check_and_dispatch 70%/85%); monitoring/rules/prism_alerts.yml(6 groups 15 rules); 26项验证全PASS; DOC-12 8/8 DONE |
 
 ---
 
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 41
+- **已完成**: 42
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 11
+- **pending**: 10（全部为前端 DOC-10/DOC-11）
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-12 Task 12.7 完成: 前端错误上报端点 ADR-119; 41/51 Task 完成）
-> **下一个动作**: DOC-12 Task 12.8 — AlertDispatcher severity 分档
+> **最后更新**: 2026-04-19（DOC-12 Task 12.8 完成: AlertDispatcher ADR-120; 42/51 Task 完成）
+> **下一个动作**: 非前端项目收官 ✅ — 前端 DOC-10 Task 10.1 起步（独立 session）

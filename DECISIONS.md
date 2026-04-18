@@ -1731,3 +1731,64 @@
   - DOC-12 Task 12.8 AlertDispatcher 可在 report_frontend_error 中 severity=critical 时追加 AlertDispatcher.dispatch() 调用
 
 > **最后更新**: 2026-04-19(DOC-12 Task 12.7 — 前端错误上报端点 ADR-119; 41/51 Task 完成)
+
+---
+
+## DOC-12 Task 12.8: AlertDispatcher 完整实现（ADR-120）
+
+## ADR-120: AlertDispatcher severity 分档分发（audit/SSE/IM/email）(DOC-12 Task 12.8)
+- **来源**: PRD v4 DOC-12 Task 12.8 Part A ADR-120；Batch 5 §B5-IV
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/alert_dispatcher.py` — 完整 ADR-120 实现（替换 Task 7.4 骨架）
+    * 4 档 severity: info=structlog / warning=audit / error=audit+SSE / critical=audit+SSE+IM+email
+    * `_format_im_message()`: Markdown 格式化（event_type + detail preview + detail link）
+    * `EmailService`: Phase 1 SMTP（STARTTLS，未配置时 fail-open 降级）
+    * `AlertConfig.FIELDS`: 7 个 admin 可配置字段映射
+    * 各通道 try/except 独立 — audit_log 最终保证写入（critical 降级备份）
+  - `backend/app/core/config.py` — +7 Settings 字段（ALERT_IM_CHANNEL/ALERT_EMAIL/SMTP_*/PRISM_BASE_URL）
+  - `backend/app/api/v1/admin.py` — GET+PATCH /admin/alerts/config（AlertConfigRequest/AlertConfigResponse）
+  - `backend/app/services/entropy_detector.py` — `detect()` 增加 `alert_dispatcher` 参数（ADR-120 Part B §4）
+  - `backend/app/services/heartbeat_monitor.py` — `__init__` 增加 `alert_dispatcher` 参数；stale 时 dispatch("critical","run.crashed")（ADR-120 Part B §5）
+  - `backend/app/services/resource_monitor.py` — `check_and_dispatch()` — 70%=warning/85%=critical（ADR-120 Part B §6）
+  - `monitoring/rules/prism_alerts.yml` — 6 rule groups / 15 alert rules；dispatcher_channel label 标注分级
+  - `monitoring/prometheus/prometheus.yml` — job_name 更新为 prism-backend（与 PrismBackendDown 规则 up{job} 对齐）
+- **实施 commit**: c6dd8c5
+- **偏离点**:
+  - PRD ADR-120 文字描述 critical=IM+email，Task 描述称 critical=im+sms+call。**采用 PRD ADR-120 文字定义**（IM+email），sms/call 非 PRD 真相源
+  - IM 告警消息通过 IMGateway 发送，接口适配两种调用方式（send_text(p, c, m) 或 send(channel, m)）以兼容不同适配器
+  - email 在 critical 级别才发送（非 warning/error），严格遵守 ADR-120 表格
+  - Admin PATCH /alerts/config 修改进程内存 Settings，不持久化至 .env（Phase 1 合理降级）
+- **验证结果**: 26 项验证全 PASS（T1~T19 共 26 断言）
+  - T1 4 severity 常量 PASS
+  - T2 _format_im_message Markdown 含链接 PASS
+  - T3 _format_im_message 无链接 PASS
+  - T4 EmailService.is_configured=False PASS
+  - T5 EmailService.is_configured=True PASS
+  - T6 info → 不写 audit_log PASS
+  - T7 warning → 写 audit_log PASS
+  - T7b warning → 不发 email PASS
+  - T8 error → SSE published PASS
+  - T8b error → 不发 email PASS
+  - T9a critical → audit_log PASS
+  - T9b critical → SSE PASS
+  - T9c critical → IM (feishu:oc_xxx) PASS
+  - T9d critical → email PASS
+  - T10 unknown severity 归一化为 warning + 写 audit PASS
+  - T11 critical 无 im_service → graceful degradation PASS
+  - T12 HeartbeatMonitor accepts alert_dispatcher PASS
+  - T13 ResourceMonitor.check_and_dispatch critical@90% PASS
+  - T14 Settings 7 alert 字段 PASS
+  - T15 AlertConfig.FIELDS 7 映射 PASS
+  - T16 prism_alerts.yml 6 rule groups PASS
+  - T16b severity labels critical/error/warning PASS
+  - T16c dispatcher_channel 3 级别 PASS
+  - T17 EntropyDetector.detect alert_dispatcher 参数 PASS
+  - T18 admin.py GET+PATCH /alerts/config PASS
+  - T19 IM message event_type+detail+link PASS
+- **下游影响**:
+  - DOC-12 全部 8 Task 完成 — Prism v2 后端可观测性体系完整交付
+  - 非前端部分（DOC-02~DOC-09 + DOC-12）全部完成，**整体非前端项目收官**
+  - 前端（DOC-10/DOC-11）独立实施，不受本 Task 影响
+
+> **最后更新**: 2026-04-19(DOC-12 Task 12.8 — AlertDispatcher ADR-120; DOC-12 8/8 DONE; 非前端项目收官)

@@ -35,6 +35,59 @@
 
 ---
 
+## 2026-04-19 -- DOC-12 Task 12.8 COMPLETED ✅ | DOC-12 DONE 8/8 | 非前端项目收官
+
+### DOC-12 DONE checkpoint
+- DOC-12 全部 8 Task 完成（12.1 TokenEstimator→12.2 Entropy→12.3 Health→12.4 Prometheus→12.5 OTel→12.6 Structlog→12.7 FrontendErrors→12.8 AlertDispatcher）
+- ADR-110~ADR-120 全部落地（ADR-120 = AlertDispatcher severity 4 档分发）
+
+### 非前端项目收官 checkpoint（DOC-02~DOC-09 + DOC-12）
+- DOC-02（4 Task）: 项目骨架 + PrismMessage + Provider管理 + Prompt引擎
+- DOC-03（6 Task）: TAOR循环 + Middleware + Hook/Permission + Guardrails + Compaction + Harness配置
+- DOC-04（5 Task）: 6种Agent + Fork隔离 + Coordinator + TaskRouter + PluginBuilder
+- DOC-05（7 Task）: Skill三级 + MCP双通道 + Hook治理 + PluginHost + Skills Registry + CLI + CC兼容
+- DOC-06（2 Task）: JWT三密钥 + SSE ticket + 用户管理 + 邀请码
+- DOC-07（4 Task）: Session CRUD + Run生命周期 + Callback+SSE + 子进程调度
+- DOC-08（3 Task）: IM适配器 + 飞书/企微/Telegram + 用户绑定
+- DOC-09（3 Task）: MCP管理 + Provider用量 + Admin审计
+- DOC-12（8 Task）: 完整可观测性体系（Token/Resource/Entropy/Health/Prometheus/OTel/Structlog/AlertDispatcher）
+- **总计**: 42/51 Task 完成（剩余 10 Task 全为前端 DOC-10/DOC-11）
+- **非前端项目 100% 完成**
+
+### 本次 session 做了什么
+- 扩展 backend/app/services/alert_dispatcher.py（Task 7.4 骨架→ADR-120 完整实现）
+  * 4 档 severity: info=structlog / warning=audit / error=audit+SSE / critical=audit+SSE+IM+email
+  * `_format_im_message()` Markdown 格式化（event_type + detail preview + detail link）
+  * `EmailService` Phase 1 SMTP（STARTTLS，未配置时 fail-open 降级）
+  * `AlertConfig.FIELDS` 7 个 admin 可配置字段；各通道 try/except 独立
+- 更新 backend/app/core/config.py — +7 Settings 字段（ALERT_IM_CHANNEL/ALERT_EMAIL/SMTP_*/PRISM_BASE_URL）
+- 扩展 backend/app/api/v1/admin.py — GET+PATCH /admin/alerts/config（AlertConfigRequest/AlertConfigResponse）
+- 更新 backend/app/services/entropy_detector.py — detect() + alert_dispatcher 参数（ADR-120 Part B §4）
+- 更新 backend/app/services/heartbeat_monitor.py — __init__ + alert_dispatcher；stale→dispatch("critical","run.crashed")（§5）
+- 新增 backend/app/services/resource_monitor.py.check_and_dispatch() — 70%=warning/85%=critical（§6）
+- 新建 monitoring/rules/prism_alerts.yml — 6 rule groups / 15 alert rules；dispatcher_channel 标注
+- 更新 monitoring/prometheus/prometheus.yml — job_name prism-backend（与告警规则 up{job} 对齐）
+
+### 验证结果
+- Part B 验证步骤：26 项全 PASS（T1~T19 含 7 个 T9a/b/c/d + T16b/c 等子项）
+- 质量门 10 项：PASS
+
+### 下一个 Task 需要注意
+- 前端 DOC-10 Task 10.1（Next.js 搭建）开始时需要注意：
+  * POST /frontend-errors 端点已在 Task 12.7 实现，前端 apiClient 直接调用即可
+  * AlertDispatcher 已接入所有后端告警路由，前端无需感知
+  * PRISM_BASE_URL env 变量用于 IM 消息链接（生产环境务必设置）
+  * Admin /alerts/config PATCH 端点仅在内存生效（重启恢复），生产需写入 .env
+
+### 遗留风险 / 未决事项
+- SMTP_PASSWORD 未出现在 AlertConfigResponse（安全考虑），仅在 .env 配置
+- IM 告警消息目前使用 SMTPlib 同步调用（在 async dispatch 中直接调用），生产高并发时可考虑 run_in_executor
+
+### Commit
+- `c6dd8c5` — `feat(v4): AlertDispatcher severity routing (audit/SSE/IM/email) — DOC-12 Task 12.8 ADR-120`
+
+---
+
 ## 2026-04-19 -- DOC-12 Task 12.7 COMPLETED
 
 ### 本次 session 做了什么
