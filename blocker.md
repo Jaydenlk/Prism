@@ -81,6 +81,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **DOC-05 Task 5.5 原标 ADR-047（Skills Registry Phase 1 仅 Local + GitHub 两源）用 ADR-051**（PRD ADR-047 已被 DOC-05 Task 5.2 MCP agent-scoped 白名单占用。Task 5.5 的 Skills Registry 多源聚合平移至 ADR-051）。⚠️ DOC-06 原 ADR-050 已被 DOC-05 Task 5.4 占用，DOC-06 原 ADR-051 现又被 DOC-05 Task 5.5 占用，DOC-06 Task 6.1 落地时 ADR 须从 **ADR-052** 起接续。后续 DOC-05 Task 5.6+ 的 ADR 从 ADR-052 接续。
 
+**DOC-05 Task 5.6 原标 ADR-048/049（Agent Tool 仅搜索 + Backend 写 skill_installs 表）用 ADR-052/053**（PRD ADR-048 已被 DOC-05 Task 5.3 HookSystem 优先级+Phase1过滤+scoped注销占用；PRD ADR-049 已被 DOC-05 Task 5.3 Plugin 命名空间占用。Task 5.6 的两条 ADR 依次平移为 ADR-052/053：Agent Tool 仅搜索权限=ADR-052；Backend skill_install_service+Redis缓存key格式=ADR-053）。⚠️ DOC-06 Task 6.1 落地时 ADR 须从 **ADR-054** 起接续（ADR-052/053 已被本 Task 占用）。后续 DOC-05 Task 5.7 的 ADR 从 ADR-054 接续（须检查与 DOC-06 剩余范围是否冲突）。
+
 ---
 
 ### Action required from human reviewer

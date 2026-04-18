@@ -829,7 +829,68 @@
   - DOC-06 Task 6.1 落地三密钥 ADR 时，DOC-06 原 ADR-050 编号已被占用（ADR-050 = PluginHost，见 blocker.md），须从 ADR-051 之后继续（ADR-052+）
   - Backend skill_install_service（Task 5.6）调用 SkillsRegistry.install() 后写 skill_installs 表
 
-> **最后更新**: 2026-04-19（DOC-05 Task 5.5 — Skills Registry Local+GitHub 两源 + ADR-051）
+---
+
+## DOC-05 Task 5.6: Skills CLI + Agent Tool 仅搜索（ADR-052 / ADR-053）
+
+## ADR-052: Agent Tool 仅搜索权限——无 install/uninstall/update（DOC-05 Task 5.6）
+- **来源**: PRD v4 DOC-05 Task 5.6 Part A ADR-048（PRD 原标 ADR-048；因 DOC-05 Task 5.3 HookSystem 优先级+Phase1过滤+scoped注销已占用 ADR-048，平移至 ADR-052，见 blocker.md）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/tools/builtin/skills_search.py` — SkillsSearchTool（name="skills_search"，capabilities=[]，input_schema: {query,source,limit}，execute() 调用 SkillsRegistry.search()，返回 JSON 含 note 提示用户走 UI/CLI 安装）
+  - `executor/tools/builtin/__init__.py` — register_builtin_tools() 追加 SkillsSearchTool 注册 + skills_registry 参数
+- **实施 commit**: (本 Task feat commit)
+- **偏离点**:
+  1. ADR 编号从 PRD 原标 ADR-048 平移至 ADR-052（见 blocker.md 编号平移链）
+  2. SkillsSearchTool 支持 limit 参数（默认 20，最大 50），PRD 未指定但合理添加
+  3. 无 GITHUB_TOKEN 时 GitHubSource 返回空列表 + warning（不 raise），符合 Phase 1 降级策略
+  4. SkillsSearchTool 懒加载默认 SkillsRegistry（LocalSource + GitHubSource），也接受注入的 registry 实例
+- **验证结果**: 全部验证 PASS
+  - py_compile PASS
+  - tool.name == "skills_search" PASS
+  - tool.capabilities == [] PASS
+  - input_schema required == ["query"] PASS
+  - source enum == ["local","github"] PASS
+  - execute() 搜索测试（含临时 Skill）PASS
+  - ADR-052 约束（无 install/action 字段）PASS
+  - register_builtin_tools() 注册 skills_search PASS
+  - 进程边界（无 backend.app import）PASS
+- **下游影响**:
+  - DOC-11 Task 11.5 Skills Store 页面展示 skills_search 返回结果
+  - DOC-07 Task 7.4 executor 子进程注册 SkillsSearchTool 时可注入 PluginHost 的 SkillsRegistry 实例
+
+## ADR-053: Backend 写 skill_installs 表——Redis 缓存 key 格式 skill_install:status:{user_id}:{skill_name} TTL 600s（DOC-05 Task 5.6）
+- **来源**: PRD v4 DOC-05 Task 5.6 Part A ADR-049（PRD 原标 ADR-049；因 DOC-05 Task 5.3 Plugin 命名空间已占用 ADR-049，平移至 ADR-053，见 blocker.md）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/skill_install_service.py` — SkillInstallService（install/uninstall/list_installed/get_install）+ Redis key 格式 `skill_install:status:{user_id}:{skill_name}` TTL=600s + UPSERT 语义（同 user_id+skill_name 冲突则更新）
+  - `backend/app/api/v1/skills.py` — 6 条路由（GET /search / GET /installed / POST /install / DELETE /{skill_name} / POST /{skill_name}/update / GET /{skill_name}）+ SkillPackageResponse/SkillInstallRequest/SkillInstallResponse/SkillUpdateRequest Pydantic schema + Prometheus `prism_skill_searches_total` / `prism_skill_installs_total`
+  - `backend/app/api/v1/__init__.py` — include_router(skills_router)
+  - `executor/cli/skills_cli.py` — SkillsCLI（cmd_search/cmd_install/cmd_uninstall/cmd_update/cmd_list/cmd_info + backend_url 可选 HTTP 同步）+ build_parser() argparse + main() 入口
+  - `executor/cli/__init__.py` — 新建 cli 子包，导出 SkillsCLI
+- **实施 commit**: (本 Task feat commit)
+- **偏离点**:
+  1. ADR 编号从 PRD 原标 ADR-049 平移至 ADR-053（见 blocker.md）
+  2. CLI 无 backend_url 时直接操作文件系统（开发者模式），有 backend_url 时发 HTTP 同步 DB；PRD 未明确拆分，此实现更灵活
+  3. skill_installs ORM 表现有 metadata_ JSONB 列，Task 5.6 将 install_path/has_hooks/has_mcp/status 存入 metadata_ 而非新增列（schema frozen 原则，不跑 alembic revision）
+  4. Backend skills.py 中 _get_redis_client() 在 DOC-07 Task 7.1 前返回 None（Redis 未就绪时不阻断请求，只跳过缓存）
+  5. Prometheus Counter 采用 lazy init + try/except 防重复注册（测试环境 / 重载）
+- **验证结果**: 全部验证 PASS
+  - py_compile PASS（skills_search.py / skills_cli.py / skill_install_service.py / skills.py / api/v1/__init__.py）
+  - Redis key == "skill_install:status:{user_id}:{skill_name}" PASS
+  - Redis TTL == 600s PASS
+  - Redis SET mock 调用验证 PASS
+  - SkillInstallService.install UPSERT（UPDATE 路径不调用 add）PASS
+  - SkillInstallService.uninstall（found=True / found=False）PASS
+  - Backend API 路由 6 条（/search / /installed / /install / /{skill_name} / /{skill_name}/update / /{skill_name}）PASS
+  - SkillsCLI cmd_search + cmd_list PASS
+  - 进程边界（executor/cli/ 无 backend.app import）PASS
+- **下游影响**:
+  - DOC-06 Task 6.1 落地三密钥 ADR 时，须从 ADR-054 起编号（ADR-052/053 已被本 Task 占用）
+  - DOC-07 Task 7.1 实现 Redis 连接池后，_get_redis_client() 切换为真实连接
+  - DOC-11 Task 11.5 Skills Store UI 页面调用 GET /api/v1/skills/search + POST /api/v1/skills/install
+
+> **最后更新**: 2026-04-19（DOC-05 Task 5.6 — Skills CLI + Agent Tool 仅搜索 + ADR-052/053）
 
 ---
 

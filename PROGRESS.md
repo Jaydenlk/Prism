@@ -62,7 +62,7 @@
 | DOC-05 Task 5.3: Hook 治理(4 handler) | completed | 2026-04-19 | 2026-04-19 | (见 commit) | 1新文件+3修改: namespace.py(PluginNamespace ADR-049); events.py(PHASE1/2_EVENTS ADR-048); system.py(priority+hook_id三元组+unregister+unregister_by_prefix+Phase1过滤); skill_loader.py(Task5.1 unregister_by_prefix stub解决); hooks/__init__导出PHASE1/2_EVENTS; plugins/__init__导出PluginNamespace; 全部验证PASS |
 | DOC-05 Task 5.4: PluginHost(变量替换) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 2新文件+1修改: plugin_types.py(PluginConfig+PluginScope 三级); host.py(PluginHost+PluginVariableExpander+ENV_WHITELIST sandbox); plugins/__init__导出5新符号; 变量替换9种${VAR}; CC兼容${CLAUDE_PLUGIN_ROOT}; Platform/User/Session冲突检测+audit; shutdown()解Task5.2 MCPClient.stop() TODO; ADR-050落地; 全部验证PASS |
 | DOC-05 Task 5.5: Skills Registry(Local+GitHub) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 1新文件+1修改: skills_registry.py(SkillPackage/SkillBundle/InstalledSkill 3 dataclass + SkillSource ABC + LocalSource + GitHubSource + SkillsRegistry); __init__.py 导出 7 新符号; ADR-051 落地; 全部 9 项验证 PASS |
-| DOC-05 Task 5.6: Skills CLI + Agent Tool(仅搜索) | pending | — | — | — | — |
+| DOC-05 Task 5.6: Skills CLI + Agent Tool(仅搜索) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 5新文件+2修改: skills_search.py(SkillsSearchTool ADR-052 只读 capabilities=[]); cli/__init__.py + cli/skills_cli.py(SkillsCLI 6子命令+backend_url HTTP同步); skill_install_service.py(UPSERT+Redis TTL=600s ADR-053); skills.py(6路由+Prometheus); builtin/__init__追加SkillsSearchTool; api/v1/__init__追加skills_router; 全部验证PASS |
 | DOC-05 Task 5.7: CC 兼容层(ConversionReport) | pending | — | — | — | — |
 
 ---
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 20
+- **已完成**: 21
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 31
+- **pending**: 30
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-05 Task 5.5 完成: Skills Registry Local+GitHub 两源 + ADR-051）
-> **下一个动作**: DOC-05 Task 5.6 — Skills CLI + Agent Tool（仅搜索）
+> **最后更新**: 2026-04-19（DOC-05 Task 5.6 完成: Skills CLI + Agent Tool 仅搜索 + ADR-052/053）
+> **下一个动作**: DOC-05 Task 5.7 — CC 兼容层（ConversionReport）
