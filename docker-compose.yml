@@ -1,0 +1,166 @@
+version: "3.9"
+
+# Prism v2 — Production Docker Compose
+# ADR-115: All services have deploy.resources limits + reservations + healthcheck
+# ADR-114: backend healthcheck uses /health/live (liveness probe)
+
+networks:
+  prism-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redis-data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 — primary database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-prism}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-prism}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - prism-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prism} -d ${POSTGRES_DB:-prism}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 500M
+        reservations:
+          cpus: "0.2"
+          memory: 200M
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 — task queue, SSE pub/sub, heartbeat, circuit breaker
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly yes
+      - --appendfsync everysec
+      - --maxmemory 128mb
+      - --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - prism-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: 200M
+        reservations:
+          cpus: "0.1"
+          memory: 80M
+
+  # ---------------------------------------------------------------------------
+  # Backend — FastAPI + Executor subprocess pool
+  # ADR-114: healthcheck uses /health/live (never touches DB/Redis)
+  # ADR-115: limits 1.5 CPU / 1200M RAM; reservations 0.5 CPU / 400M RAM
+  # ---------------------------------------------------------------------------
+  backend:
+    image: prism-backend:2.0
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PRISM_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - prism-net
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1200M
+        reservations:
+          cpus: "0.5"
+          memory: 400M
+
+  # ---------------------------------------------------------------------------
+  # nginx 1.27 — reverse proxy + SSE passthrough
+  # ADR-115: limits 0.3 CPU / 150M RAM; reservations 0.1 CPU / 50M RAM
+  # SSE: X-Accel-Buffering: no + proxy_read_timeout 3600s (see nginx/nginx.conf)
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - prism-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: 150M
+        reservations:
+          cpus: "0.1"
+          memory: 50M

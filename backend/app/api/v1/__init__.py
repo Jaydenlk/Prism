@@ -4,6 +4,7 @@ Prism v2 — API v1 Router Aggregator
 Registers all v1 sub-routers and mounts them under /api/v1.
 
 Routers:
+  health     — /health/live + /health/ready + /health/detailed (DOC-12 Task 12.3, ADR-114)
   auth       — JWT login / register / refresh / logout / me / sse-ticket (DOC-06 Task 6.1)
   admin      — User management + invite codes + usage + audit logs (DOC-06 Task 6.2)
   providers  — Provider CRUD + presets + test (DOC-02 Task 2.3)
@@ -19,6 +20,7 @@ Routers:
 """
 from fastapi import APIRouter
 
+from app.api.v1.health import router as health_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.providers import router as providers_router
@@ -36,6 +38,7 @@ from app.api.v1.mcp import router as mcp_router
 api_v1_router = APIRouter(prefix="/api/v1")
 
 # Register sub-routers
+api_v1_router.include_router(health_router)
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(admin_router)
 api_v1_router.include_router(providers_router)

@@ -10,10 +10,12 @@ Startup sequence (lifespan):
   6. Log "Prism v2 is ready"
   7. Start HeartbeatMonitor    — ADR-065: 每 10s 扫 harness:heartbeat:*，超 30s 标记 crashed
 
-Health endpoints (ADR-115, DOC-12 Task 12.3):
-  GET /health/live     — liveness probe (always 200 if process is alive)
-  GET /health/ready    — readiness probe (checks DB + Redis)
-  GET /health/detailed — admin-only detailed report (placeholder)
+Health endpoints (ADR-114/ADR-115, DOC-12 Task 12.3):
+  GET /api/v1/health/live     — liveness probe (always 200, no dep check)
+  GET /api/v1/health/ready    — readiness probe (checks DB + Redis, 503 on failure)
+  GET /api/v1/health/detailed — admin-only full report (resources + providers)
+  GET /health/live            — top-level alias for Docker/K8s probes
+  GET /health/ready           — top-level alias for Docker/K8s probes
 
 Metrics endpoint (ADR-116, DOC-12 Task 12.4):
   GET /metrics         — admin-only Prometheus text format
@@ -241,44 +243,47 @@ async def global_exception_handler(request: Any, exc: Exception) -> JSONResponse
 
 
 # ---------------------------------------------------------------------------
-# Health endpoints (ADR-115 / DOC-12 Task 12.3)
+# Health endpoints (ADR-114 / ADR-115 / DOC-12 Task 12.3)
 # ---------------------------------------------------------------------------
+# Moved to app/api/v1/health.py and registered via api_v1_router at:
+#   /api/v1/health/live     — liveness probe (always 200)
+#   /api/v1/health/ready    — readiness probe (DB + Redis, 503 on failure)
+#   /api/v1/health/detailed — admin-only full report (ResourceMonitor + providers)
+#
+# For Docker/K8s probes that need a path without the /api/v1 prefix,
+# use the top-level aliases below (forwards to the same logic).
 
-@app.get("/health/live", tags=["health"], response_model=dict)
-async def health_live() -> dict[str, str]:
-    """Liveness probe — returns 200 as long as the process is alive."""
-    return {"status": "alive"}
+
+@app.get("/health/live", tags=["health"], include_in_schema=False)
+async def _health_live_alias() -> dict[str, str]:
+    """Top-level alias — delegates to /api/v1/health/live."""
+    return {"status": "ok"}
 
 
-@app.get("/health/ready", tags=["health"], response_model=dict)
-async def health_ready() -> JSONResponse:
-    """Readiness probe — checks DB and Redis connectivity.
+@app.get("/health/ready", tags=["health"], include_in_schema=False)
+async def _health_ready_alias() -> JSONResponse:
+    """Top-level alias — delegates to /api/v1/health/ready logic."""
+    import sqlalchemy
+    from sqlalchemy import text
+    import redis as redis_lib
 
-    Returns 200 with ``{"checks": {"database": "ok", "redis": "ok"}}`` when
-    all dependencies are reachable, or 503 with per-check details otherwise.
-    """
     checks: dict[str, str] = {}
     overall_ok = True
 
-    # --- Database check ---
     try:
-        import sqlalchemy
-        from sqlalchemy import text
-
-        from app.core.config import settings as s
-        engine = sqlalchemy.create_engine(s.DATABASE_URL, pool_pre_ping=True)
+        engine = sqlalchemy.create_engine(
+            settings.DATABASE_URL, pool_pre_ping=True, connect_args={"connect_timeout": 3}
+        )
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+        engine.dispose()
         checks["database"] = "ok"
     except Exception as exc:  # noqa: BLE001
         checks["database"] = f"error: {exc}"
         overall_ok = False
 
-    # --- Redis check ---
     try:
-        import redis as redis_lib
-
-        r = redis_lib.from_url(settings.REDIS_URL, socket_connect_timeout=2)
+        r = redis_lib.from_url(settings.REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
         r.ping()
         checks["redis"] = "ok"
     except Exception as exc:  # noqa: BLE001
@@ -286,18 +291,10 @@ async def health_ready() -> JSONResponse:
         overall_ok = False
 
     status_code = 200 if overall_ok else 503
-    return JSONResponse(status_code=status_code, content={"checks": checks})
-
-
-@app.get("/health/detailed", tags=["health"])
-async def health_detailed() -> dict[str, Any]:
-    """Detailed health report — admin only (full implementation in DOC-12 Task 12.3).
-
-    Returns an empty object as placeholder until the admin dependency and
-    resource monitor are implemented in Task 12.3.
-    """
-    # TODO-DOC12: add Depends(require_admin) and populate resource stats
-    return {}
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": "ok" if overall_ok else "unhealthy", "checks": checks},
+    )
 
 
 # ---------------------------------------------------------------------------
