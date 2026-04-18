@@ -35,6 +35,44 @@
 
 ---
 
+## 2026-04-19 -- DOC-12 Task 12.2 COMPLETED
+
+### 本次 session 做了什么
+- 新建 backend/app/services/harness_analytics.py — HarnessAnalytics.aggregate(user_id, days, offset_days) P0非重叠窗口修复; cache_stats v4新增(hit_tokens/miss_tokens/creation_tokens/hit_ratio/creation_cost_ratio/by_provider); compute_signal_p90() 30天扫描 供 ThresholdCalibrator (ADR-112)
+- 新建 backend/app/services/entropy_detector.py — EntropyDetector 8信号(5基础+3 v4新: provider_failover_growth/cache_hit_ratio_drop/permission_ask_timeout_rate); 环境变量可配置阈值(ENTROPY_THRESHOLD_*); audit_log写入(action=harness.entropy_alert); ThresholdCalibrator EMA校准(0.7*current+0.3*p90) (ADR-112/ADR-113)
+- 修改 backend/app/api/v1/harness.py — 追加 3 新端点: GET /harness/analytics(user-scoped+offset_days) + POST /harness/entropy-check(admin only) + POST /harness/threshold-calibrate(admin only, scan_days)
+
+### 验证结果
+- py_compile harness_analytics.py: PASS
+- py_compile entropy_detector.py: PASS
+- AST parse harness.py(含新端点): PASS
+- HarnessAnalytics 结构完整性(period/totals/averages/cache_stats/route_distribution): PASS
+- offset_days 非重叠窗口(end0==start7,delta<5s): PASS
+- HarnessAnalytics mock数据(2 runs, turns/tool_calls/cache_hit正确): PASS
+- EntropyDetector 8信号检测(guardrail/error/compaction/loop/permission_ask_timeout): PASS
+- ThresholdCalibrator EMA公式(0.7*0.3+0.3*0.05=0.225): PASS
+- harness.py 4端点+imports+offset_days参数: PASS
+- 进程边界(entropy_detector/harness_analytics 无 executor.* import): PASS
+- 共10项验证全 PASS
+
+### 下一个 Task 需要注意
+- DOC-12 Task 12.3: /health 3子端点 + Docker 资源限制
+  - GET /health/live — 仅返回 {"status":"ok"}, 不查依赖
+  - GET /health/ready — 检查 DB + Redis, 不可用返回 503
+  - GET /health/detailed — admin only, 调用 ResourceMonitor.check_health() + HarnessAnalytics.aggregate(days=7)
+  - docker-compose.yml 4个服务全加 limits/reservations/healthcheck (backend/postgres/redis/nginx)
+  - nginx.conf SSE透传: X-Accel-Buffering: no + proxy_read_timeout 3600s
+- HarnessAnalytics.aggregate() 中 harness_summary JSONB 通过 PostgreSQL raw SQL 查询;需要 runs 表有实际数据才能看到非零结果
+
+### 遗留风险 / 未决事项
+- EntropyDetector.detect() 中 AuditLog 实例化会触发 SQLAlchemy mapper configure (import side effect); 在纯测试环境中若 invite_codes FK 未配置会报 NoForeignKeysError; 在真实 PostgreSQL + alembic upgrade head 环境下不受影响
+- ThresholdCalibrator 输出建议阈值 Admin 审核后手动写入环境变量——Phase 1 流程手动; Phase 2 可接入 harness config yaml 写回接口
+
+### Commit
+- `67d17a7` — `feat(v4): DOC-12 Task 12.2 — Harness Analytics + Entropy Detection (ADR-112/ADR-113)`
+
+---
+
 ## 2026-04-19 -- DOC-12 Task 12.1 COMPLETED
 
 ### 本次 session 做了什么

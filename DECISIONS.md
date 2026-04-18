@@ -1516,4 +1516,27 @@
 - **验证结果**: py_compile PASS + ResourceMonitor 百分比阈值检查 PASS + is_memory_warn/critical PASS + RouteAnalytics PASS
 - **下游影响**: DOC-12 Task 12.3 /health/detailed 端点直接调用 ResourceMonitor.check_health()；Task 12.8 AlertDispatcher 可消费 is_memory_critical() 触发告警
 
-> **最后更新**: 2026-04-19(DOC-12 Task 12.1 — TokenEstimator + ResourceMonitor ADR-110/111; 35/51 Task 完成)
+## ADR-112: Entropy 信号扩展(8 信号)(DOC-12 Task 12.2)
+- **来源**: PRD v4 DOC-12 Task 12.2 Part A ADR-112; Batch 5 §A12-3/§A12-4
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/harness_analytics.py` — HarnessAnalytics.aggregate(days, offset_days) P0非重叠窗口修复; cache_stats(hit_tokens/miss_tokens/creation_tokens/hit_ratio/creation_cost_ratio/by_provider); compute_signal_p90() 供 ThresholdCalibrator 使用
+  - `backend/app/services/entropy_detector.py` — EntropyDetector 8信号: guardrail_rate/tool_error_rate/compaction_rate/loop_detection/turn_count_growth + v4新3个(provider_failover_growth/cache_hit_ratio_drop/permission_ask_timeout_rate); 写 audit_logs(action=harness.entropy_alert)
+  - `backend/app/api/v1/harness.py` — 3新端点: GET /analytics + POST /entropy-check + POST /threshold-calibrate
+- **实施 commit**: 67d17a7
+- **偏离点**: Part B 中 detect() 仅写 5 个信号；严格按 ADR-112 v4 扩展到 8 个（加 provider_failover_growth/cache_hit_ratio_drop/permission_ask_timeout_rate）
+- **验证结果**: py_compile 3文件 PASS; HarnessAnalytics structure/offset_days/mock_data 3项 PASS; EntropyDetector 8信号检测 PASS; ThresholdCalibrator EMA公式(0.7*0.3+0.3*0.05=0.225) PASS; harness.py 4端点+process boundary 全 PASS; 共10项验证全 PASS
+- **下游影响**: DOC-11 Task 11.6 Admin Observability 面板消费 GET /harness/analytics; DOC-12 Task 12.3 /health/detailed 端点可引用 HarnessAnalytics; Task 12.8 AlertDispatcher 补全 entropy_alert 告警路由
+
+## ADR-113: ThresholdCalibrator 阈值自动校准(DOC-12 Task 12.2)
+- **来源**: PRD v4 DOC-12 Task 12.2 Part A ADR-113; Batch 5 §A12-5
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/entropy_detector.py` — ThresholdCalibrator.calibrate(): 扫描 30天 harness_summary p90，EMA平滑 0.7*current + 0.3*p90; CURRENT_THRESHOLDS 字典; Admin 审核后手动生效
+  - `backend/app/api/v1/harness.py` — POST /harness/threshold-calibrate(admin only, scan_days=30)
+- **实施 commit**: 67d17a7
+- **偏离点**: 无。严格按 ADR-113: 输出建议阈值不自动写入（P7 可撕裂原则）；EMA 权重 0.7/0.3。
+- **验证结果**: ThresholdCalibrator EMA 公式验证 PASS (0.7*0.3 + 0.3*0.05 = 0.225)
+- **下游影响**: POST /harness/threshold-calibrate 供 Admin 每周手动触发（Phase 1 半自动）
+
+> **最后更新**: 2026-04-19(DOC-12 Task 12.2 — Harness Analytics + Entropy Detection ADR-112/113; 36/51 Task 完成)
