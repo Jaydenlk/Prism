@@ -51,7 +51,7 @@
   - `backend/app/core/security.py` — `validate_secrets(jwt_secret, encryption_key, callback_secret)`
   - `backend/app/main.py` — lifespan 首步调用 `validate_secrets()`
   - `.env.example` — 三密钥分区注释,各有独立占位符
-- **实施 commit**: TBD(本 session 首次 commit)
+- **实施 commit**: 5c689df
 - **偏离点**: 无。三密钥均要求 >= 32 字符且互不相等,不满足则 RuntimeError 阻止启动。
 - **验证结果**: 四场景单元测试全 PASS(短密钥 / 两两相同 / 三者相同 / 合法输入)
 - **下游影响**: DOC-06 Task 6.1 实现 SSE ticket 时需引用 `CALLBACK_SECRET`;DOC-02 Task 2.3 Provider encrypt 时需引用 `ENCRYPTION_KEY`

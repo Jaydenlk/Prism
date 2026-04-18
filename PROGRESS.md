@@ -23,7 +23,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | in_progress | 2026-04-18 | — | TBD | 骨架 + 最小 FastAPI 完成,19 表 ORM/alembic 留给下一个 session |
+| DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | in_progress | 2026-04-18 | — | 5c689df | 骨架 + 最小 FastAPI 完成,19 表 ORM/alembic 留给下一个 session |
 
 ---
 

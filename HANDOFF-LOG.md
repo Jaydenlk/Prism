@@ -67,7 +67,7 @@
 - docker 实际启动未验证(本 session 无 .env 实体文件)
 
 ### Commit
-- TBD — `feat: bootstrap project skeleton + minimal FastAPI (DOC-02 Task 2.1 partial)`
+- `5c689df` — `feat: bootstrap project skeleton + minimal FastAPI (DOC-02 Task 2.1 partial)`
 
 ---
 
