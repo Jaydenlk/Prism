@@ -401,3 +401,39 @@
 - **下游影响**: DOC-03 Task 3.3 Hook System + Permission Engine 将在 pipeline.py 的 PreToolUse/PostToolUse HARNESS_INTEGRATION_POINT（步骤 3/7）实现，与 Middleware 钩点独立；Task 3.3 的 permission ask 需用 Redis BLPOP（CLAUDE.md 陷阱 #8）
 
 > **最后更新**: 2026-04-18(DOC-03 Task 3.2 — Middleware Pipeline 4 钩点 + ADR-025)
+
+---
+
+## DOC-03 Task 3.4: Feedback Capture + HarnessRuntime 生命周期控制器(ADR-029 / ADR-030)
+
+## ADR-029: Feedback 事件结构化(DOC-03 Task 3.4)
+- **来源**: PRD v4 DOC-03 Task 3.4 Part A §设计决策; Batch 2 §A3-8
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/harness/middleware/feedback_capture.py` — FeedbackEvent dataclass (event_type 5枚举 + severity 4枚举 + context dict + timestamp ISO 8601) + FeedbackCaptureMiddleware
+  - `executor/harness/middleware/__init__.py` — 导出 FeedbackEvent / FeedbackCaptureMiddleware
+  - `executor/observability/metrics.py` — prism_harness_feedback_total{event_type,severity} Counter + prism_harness_memory_extracted_total Counter
+- **实施 commit**: (Task 3.4 commit hash)
+- **偏离点**: 无。event_type 严格 5 值，severity 严格 4 值，与 ADR-029 完全对齐。
+- **验证结果**: 全部 12 项验证 PASS
+  - tool_error 提取 / custom_data feedback_signals 追加 / get_run_summary 正确汇总 PASS
+  - Redis SETEX TTL 7天 / redis_client=None 跳过 / Prometheus inc PASS
+- **下游影响**: DOC-12 Task 12.2 Entropy Detector 扫描 Redis `feedback:{run_id}:{timestamp}` key
+
+## ADR-030: SessionEnd user_memory 提炼(DOC-03 Task 3.4)
+- **来源**: PRD v4 DOC-03 Task 3.4 Part A §设计决策; Batch 2 §A3-9
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/harness/lifecycle.py` — HarnessRuntime.on_session_end(): turn_count>5 时 LLM complete → callback.harness_event("user_memory_extracted", {content, source_session_id, source_run_id})
+  - `executor/observability/metrics.py` — prism_harness_memory_extracted_total
+- **实施 commit**: (Task 3.4 commit hash)
+- **偏离点**:
+  1. HarnessLifecycle Task 3.3 类名替换为 HarnessRuntime(PRD v4 Part B §2 原文类名)，保留 `HarnessLifecycle = HarnessRuntime` 别名。
+  2. __init__ 参数从 Task 3.3 的 5 参数扩展为 8 参数 (run_id, session_id, user_id, callback, redis_client, redis_url, adapter, settings)。
+  3. 异常捕获 log WARNING 不 raise，确保不影响主循环（on_session_end 失败不中断 run）。
+- **验证结果**: 全部 12 项验证 PASS
+  - turn_count=5 LLM 未调用 PASS; turn_count=10 LLM 调用 1 次 + memory callback PASS
+  - LLM 异常 log WARNING + memory callback 未触发 PASS; source_session_id / content 字段正确 PASS
+- **下游影响**: DOC-07 / DOC-09 Backend 端点写入 user_memories 表；PromptAssembler 后续读取
+
+> **最后更新**: 2026-04-18(DOC-03 Task 3.4 — Feedback Capture + HarnessRuntime + ADR-029/030)

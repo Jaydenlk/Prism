@@ -113,3 +113,22 @@ prism_guardrail_deny_total = Counter(
     ["rule_id"],
     registry=EXECUTOR_REGISTRY,
 )
+
+# ---------------------------------------------------------------------------
+# 10. Feedback 事件统计（Task 3.4，ADR-029）
+# ---------------------------------------------------------------------------
+prism_harness_feedback_total = Counter(
+    "prism_harness_feedback_total",
+    "Total structured feedback events captured by FeedbackCaptureMiddleware.",
+    ["event_type", "severity"],
+    registry=EXECUTOR_REGISTRY,
+)
+
+# ---------------------------------------------------------------------------
+# 11. user_memory 提炼统计（Task 3.4，ADR-030）
+# ---------------------------------------------------------------------------
+prism_harness_memory_extracted_total = Counter(
+    "prism_harness_memory_extracted_total",
+    "Total user memory summaries extracted at SessionEnd by HarnessRuntime.",
+    registry=EXECUTOR_REGISTRY,
+)

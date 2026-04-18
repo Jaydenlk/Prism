@@ -9,6 +9,10 @@ from executor.harness.middleware.base import (
     MiddlewareContext,
     TurnContext,
 )
+from executor.harness.middleware.feedback_capture import (
+    FeedbackCaptureMiddleware,
+    FeedbackEvent,
+)
 from executor.harness.middleware.loop_detection import LoopDetectionMiddleware
 from executor.harness.middleware.observability import ObservabilityMiddleware
 from executor.harness.middleware.pipeline import MiddlewarePipeline
@@ -20,4 +24,6 @@ __all__ = [
     "MiddlewarePipeline",
     "LoopDetectionMiddleware",
     "ObservabilityMiddleware",
+    "FeedbackCaptureMiddleware",
+    "FeedbackEvent",
 ]

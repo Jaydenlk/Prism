@@ -35,6 +35,59 @@
 
 ---
 
+## 2026-04-18 -- DOC-03 Task 3.4 completed (Feedback Capture + HarnessRuntime Lifecycle)
+
+### Done this session
+- Created executor/harness/middleware/feedback_capture.py -- FeedbackEvent dataclass (ADR-029: 5 event_type + 4 severity + context + ISO 8601 timestamp) + FeedbackCaptureMiddleware (post_turn + _extract_failures + get_run_summary + Redis SETEX TTL 7d + Prometheus)
+- Replaced executor/harness/lifecycle.py HarnessLifecycle → HarnessRuntime (8-param __init__: run_id/session_id/user_id/callback/redis_client/redis_url/adapter/settings)
+- Middleware registration order: loop_detection → observability → feedback_capture (3 total)
+- inject_into_pipeline(): pipeline._permission_engine + pipeline._hook_system
+- on_session_start(): fire SessionStart HookEvent
+- on_session_end(messages, turn_count): fire SessionEnd → if turn_count > 5: LLM complete → harness_event("user_memory_extracted") + Prometheus inc; exception → log WARNING (no raise)
+- get_run_harness_summary(): feedback summary + middleware_count + guardrail_rules_count
+- HarnessLifecycle = HarnessRuntime backward-compat alias
+- Modified executor/harness/middleware/__init__.py -- export FeedbackEvent, FeedbackCaptureMiddleware
+- Modified executor/observability/metrics.py -- added prism_harness_feedback_total{event_type,severity} + prism_harness_memory_extracted_total
+
+### Verification results
+- All 12 verification items: PASS
+- py_compile 4 files PASS
+- imports + alias HarnessLifecycle is HarnessRuntime PASS
+- FeedbackEvent 5 event_type + 4 severity validated via typing.get_args PASS
+- FeedbackCaptureMiddleware: tool_error extraction / custom_data signals / get_run_summary PASS
+- HarnessRuntime assembly: 3 middleware + order [loop,obs,feedback] + guardrail_rules=4 PASS
+- inject_into_pipeline: permission_engine + hook_system set PASS
+- on_session_start fired PASS
+- on_session_end turn_count=5 no LLM PASS; turn_count=10 LLM×1 + memory callback PASS
+- on_session_end LLM exception → no memory callback + log WARNING PASS
+- get_run_harness_summary total_failures + middleware_count=3 + guardrail_rules_count=4 PASS
+- grep from backend.app in Task 3.4 files: 0 hits PASS
+
+### Notes for next Task -- DOC-03 Task 3.5 (4-tier Compaction + 6-layer Memory)
+- Tier 0 is DONE: executor/engine/context_budget.py compress_history() — atomic turn-group truncation (Task 2.4, ADR-029 compaction). DO NOT re-implement Tier 0.
+- Tier 1-3 to implement in Task 3.5:
+  - Tier 1: Delete oldest turn-groups (simplest, last resort)
+  - Tier 2: LLM summarization of oldest messages → replace with summary block
+  - Tier 3: Keep only most recent N turn-groups, discard rest (aggressive)
+- 6-layer Memory naming (DOC-02 v4 / DOC-03 v4 §3.5): short-term / skill / mcp / agent / session / user
+  - short-term: current session messages (ContextBudgetManager manages this)
+  - skill: is_skill_context=True PrismMessage blocks (protected from compaction)
+  - mcp: MCP server context injected by PromptAssembler
+  - agent: agent-specific system prompt sections
+  - session: session-level context (session metadata, user prefs)
+  - user: user_memories table entries (written by Task 3.4 ADR-030, read by PromptAssembler DOC-07/09)
+- CompactionTrigger: FeedbackEvent(event_type="compaction_triggered") should be emitted when compaction fires (wire into FeedbackCaptureMiddleware via ctx.custom_data["feedback_signals"])
+- Compaction hooks: fire HookEvent(event_type="Compact", ...) when compaction triggers (HookSystem already has "Compact" event)
+
+### Risks / Open items
+- user_memory DB write is Backend-side (DOC-07/DOC-09 endpoints) — harness only sends callback event
+- LoopDetection does NOT write to ctx.custom_data["feedback_signals"] yet — Entropy Detector (DOC-12 Task 12.2) will wire this
+
+### Commit
+- TBD (committed after this log entry)
+
+---
+
 ## 2026-04-18 -- DOC-03 Task 3.3 completed (Hook System + Permission Engine + Guardrails)
 
 ### Done this session
