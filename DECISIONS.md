@@ -141,6 +141,45 @@
 
 ---
 
+## DOC-03 Task 3.3: Hook System + Permission Engine(ADR-026 / ADR-027 / ADR-028)
+
+## ADR-026: HookDecision 11 字段完整定义(DOC-03 Task 3.3)
+- **来源**: PRD v4 DOC-03 Task 3.3 Part A ADR-026; PDF 补丁 P4
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/harness/hooks/decision.py` — HookDecision 11 字段完整定义(permission_decision / updated_input / updated_mcp_tool_output / prevent_continuation / stop / stop_reason / additional_context / message / blocking_error / reason / handler_name)
+  - `executor/harness/hooks/__init__.py` — 导出 HookDecision
+- **实施 commit**: 25963bf
+- **偏离点**: 无。严格对标 CC toolHooks.ts，全部 11 字段，无砍字段，无添加字段。
+- **验证结果**: py_compile PASS; 11字段完整性验证 PASS
+- **下游影响**: DOC-05 Task 5.3 Hook 4 handler 扩展时复用此 dataclass
+
+## ADR-027: merge_decisions() 合并规则严格度降序(DOC-03 Task 3.3)
+- **来源**: PRD v4 DOC-03 Task 3.3 Part A ADR-027; PDF 补丁 P4 Batch 2 §A3-6
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**: `executor/harness/hooks/decision.py` — merge_decisions() 函数
+- **实施 commit**: 25963bf
+- **偏离点**: 无。合并顺序精确对齐 PRD：stop → prevent_continuation → permission(deny>ask>allow) → updated_input 冲突 ValueError → updated_mcp_tool_output 冲突 ValueError → additional_context 拼接"\\n\\n" → blocking_error 拼接"; " → message 拼接"\\n"；空 list 返回空 HookDecision。
+- **验证结果**: 7 项合并规则测试全 PASS（stop优先级/deny>ask>allow/updated_input冲突ValueError/additional_context join/blocking_error join/message join/空list）
+- **下游影响**: HookSystem.fire() 调用 merge_decisions() 汇总所有并行 handler 决策
+
+## ADR-028: permission ask Redis BLPOP 反向通信协议(DOC-03 Task 3.3)
+- **来源**: PRD v4 DOC-03 Task 3.3 Part A ADR-028; Batch 2 §A3-7; PDF 补丁
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/harness/permissions/ask_protocol.py` — PermissionAskProtocol.ask() 完整实现
+    - uuid7(fallback uuid4) 生成 request_id
+    - SETEX `perm_req:{request_id}` TTL=timeout_seconds
+    - HTTP callback.permission_ask() 通知 Backend → SSE → 前端弹窗
+    - BLPOP `perm_answer:{request_id}` 阻塞等待（timeout=timeout_seconds，不传 0）
+    - 超时 fail-safe deny + harness_event("permission_ask_timeout")
+    - 非法 answer（非 allow/deny）视为 deny
+  - `executor/harness/permissions/engine.py` — ask 分支调用 ask_protocol.ask()
+- **实施 commit**: 25963bf
+- **偏离点**: Redis key 格式严格对齐（perm_req:{id} / perm_answer:{id}），DOC-07 Task 7.3 的 permission-answer 端点 RPUSH 时必须严格匹配此 key 格式。
+- **验证结果**: fakeredis 场景1(2s内allow) + 场景2(1s超时deny) 均 PASS；harness_event 超时回调验证 PASS
+- **下游影响**: DOC-07 Task 7.3 实现 `/sessions/{id}/permission-answer` 端点时 RPUSH `perm_answer:{request_id}`（key 格式已固化）
+
 ---
 
 ## DOC-02 Task 2.3: Provider 管理与故障转移(ADR-010 / ADR-011 / ADR-012 / ADR-013)

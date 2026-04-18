@@ -35,6 +35,47 @@
 
 ---
 
+## 2026-04-18 -- DOC-03 Task 3.3 completed (Hook System + Permission Engine + Guardrails)
+
+### Done this session
+- Created executor/harness/permissions/result.py -- PermissionResult standalone (avoids circular import)
+- Created executor/harness/hooks/{events,decision,handlers,system,__init__}.py -- HookEvent/HookDecision 11 fields/merge_decisions (ADR-026/027)/HookHandlerExecutor 4 handlers/HookSystem asyncio.gather parallel
+- Created executor/harness/guardrails/{rules,platform_rules,engine,__init__}.py -- GuardrailRule + get_platform_rules GR-PLATFORM-001~004/GuardrailsEngine
+- Created executor/harness/permissions/{ask_protocol,engine,__init__}.py -- PermissionAskProtocol Redis BLPOP (ADR-028)/PermissionEngine 2-layer
+- Created executor/harness/lifecycle.py -- HarnessLifecycle assembles all governance components
+- Modified executor/tools/pipeline.py -- Step3 real permission_engine.check() + Step7 real hook_system.fire(PostToolUse)
+- Modified executor/observability/metrics.py -- 3 new counters (permission_ask/hook_fired/guardrail_deny)
+- Modified backend/app/core/config.py -- added PERMISSION_ASK_TIMEOUT_SECONDS / HOOK_TIMEOUT_SECONDS / RATE_LIMIT_* defaults
+
+### Verification results
+- All 13 verification items: PASS
+- py_compile 11 new + 2 modified: PASS
+- imports (hooks/permissions/guardrails/lifecycle): PASS
+- guardrails rm -rf blocked / ls allowed / web_search unaffected: PASS
+- merge stop priority / deny>ask>allow / updated_input conflict ValueError: PASS
+- additional_context/blocking_error/message join + empty list: PASS
+- permission ask fakeredis (allow + timeout deny + harness_event): PASS
+- PermissionEngine integration (guardrails deny/hook deny/hook ask allow+updated_input): PASS
+- 4 platform rules tests: PASS
+- command handler JSON + timeout: PASS
+- pipeline deny + allow+updated_input: PASS
+- grep backend.app in harness: 0 hits PASS
+
+### Notes for next Task -- DOC-03 Task 3.4 (Guardrails + Feedback Loop)
+- GuardrailsEngine is DONE: Task 3.4 reuses executor/harness/guardrails/engine.py and GuardrailRule. DO NOT re-implement GuardrailRule. Use engine.add_rule(rule) to add additional rules.
+- SessionEnd event is defined in events.py: HookEventType already has SessionEnd. Task 3.4 triggers it at session end by calling hook_system.fire(HookEvent(event_type=SessionEnd, ...)). Not implemented in Task 3.3.
+- user_memory table was created in Task 2.1: Task 3.4 writes to user_memory via HTTP callback to Backend endpoint (Executor does NOT write to DB directly).
+
+### Risks / Open items
+- _execute_prompt and _execute_agent are Phase 1 skeletons (return empty HookDecision when adapter/fork_manager not injected). Full implementation in DOC-05 Task 5.3.
+- _rate_window is module-level dict (per-executor subprocess, not shared across processes). PRD confirms this is acceptable.
+- Redis key format for perm_answer:{id} is FIXED. DOC-07 Task 7.3 MUST RPUSH to exactly this key.
+
+### Commit
+- 25963bf -- feat(v4): Hook System 11 fields + 4 handlers + Permission BLPOP + 4 platform guardrails (DOC-03 Task 3.3 complete)
+
+---
+
 ## 2026-04-18 — DOC-03 Task 3.2 completed（Middleware Pipeline 4 钩点）
 
 ### 本次 session 做了什么

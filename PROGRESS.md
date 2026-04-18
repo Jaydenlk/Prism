@@ -38,7 +38,7 @@
 |---|---|---|---|---|---|
 | DOC-03 Task 3.1: TAOR 主循环 + ToolExecutionPipeline | completed | 2026-04-18 | 2026-04-18 | ce382a5 | executor/tools/{base,registry,pipeline,builtin}; executor/callbacks/backend_callback; executor/engine/{query_engine,token_estimator_adapter}; executor/observability/metrics; executor/__main__ — 全部 10 项验证 PASS; ADR-020/021/022/023/024 落地 |
 | DOC-03 Task 3.2: Middleware Pipeline(4 钩点) | completed | 2026-04-18 | 2026-04-18 | e174ea5 | executor/harness/middleware/{base,pipeline,loop_detection,observability}; RunContext 追加 agent_type; QueryEngine 4 钩点集成(pre/post_turn + pre/post_tool_use); middleware=None 向后兼容 — 全部 10 项验证 PASS; ADR-025 落地 |
-| DOC-03 Task 3.3: Hook System + Permission Engine | pending | — | — | — | — |
+| DOC-03 Task 3.3: Hook System + Permission Engine | completed | 2026-04-18 | 2026-04-18 | 25963bf | 11新文件+2修改: HookDecision 11字段 + merge_decisions(ADR-026/027); HookSystem asyncio.gather并行; 4 handler(command/http/prompt骨架/agent骨架); PermissionAskProtocol Redis BLPOP(ADR-028); GuardrailsEngine + 4条平台规则(GR-PLATFORM-001~004); PermissionEngine两层; lifecycle.py组装; pipeline.py Step3/7真实集成; metrics 3计数器 — 全部13项验证 PASS |
 | DOC-03 Task 3.4: Guardrails + Feedback Loop | pending | — | — | — | — |
 | DOC-03 Task 3.5: 4 级 Compaction + 6 层 Memory | pending | — | — | — | — |
 | DOC-03 Task 3.6: Harness 配置(2 源简化) | pending | — | — | — | — |
