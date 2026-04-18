@@ -149,6 +149,19 @@ prism_im_messages_total = Counter(
     registry=REGISTRY,
 )
 
+prism_im_webhook_duplicates_total = Counter(
+    "prism_im_webhook_duplicates_total",
+    "Total duplicate IM webhook messages suppressed by idempotency check (ADR-070).",
+    ["channel"],
+    registry=REGISTRY,
+)
+
+prism_im_bindings_active = Gauge(
+    "prism_im_bindings_active",
+    "Total active IM bindings (paired_at IS NOT NULL) across all channels.",
+    registry=REGISTRY,
+)
+
 # ---------------------------------------------------------------------------
 # 9. Executor sub-processes
 # ---------------------------------------------------------------------------

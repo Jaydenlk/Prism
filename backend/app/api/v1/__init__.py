@@ -14,6 +14,7 @@ Routers:
   tasks      — POST /tasks + queue + cancel (DOC-07 Task 7.2)
   runs       — GET /runs/{id} + /sessions/{id}/runs + POST /runs/{id}/resume (DOC-07 Task 7.2/7.4)
   internal   — Callback + run-crashed (DOC-07 Task 7.3, ADR-063)
+  im         — IM channels config + Webhook + bindings (DOC-08 Task 8.1)
 """
 from fastapi import APIRouter
 
@@ -27,6 +28,7 @@ from app.api.v1.sessions import router as sessions_router
 from app.api.v1.tasks import router as tasks_router
 from app.api.v1.runs import router as runs_router
 from app.api.v1.internal import router as internal_router
+from app.api.v1.im import router as im_router
 
 # Master v1 router
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -42,3 +44,4 @@ api_v1_router.include_router(sessions_router)
 api_v1_router.include_router(tasks_router)
 api_v1_router.include_router(runs_router)
 api_v1_router.include_router(internal_router)
+api_v1_router.include_router(im_router)
