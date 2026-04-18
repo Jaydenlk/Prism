@@ -706,6 +706,56 @@
 
 ---
 
+## DOC-05 Task 5.3: Hook 治理层与 Plugin 命名空间（ADR-048 / ADR-049）
+
+## ADR-048: HookSystem 优先级排序 + Phase 1 事件过滤 + scoped 注销（DOC-05 Task 5.3）
+- **来源**: PRD v4 DOC-05 Task 5.3 Part A ADR-043（PRD 原标 ADR-043，因 DOC-05 Task 5.1 Skill 三级加载规范已占用 ADR-043，平移至 ADR-048）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/harness/hooks/events.py` — 新增 `PHASE1_EVENTS: frozenset[str]`（8 事件）+ `PHASE2_EVENTS: frozenset[str]`（13 事件，预留）
+  - `executor/harness/hooks/system.py` — HookSystem 重构：
+    - `_handlers: dict[str, list[tuple[int, str, HookHandlerConfig]]]` 改为三元组存储（priority, hook_id, config）
+    - `register(event_type, config, hook_id="", priority=100) -> str`：自动生成 hook_id，按 priority 升序排序
+    - `unregister(hook_id: str)` 精确注销
+    - `unregister_by_prefix(prefix: str)` 前缀批量注销（Skill/Plugin 卸载）
+    - `fire()` 入口校验 `event_type not in PHASE1_EVENTS` → 直接返回空 HookDecision
+  - `executor/harness/hooks/__init__.py` — 新增导出 PHASE1_EVENTS / PHASE2_EVENTS
+  - `executor/plugins/skill_loader.py` — `_register_skill_hooks()` 传 hook_id 给 `register()`；`_unregister_skill_hooks()` 调用 `unregister_by_prefix("skill:{skill_name}:")`（解决 Task 5.1 TODO stub）
+- **实施 commit**: (见 git log)
+- **偏离点**:
+  1. PRD Part B 验证脚本中 `from executor.harness.hooks.events import HookEvent, HookDecision` 为 PRD 笔误（HookDecision 在 decision.py 非 events.py）；验证用修正后的正确 import 路径通过。
+  2. register() 接受 config=None（用于测试用例），内部对 config is None 时安全取 type/matcher 字段。
+- **验证结果**: 全部验证 PASS
+  - py_compile 3 文件 PASS
+  - PHASE1_EVENTS=8 / PreToolUse in / SubAgentStart not in / SubAgentStart in PHASE2_EVENTS PASS
+  - 优先级排序 high/mid/low PASS
+  - unregister_by_prefix 保留 global:compliance / 移除 2 条 skill:finance: PASS
+  - PluginNamespace qualify/unqualify/is_mcp_tool PASS
+- **下游影响**:
+  - DOC-05 Task 5.4 PluginHost 调用 `hook_system.unregister_by_prefix(f"plugin:{plugin_name}:")` 完成 Plugin 级注销
+  - DOC-05 Task 5.4 MCP 工具注册/注销时可 fire "PreToolUse" Phase 1 事件通知 HookSystem
+
+## ADR-049: Plugin 命名空间（冒号分隔，避免跨 Plugin 名称冲突）（DOC-05 Task 5.3）
+- **来源**: PRD v4 DOC-05 Task 5.3 Part A §CC 架构映射；ADR-043 原文描述 Plugin 命名约定
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/namespace.py` — PluginNamespace 类：
+    - `qualify(resource_name) -> str`：加前缀，MCP 工具（mcp__ 开头）不加前缀
+    - `unqualify(qualified_name) -> tuple[str, str]`：拆分为 (plugin_name, resource_name)
+    - `is_mcp_tool(name) -> bool`：静态方法
+    - `build_qualified(plugin_name, resource_name) -> str`：静态构造工具
+  - `executor/plugins/__init__.py` — 导出 PluginNamespace
+- **实施 commit**: (见 git log)
+- **偏离点**: 无。命名约定 `{plugin_name}:{resource_name}` 严格按 PRD 描述实现；MCP 工具 mcp__{server}__{tool} 格式绕过命名空间（DOC-05 Task 5.2 ADR-047 已定义）。
+- **验证结果**: PluginNamespace qualify/unqualify/is_mcp_tool 全 PASS
+- **下游影响**:
+  - DOC-05 Task 5.4 PluginHost 加载 Plugin 时使用 PluginNamespace 实例管理资源命名
+  - DOC-05 Task 5.5 SkillRegistry 注册 Skill 时使用 qualify() 生成命名空间限定名
+
+> **最后更新**: 2026-04-19（DOC-05 Task 5.3 — Hook 治理层 + Plugin 命名空间 + ADR-048/049）
+
+---
+
 ## Phase 2: Backend 模块(待实施)
 
 > (占位)

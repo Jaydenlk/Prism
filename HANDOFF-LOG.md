@@ -35,6 +35,34 @@
 
 ---
 
+## 2026-04-19 -- DOC-05 Task 5.3 completed (Hook 治理层 + Plugin 命名空间 + ADR-048/049)
+
+### 本次 session 做了什么
+- 修改 executor/harness/hooks/events.py — 新增 PHASE1_EVENTS frozenset（8事件）+ PHASE2_EVENTS frozenset（13事件预留）
+- 重构 executor/harness/hooks/system.py — `_handlers` 改为 `dict[str, list[tuple[int, str, HookHandlerConfig]]]` 三元组（priority+hook_id+config）；register() 新增 hook_id/priority 参数（默认100）并按优先级升序排序；新增 unregister(hook_id) 精确注销；新增 unregister_by_prefix(prefix) 批量注销；fire() 入口校验 PHASE1_EVENTS，非 Phase 1 事件静默返回空决策
+- 新建 executor/plugins/namespace.py — PluginNamespace(plugin_name)：qualify/unqualify/is_mcp_tool/build_qualified；MCP 工具（mcp__ 前缀）绕过命名空间
+- 修复 executor/plugins/skill_loader.py — _register_skill_hooks() 传 hook_id 到 register()；_unregister_skill_hooks() 真实调用 unregister_by_prefix()（解决 Task 5.1 留的 TODO stub）
+- 修改 executor/harness/hooks/__init__.py — 新增导出 PHASE1_EVENTS / PHASE2_EVENTS
+- 修改 executor/plugins/__init__.py — 新增导出 PluginNamespace；ADR-048/049 落地 DECISIONS.md；blocker.md 追加 Task 5.3 ADR 编号平移链
+
+### 验证结果
+- Part B 验证步骤：PASS（3项全PASS：py_compile 3文件/Phase1-2事件集/优先级排序+scoped注销+PluginNamespace）
+- 质量门：PASS — 0 `from backend.app` in 新增文件；无 TODO 占位；进程边界严格；HookDecision 11字段对齐 ADR-026
+
+### 下一个 Task 需要注意 — DOC-05 Task 5.4 (PluginHost 统一管理与垂类特调)
+- ADR-050 是下一个可用编号（须检查 DOC-06 ADR-050~055 三密钥/SSE ticket 是否冲突，Task 5.4 从 ADR-050 起但注意此编号同时被 DOC-06 ADR-050 声明——需继续平移）
+- unregister_by_prefix("plugin:{plugin_name}:") 已就绪，Task 5.4 PluginHost 卸载 Plugin 时调用此接口
+- PluginNamespace 已就绪，Task 5.4 PluginHost 加载 Plugin 时使用 qualify() 为 Skill/Hook 加命名空间
+
+### 遗留风险 / 未决事项
+- PRD Part B 验证脚本中 `from executor.harness.hooks.events import HookDecision` 是 PRD 笔误（HookDecision 在 decision.py），验证用修正 import 通过，原 PRD 脚本有语法歧义但不影响实现正确性
+- DOC-05 Task 5.4 ADR 编号需仔细检查：DOC-06 已声明 ADR-050~055 范围，Task 5.4 须继续平移编号
+
+### Commit
+- (见 git log)
+
+---
+
 ## 2026-04-19 -- DOC-05 Task 5.2 completed (MCP Server 双通道 + scope + ADR-046/047)
 
 ### 本次 session 做了什么
