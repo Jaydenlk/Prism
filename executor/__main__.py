@@ -171,13 +171,30 @@ async def main() -> None:
     # assembler = PromptAssembler(agent_type=run.agent_type, tools=registry.list_definitions())
     # pipeline = ToolExecutionPipeline(registry, budget)
 
-    # 1b. OTel Tracing setup (ADR-117, DOC-12 Task 12.5)
+    # 1b. Structured logging (ADR-118, DOC-12 Task 12.6)
+    # Must be initialised before any other logging so all log records are JSON.
+    from executor.observability.logging import bind_run_context, init_logging as _init_logging
+
+    _prism_env = os.environ.get("PRISM_ENV", "production")
+    _dev_mode = _prism_env == "development"
+    _log_level = "DEBUG" if _dev_mode else "INFO"
+    _init_logging(level=_log_level, dev_mode=_dev_mode)
+
+    # Bind run-level context so every subsequent log record carries these fields.
+    bind_run_context(
+        run_id=args.run_id,
+        session_id=args.session_id,
+        user_id=args.user_id,
+        agent_type="general",  # updated after DB read / TaskRouter in full integration
+        trace_id=args.otel_trace_id,
+    )
+
+    # 1c. OTel Tracing setup (ADR-117, DOC-12 Task 12.5)
     # init_tracing() returns a Context derived from the traceparent argv so all
     # spans in this process are children of the Backend "run" span.
     from executor.observability.tracing import SpanAttr, SpanName, init_tracing  # noqa: F401
 
     _otel_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-    _prism_env = os.environ.get("PRISM_ENV", "production")
     _parent_ctx = init_tracing(
         otlp_endpoint=_otel_endpoint or None,
         traceparent=args.otel_trace_id,

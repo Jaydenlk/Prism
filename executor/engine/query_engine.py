@@ -25,6 +25,7 @@ from dataclasses import dataclass
 
 import structlog
 import uuid_extensions as uuid7_ext
+from structlog.contextvars import bind_contextvars
 
 from executor.adapters.base import (
     ContentBlock,
@@ -156,6 +157,24 @@ class QueryEngine:
         3. 正常退出：回调 run_complete
         4. 异常：回调 run_error 并重新 raise
         """
+        # ADR-118: bind run-level context to structlog contextvars so all records
+        # emitted during this run automatically carry run_id / session_id / user_id.
+        bind_contextvars(
+            run_id=self._run_context.run_id,
+            session_id=self._run_context.session_id,
+            user_id=self._run_context.user_id,
+            agent_type=getattr(self._run_context, "agent_type", self._agent_type),
+        )
+
+        logger.info(
+            "run.started",
+            run_id=self._run_context.run_id,
+            session_id=self._run_context.session_id,
+            agent_type=getattr(self._run_context, "agent_type", self._agent_type),
+            max_turns=self._max_turns,
+            prompt_preview=user_prompt[:50],
+        )
+
         # 初始消息
         self._messages.append(
             PrismMessage(
@@ -280,6 +299,15 @@ class QueryEngine:
                 break
 
             # 正常完成
+            logger.info(
+                "run.completed",
+                run_id=self._run_context.run_id,
+                turn_count=self._turn_count,
+                input_tokens=self._total_input_tokens,
+                output_tokens=self._total_output_tokens,
+                cache_hit_tokens=self._total_cache_hit_tokens,
+                cache_creation_tokens=self._total_cache_creation_tokens,
+            )
             await self._callback.run_complete(
                 input_tokens=self._total_input_tokens,
                 output_tokens=self._total_output_tokens,
@@ -289,9 +317,10 @@ class QueryEngine:
             )
         except Exception as e:
             logger.error(
-                "harness.taor.fatal_error",
+                "run.failed",
                 run_id=self._run_context.run_id,
                 error=str(e),
+                exc_info=True,
             )
             await self._callback.run_error(str(e))
             raise
@@ -411,10 +440,11 @@ class QueryEngine:
         for block, result in zip(tool_use_blocks, results):
             if isinstance(result, Exception):
                 logger.error(
-                    "harness.tool.gather_exception",
+                    "tool.exception",
                     tool_use_id=block.id,
                     tool_name=block.name,
                     error=str(result),
+                    exc_info=result,
                 )
                 result_blocks.append(
                     ToolResultBlock(
@@ -467,6 +497,13 @@ class QueryEngine:
         await self._callback.tool_start(block.id, block.name, block.input)
         start = time.monotonic()
 
+        # ADR-118: structured lifecycle log
+        logger.info(
+            "tool.invoked",
+            tool_name=block.name,
+            tool_use_id=block.id,
+        )
+
         # Prometheus 计数
         try:
             from executor.observability.metrics import prism_tool_invocations_total
@@ -507,6 +544,15 @@ class QueryEngine:
             return result
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
+            # ADR-118: structured error log
+            logger.error(
+                "tool.exception",
+                tool_name=block.name,
+                tool_use_id=block.id,
+                error=str(e),
+                duration_ms=duration_ms,
+                exc_info=True,
+            )
             try:
                 from executor.observability.metrics import prism_tool_errors_total
 

@@ -35,7 +35,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.api.v1 import api_v1_router
 from app.core.config import settings
 from app.core.security import validate_secrets
-from app.observability.logging import init_logging
+from app.observability.logging import StructlogRequestMiddleware, init_logging
 from app.observability.metrics import REGISTRY  # triggers metric registration
 from app.observability.tracing import init_tracing
 
@@ -58,7 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     # 2. Structured logging (ADR-118)
-    init_logging(level="DEBUG" if settings.PRISM_ENV == "development" else "INFO")
+    _dev = settings.PRISM_ENV == "development"
+    init_logging(level="DEBUG" if _dev else "INFO", dev_mode=_dev)
 
     # 2b. OTel Tracing (ADR-117, DOC-12 Task 12.5)
     init_tracing(settings)
@@ -227,6 +228,11 @@ app = FastAPI(
 
 # Register v1 API router
 app.include_router(api_v1_router)
+
+# Structured logging middleware (ADR-118) — binds request_id / user_id to
+# structlog contextvars for every HTTP request; cleared after response.
+# Must be added *before* CORS so it wraps all requests.
+app.add_middleware(StructlogRequestMiddleware)
 
 # CORS — development only; tighten in production via PRISM_ENV guard
 app.add_middleware(
