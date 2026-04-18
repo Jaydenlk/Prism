@@ -11,6 +11,8 @@ Routers:
   skills     — Skills Market search/install/uninstall (DOC-05 Task 5.6)
   plugins    — Plugin load/validate/export-cc (DOC-05 Task 5.7)
   sessions   — Session CRUD + message incremental query (DOC-07 Task 7.1)
+  tasks      — POST /tasks + queue + cancel (DOC-07 Task 7.2)
+  runs       — GET /runs/{id} + /sessions/{id}/runs (DOC-07 Task 7.2)
 """
 from fastapi import APIRouter
 
@@ -21,6 +23,8 @@ from app.api.v1 import harness
 from app.api.v1.skills import router as skills_router
 from app.api.v1.plugins import router as plugins_router
 from app.api.v1.sessions import router as sessions_router
+from app.api.v1.tasks import router as tasks_router
+from app.api.v1.runs import router as runs_router
 
 # Master v1 router
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -33,3 +37,5 @@ api_v1_router.include_router(harness.router)
 api_v1_router.include_router(skills_router)
 api_v1_router.include_router(plugins_router)
 api_v1_router.include_router(sessions_router)
+api_v1_router.include_router(tasks_router)
+api_v1_router.include_router(runs_router)

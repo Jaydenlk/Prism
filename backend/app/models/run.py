@@ -116,6 +116,10 @@ class Run(Base, TimestampMixin):
     harness_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
     harness_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # --- Subprocess info (v4 DOC-07 Task 7.2 — cancel 三模式) -----------
+    # PID of the CLI executor subprocess; None before launch or after exit.
+    subprocess_pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # --- Timing -----------------------------------------------------------
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
