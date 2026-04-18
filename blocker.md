@@ -63,6 +63,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **ADR 编号持续平移：DOC-03 原标 ADR-031 用 ADR-033；DOC-04 Task 4.1 原标 ADR-030/031/032 用 ADR-034/035/036**（因 DOC-03 Task 3.4/3.5/3.6 已各占用 ADR-030/031/032/033，DOC-04 Task 4.1 的三条 ADR 依次平移为 034/035/036）。后续 DOC-04 Task 4.2+ 的 ADR 继续从 ADR-037 接续。
 
+**DOC-04 Task 4.2 原标 ADR-033/034/035 用 ADR-037/038/039**（PRD ADR-033 被 DOC-03 Task 3.6 Harness 配置 2 源化占用；ADR-034/035 被 DOC-04 Task 4.1 MCP 白名单/frontmatter skills 占用；Task 4.2 的 Fork capability-based/Fork 3 硬约束/ForkBriefing 依次平移为 ADR-037/038/039）。后续 DOC-04 Task 4.3+ 的 ADR 从 ADR-040 接续（但须检查与 DOC-05 范围是否冲突）。
+
 ---
 
 ### Action required from human reviewer

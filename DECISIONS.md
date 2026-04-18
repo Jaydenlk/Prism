@@ -15,6 +15,7 @@
 | DOC-03 v4 | ADR-020 ~ ADR-031 | Harness 单实例 / 工具并行 / Redis 直通 / 心跳 / Hook 11 字段 / ask BLPOP / Compaction 4 级 / 配置 2 源 |
 | DOC-04 v4 | ADR-030 ~ ADR-038 | MCP 白名单 / Verifier VERDICT / Fork 3 约束 / ForkBriefing / Coordinator checkpoint / TaskRouter / PluginBuilder 打分 |
 | DOC-04 实施编号平移 | ADR-034 / ADR-035 / ADR-036 | Task 4.1 落地编号（PRD ADR-030/031/032 因 DOC-03 冲突平移至 ADR-034/035/036）|
+| DOC-04 Task 4.2 实施编号平移 | ADR-037 / ADR-038 / ADR-039 | Task 4.2 落地编号（PRD ADR-033/034/035 因 DOC-03 Task 3.6 ADR-033 冲突，平移至 ADR-037/038/039）|
 | DOC-05 v4 | ADR-040 ~ ADR-050 | Skill 三级 / 强制调用 / is_skill_context / Hook 4 handler / MCP 双通道 / 变量系统 / Skills 两源 / ConversionReport |
 | DOC-06 v4 | ADR-050 ~ ADR-055 | 三密钥独立 / SSE ticket / Refresh cookie |
 | DOC-07 v4 | ADR-060 ~ ADR-067 | sequence_no 原子 / promote 事务 / cancel 三模式 / 回调方案 A / permission-answer / HeartbeatMonitor / subprocess 参数 / coordinator_recovery |
@@ -446,6 +447,52 @@
 - **偏离点**: 无。VERIFIER_SYSTEM_PROMPT 99% 按 PRD Part B 原文保留，仅将 ASCII 引号统一为中文标点（保持中文文档一致性）。VERDICT 三态协议完整注入。
 - **验证结果**: behavior_constraints 含 "VERDICT" PASS；含 "try to break" PASS；含 "Frontend"/"Backend"/"CLI"/"Migration" 4 类 PASS
 - **下游影响**: DOC-04 Task 4.4 TaskRouter 路由到 verifier 时，PromptAssembler 使用 VERIFIER_AGENT.behavior_constraints 注入 VERDICT 协议；DOC-05 Task 5.3 Hook 4 handler 可读取 VERDICT 状态
+
+---
+
+---
+
+## DOC-04 Task 4.2: Fork & Context Isolation（ADR-037 / ADR-038 / ADR-039）
+
+## ADR-037: Fork capability-based 工具白名单（DOC-04 Task 4.2）
+- **来源**: PRD v4 DOC-04 Task 4.2 Part A ADR-033（PRD 原标 ADR-033，因 DOC-03 Task 3.6 已用 ADR-033，编号平移至 ADR-037）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/tools/base.py` — BaseTool.capabilities: list[str] = []（class-level 默认空列表，子类 override）
+  - `executor/tools/builtin/fork.py` — ForkTool.capabilities = ["fork_agent"]
+  - `executor/agents/base.py` — AgentDefinition.allowed_capabilities: list[str] 字段
+  - `executor/coordinator/fork_manager.py` — ForkManager._create_filtered_registry()：allowed_caps 空时保留所有工具；非空时 tool_caps.issubset(allowed_caps) 过滤
+  - `executor/tools/registry.py` — ToolRegistry.list_all() 方法（返回 BaseTool 实例列表，过滤源）
+- **实施 commit**: a61991d
+- **偏离点**: 无。空 allowed_caps 语义"不限制"与 allowed_tools=None 保持一致（父 Agent 行为）。
+- **验证结果**: 4 个过滤场景 PASS（单 cap 过滤/空列表保留所有/None 保留所有/多 cap 两工具）
+- **下游影响**: DOC-04 Task 4.3 Coordinator 调用 ForkManager.fork() 时，根据子任务需求传入 required_capabilities 限制子 Agent 工具
+
+## ADR-038: Fork 3 条 prompt-level 硬约束（DOC-04 Task 4.2）
+- **来源**: PRD v4 DOC-04 Task 4.2 Part A ADR-034（PRD 原标 ADR-034，平移至 ADR-038）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/coordinator/fork_briefing.py` — FORK_HARD_CONSTRAINTS 常量（3 条：禁止覆盖 model / 禁止偷窥 outputFile / 禁止预言结果）
+  - `executor/coordinator/fork_manager.py` — _create_child_assembler()：inject_constraints=True 时设 child._extra_dynamic_tail = FORK_HARD_CONSTRAINTS
+  - `executor/engine/prompt_assembler.py` — PromptAssembler.__init__ 追加 _extra_dynamic_tail: str | None = None；_build_dynamic() 末尾 if self._extra_dynamic_tail: sections.append(self._extra_dynamic_tail)
+- **实施 commit**: a61991d
+- **偏离点**: 无。3 条约束文本 99% 按 PRD 原文，微调中文标点（禁止偷窥/禁止预言完整保留）。_extra_dynamic_tail 字段不影响非 Fork 的 PromptAssembler（默认 None，不注入）。
+- **验证结果**: _extra_dynamic_tail 注入验证 PASS（TEST_TAIL 在 prompt 末尾）；3 条约束内容 grep PASS
+- **下游影响**: DOC-04 Task 4.3 Coordinator 通过 ForkManager 派生子 Agent 时，子 Agent 的 system prompt 自动含 3 条约束；不影响主 Agent
+
+## ADR-039: ForkBriefing 结构化 6 字段（DOC-04 Task 4.2）
+- **来源**: PRD v4 DOC-04 Task 4.2 Part A ADR-035（PRD 原标 ADR-035，平移至 ADR-039）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/coordinator/fork_briefing.py` — ForkBriefing dataclass（6 字段：goal/why/excluded/context/expected_output/file_references）+ to_prompt()（6 markdown section 标题）
+  - `executor/coordinator/fork_result.py` — ForkResult dataclass（9 字段，含 briefing: ForkBriefing）
+  - `executor/coordinator/fork_manager.py` — ForkManager.fork() 接受 briefing: ForkBriefing；child_engine.run(briefing.to_prompt())
+  - `executor/tools/builtin/fork.py` — ForkTool.execute() 从 tool_input 构造 ForkBriefing（goal 必填，其他可选）；input_schema 对齐 ForkBriefing 6 字段
+  - `executor/coordinator/__init__.py` — 导出 ForkBriefing, ForkResult, ForkManager, ForkDepthExceeded, FORK_HARD_CONSTRAINTS
+- **实施 commit**: a61991d
+- **偏离点**: ForkTool input_schema 保留 "agent_type"/"goal" 为 required，其余 4 字段为 optional（对应 ForkBriefing 的 field(default_factory=list)/默认 "" 字段）。ForkDepthExceeded 定义在 fork_manager.py 顶部（非独立文件，符合 Task 指令）。
+- **验证结果**: ForkBriefing.to_prompt() 6 section 标题全部存在 PASS；ForkResult 9 字段验证 PASS；ForkTool.execute() success/fail 两路径 PASS
+- **下游影响**: DOC-04 Task 4.3 Coordinator 必须通过 ForkBriefing 6 字段传递任务入参，不允许回退为 free-form string；DOC-07 Task 7.4 日志记录 ForkBriefing.goal（前 200 字）作为 fork_start 事件
 
 ---
 

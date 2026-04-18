@@ -48,7 +48,7 @@
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
 | DOC-04 Task 4.1: Agent 专业化 + AgentPool(6 种) | completed | 2026-04-18 | 2026-04-18 | d04b909 | 9新文件+1修改: executor/agents/{base,general,research,planner,verifier,coordinator,plugin_builder,pool,__init__}.py; HarnessRuntime追加agent_def参数+AGENT-READONLY规则; 6种agent_type(general/explore/planner/verifier/coordinator/plugin_builder)+3别名(chat/research/build); 全部15项验证PASS |
-| DOC-04 Task 4.2: Fork + Context Isolation(capability) | pending | — | — | — | — |
+| DOC-04 Task 4.2: Fork + Context Isolation(capability) | completed | 2026-04-19 | 2026-04-19 | a61991d | 5新文件+4修改: fork_briefing.py(ForkBriefing 6字段+to_prompt()+FORK_HARD_CONSTRAINTS); fork_result.py(ForkResult 9字段); fork_manager.py(ForkManager+ForkDepthExceeded, depth检查/capability过滤/_create_child_assembler/_extract_synthesis); fork.py(ForkTool capability=["fork_agent"]); coordinator/__init__.py 导出5符号; AgentDefinition追加allowed_capabilities字段; BaseTool追加capabilities class-level; ToolRegistry追加list_all(); PromptAssembler追加_extra_dynamic_tail+_build_dynamic末尾注入; builtin/__init__追加fork_manager参数; 全部15项验证PASS |
 | DOC-04 Task 4.3: Coordinator + Plan checkpoint | pending | — | — | — | — |
 | DOC-04 Task 4.4: TaskRouter(6 agent_type) | pending | — | — | — | — |
 | DOC-04 Task 4.5: PluginBuilder(完整度打分) | pending | — | — | — | — |

@@ -35,6 +35,53 @@
 
 ---
 
+## 2026-04-19 -- DOC-04 Task 4.2 completed (Fork & Context Isolation)
+
+### 本次 session 做了什么
+- Created executor/coordinator/fork_briefing.py — ForkBriefing dataclass(6字段:goal/why/excluded/context/expected_output/file_references) + to_prompt()(6 markdown section标题) + FORK_HARD_CONSTRAINTS(3条硬约束 ADR-038)
+- Created executor/coordinator/fork_result.py — ForkResult dataclass(9字段,含briefing:ForkBriefing + allowed_capabilities)
+- Created executor/coordinator/fork_manager.py — ForkManager + ForkDepthExceeded; fork()(depth检查/capability过滤/子assembler/子pipeline/子harness/timeout包裹); _create_child_assembler()(继承parent static cache + inject FORK_HARD_CONSTRAINTS); _create_filtered_registry()(capability-based过滤,空list=不限制); _extract_synthesis()(反向扫最后assistant TextBlock)
+- Created executor/coordinator/__init__.py — 导出 ForkBriefing/ForkResult/ForkManager/ForkDepthExceeded/FORK_HARD_CONSTRAINTS
+- Created executor/tools/builtin/fork.py — ForkTool(BaseTool), capabilities=["fork_agent"], input_schema含agent_type/goal必填+4可选字段, execute()构造ForkBriefing并调fork_manager.fork()
+- Modified executor/agents/base.py — AgentDefinition追加 allowed_capabilities: list[str] = field(default_factory=list)
+- Modified executor/tools/base.py — BaseTool追加 capabilities: list[str] = [] class-level默认
+- Modified executor/tools/registry.py — 追加 list_all() -> list[BaseTool] 方法
+- Modified executor/engine/prompt_assembler.py — 追加 _extra_dynamic_tail: str | None = None; _build_dynamic()末尾注入
+- Modified executor/tools/builtin/__init__.py — register_builtin_tools追加可选fork_manager参数
+
+### 验证结果
+- Part B 验证步骤 15 项: 全部 PASS
+- py_compile 10文件 PASS
+- 导入 5个符号 PASS
+- ForkBriefing.to_prompt() 6 section PASS
+- FORK_HARD_CONSTRAINTS 3条约束 PASS
+- ForkResult 9字段 PASS
+- ToolRegistry.list_all() PASS
+- _extra_dynamic_tail 注入 PASS
+- ForkDepthExceeded depth=2 PASS
+- capability过滤 4场景 PASS
+- _create_child_assembler static_cache+tools_hash+tail PASS
+- _extract_synthesis 最后assistant PASS
+- ForkTool input_schema required PASS
+- ForkTool.execute success PASS
+- ForkTool.execute fail PASS
+- grep backend.app: 0命中 PASS
+
+### 下一个 Task 需要注意 -- DOC-04 Task 4.3 (Coordinator + Plan checkpoint)
+- Coordinator 用 ForkManager 派 Worker Agent：Coordinator 需持有 ForkManager 实例，在 TAOR 循环中通过 fork_agent 工具（或直接调用 ForkManager.fork()）派生 research/planner/verifier 子 Agent
+- Plan checkpoint 需持久化到 coordinator_plans 表（Task 2.1 已建）：coordinator_plans 表含 run_id/plan_json/current_step/status，Coordinator 每完成一步需 UPSERT checkpoint，重启时从 checkpoint 恢复
+- 崩溃恢复：子进程重启时 --resume-from-step=N 从 checkpoint 继续，QueryEngine 初始化时检查 coordinator_plans 表，若有 in_progress plan 则注入已完成步骤的 synthesis 到 messages
+
+### 遗留风险 / 未决事项
+- ADR 编号平移：DOC-04 Task 4.2 PRD 原标 ADR-033/034/035 → 本实现 ADR-037/038/039（见 blocker.md）
+- ForkManager.fork() 中 QueryEngine/ToolExecutionPipeline 延迟导入（避免循环依赖），真实集成时需确认 harness_factory 的签名接受 AgentDefinition 参数（lifecycle.py HarnessRuntime constructor）
+- ForkTool 的 capabilities=["fork_agent"] class-level 属性：Python class-level list 是共享引用，子类若不 override 而直接 append 会污染父类，当前实现只读取不修改，安全
+
+### Commit
+- `a61991d` — `feat(v4): Fork & Context Isolation (capability-based + 3 hard constraints + ForkBriefing 6 fields) — DOC-04 Task 4.2`
+
+---
+
 ## 2026-04-18 -- DOC-04 Task 4.1 completed (6 specialized Agent definitions + AgentPool)
 
 ### Done this session
