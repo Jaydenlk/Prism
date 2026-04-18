@@ -1,0 +1,68 @@
+# Prism v2 — Prometheus scrape configuration (ADR-116, DOC-12 Task 12.4)
+#
+# Targets:
+#   backend  — FastAPI /metrics endpoint (admin token in Authorization header)
+#   executor — Executor sidecar /metrics (push-gateway or direct scrape on port 9091)
+#
+# To reload without restart:
+#   curl -X POST http://localhost:9090/-/reload
+
+global:
+  scrape_interval: 15s        # default scrape cadence
+  evaluation_interval: 15s    # rule evaluation cadence
+  scrape_timeout: 10s
+
+  # Common labels appended to every time series
+  external_labels:
+    environment: production
+    project: prism-v2
+
+# ---------------------------------------------------------------------------
+# Alerting (optional — wire to Alertmanager for Task 12.8 integration)
+# ---------------------------------------------------------------------------
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+# ---------------------------------------------------------------------------
+# Rule files (Task 12.8 AlertDispatcher will add alert rules here)
+# ---------------------------------------------------------------------------
+rule_files:
+  - "rules/*.yml"
+
+# ---------------------------------------------------------------------------
+# Scrape jobs
+# ---------------------------------------------------------------------------
+scrape_configs:
+  # Backend FastAPI — exposes /metrics (ADR-116)
+  - job_name: prism_backend
+    metrics_path: /metrics
+    scheme: http
+    # In production set PROMETHEUS_METRICS_TOKEN and uncomment:
+    # authorization:
+    #   credentials_file: /run/secrets/prometheus_token
+    static_configs:
+      - targets:
+          - "backend:8000"
+        labels:
+          service: backend
+          component: fastapi
+
+  # Executor sidecar — sub-process metrics via push-gateway (port 9091)
+  # Enable when executor sidecar is deployed.
+  - job_name: prism_executor
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - "backend:9091"
+        labels:
+          service: executor
+          component: harness
+
+  # Prometheus self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - "localhost:9090"
