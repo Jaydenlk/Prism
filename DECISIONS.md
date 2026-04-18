@@ -784,7 +784,52 @@
   - DOC-06 Task 6.1 落地三密钥 ADR 时，须将原 DOC-06 ADR-050 编号平移至 ADR-051（已在 blocker.md 标注）
   - DOC-07 Task 7.4 executor 子进程 finally 块调用 await plugin_host.shutdown() 保证 MCP 子进程清理
 
-> **最后更新**: 2026-04-19（DOC-05 Task 5.4 — PluginHost 统一管理 + 变量替换系统 + ADR-050）
+  - DOC-07 Task 7.4 executor 子进程 finally 块调用 await plugin_host.shutdown() 保证 MCP 子进程清理
+
+---
+
+## DOC-05 Task 5.5: Skills Registry Local + GitHub 两源（ADR-051）
+
+## ADR-051: Skills Registry Phase 1 仅 Local + GitHub 两源（DOC-05 Task 5.5）
+- **来源**: PRD v4 DOC-05 Task 5.5 Part A ADR-047（PRD 原标 ADR-047；因 DOC-05 Task 5.2 已占用 ADR-047 MCP agent 白名单，平移至 ADR-051，见 blocker.md）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/skills_registry.py` — 新建文件，含：
+    - `SkillPackage` dataclass（source: Literal["local","github"]，Phase 1 收窄）
+    - `SkillBundle` dataclass（files: dict[str, bytes]）
+    - `InstalledSkill` dataclass（8 字段）
+    - `SkillSource` ABC（search/fetch/get_versions 抽象方法）
+    - `LocalSource`（扫描 .skills/ + .prism/skills/，关键词匹配 name/description/tags）
+    - `GitHubSource`（httpx 调用 GitHub API + raw.githubusercontent.com 下载，支持 user/repo#branch/@tag/subpath 4 种格式）
+    - `SkillsRegistry`（asyncio.gather 并行搜索 + 按 name 去重 + installed 优先排序 + registry.json 原子写）
+  - `executor/plugins/__init__.py` — 新增导出 7 个符号（SkillPackage/SkillBundle/InstalledSkill/SkillSource/LocalSource/GitHubSource/SkillsRegistry）
+- **实施 commit**: (本 Task feat commit)
+- **偏离点**:
+  1. ADR 编号从 PRD 原标 ADR-047 平移至 ADR-051（ADR-047 已被 DOC-05 Task 5.2 MCP agent-scoped 白名单占用，见 blocker.md）
+  2. NpmSource / ManusSource Phase 2 预留（SkillSource 抽象基类已保留扩展点，文件末尾占位注释）
+  3. GitHubSource 无 Token 时 search 返回空列表 + log warning（而非 raise），符合 Phase 1 降级策略
+  4. Backend skill_installs 表由 Backend skill_install_service 写入（Task 5.6 实现）；executor 侧 SkillsRegistry 只管文件系统 + registry.json
+  5. SkillsRegistry.install() 不直接调用 PluginHost（解耦），上层调用方（CLI/Backend service）负责触发 reload
+- **验证结果**: 全部 9 项验证 PASS
+  - py_compile skills_registry.py / __init__.py PASS
+  - SkillPackage/SkillBundle/InstalledSkill 数据类实例化 PASS
+  - LocalSource.search(空查询返回全部 / 关键词过滤) PASS
+  - LocalSource.fetch(返回 SkillBundle 含 SKILL.md) PASS
+  - LocalSource.get_versions PASS
+  - SkillsRegistry.search(多源并行 + installed 优先排序) PASS
+  - SkillsRegistry.install(文件写入 + registry.json 更新) PASS
+  - SkillsRegistry.uninstall(文件删除 + registry.json 更新) PASS
+  - registry.json 格式（version: "1.0", skills 列表）PASS
+  - has_hooks/has_mcp 检测（hooks/ 目录 + frontmatter / mcp/ 目录）PASS
+  - GitHubSource._parse_package_id（4 种格式）PASS
+  - 进程边界检查（无 backend.app 导入）PASS
+  - Phase 2 占位注释存在 PASS
+- **下游影响**:
+  - DOC-05 Task 5.6 SkillsCLI + SkillsSearchTool 依赖 SkillsRegistry.search()
+  - DOC-06 Task 6.1 落地三密钥 ADR 时，DOC-06 原 ADR-050 编号已被占用（ADR-050 = PluginHost，见 blocker.md），须从 ADR-051 之后继续（ADR-052+）
+  - Backend skill_install_service（Task 5.6）调用 SkillsRegistry.install() 后写 skill_installs 表
+
+> **最后更新**: 2026-04-19（DOC-05 Task 5.5 — Skills Registry Local+GitHub 两源 + ADR-051）
 
 ---
 
