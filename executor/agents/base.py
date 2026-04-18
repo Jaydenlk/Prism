@@ -39,6 +39,7 @@ class AgentDefinition:
     mcp_servers: list[str] | None = None         # ADR-030: MCP Server 白名单(None=全部)
     frontmatter_skills: list[str] = field(default_factory=list)  # ADR-031: 仅对此 agent_type 生效的 skill
     bash_whitelist: list[str] | None = None      # Explore/Research 严格 Bash 白名单
+    allowed_capabilities: list[str] = field(default_factory=list)  # ADR-033: capability-based 工具过滤白名单(Task 4.2)
 
     def filter_tools(self, all_tools: list[str]) -> list[str]:
         """根据白名单/黑名单过滤可用工具。

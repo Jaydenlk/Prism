@@ -27,6 +27,10 @@ class ToolResult:
 class BaseTool(ABC):
     """工具抽象基类"""
 
+    # v4 ADR-033: capability 标签（class-level 默认空列表，子类可 override）
+    # 推荐命名：read_file / write_file / exec_shell / web_access / db_query / fork_agent
+    capabilities: list[str] = []
+
     @property
     @abstractmethod
     def name(self) -> str:

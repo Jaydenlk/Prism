@@ -119,6 +119,9 @@ class PromptAssembler:
         self._tools = tools
         self._static_cache: str | None = None
         self._tools_hash: str | None = None
+        # v4 Task 4.2: Fork 子 assembler 动态尾部注入（ADR-034 硬约束）
+        # 非 None/非空时，_build_dynamic 会在末尾拼接此文本
+        self._extra_dynamic_tail: str | None = None
 
     def _compute_tools_hash(self) -> str:
         """根据工具名 + description 计算 hash，供 cache 失效判断。
@@ -186,6 +189,9 @@ class PromptAssembler:
             sections.append(token_budget_section(remaining_tokens))
         if brief_mode:
             sections.append(brief_section())
+        # v4 Task 4.2: Fork 硬约束注入（ADR-034），非空时追加到动态部分末尾
+        if self._extra_dynamic_tail:
+            sections.append(self._extra_dynamic_tail)
         return "\n\n".join(s for s in sections if s)
 
     def build(self, **dynamic_kwargs) -> str:

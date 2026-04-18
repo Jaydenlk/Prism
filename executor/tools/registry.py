@@ -36,6 +36,14 @@ class ToolRegistry:
             key=lambda d: d.name,
         )
 
+    def list_all(self) -> list[BaseTool]:
+        """返回所有工具实例列表（v4 ADR-033: capability-based 过滤源）。
+
+        不排序（按注册顺序）。与 list_definitions() 不同，此方法返回 BaseTool 实例，
+        供 ForkManager._create_filtered_registry() 按 capability 过滤。
+        """
+        return list(self._tools.values())
+
     def __len__(self) -> int:
         return len(self._tools)
 
