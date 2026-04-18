@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 import psutil
 
@@ -217,3 +218,115 @@ class ResourceMonitor:
     def is_memory_critical(self) -> bool:
         """内存使用率是否超过 critical 阈值（85%）。"""
         return self.get_memory_percent() >= self._mem_critical
+
+    # ----------------------------------------------------------
+    # AlertDispatcher 接入（ADR-120 PRD Part B §6）
+    # ----------------------------------------------------------
+
+    async def check_and_dispatch(
+        self,
+        alert_dispatcher: "Any | None" = None,
+        queue_depth: int = 0,
+    ) -> dict:
+        """
+        资源检查 + AlertDispatcher 告警路由（ADR-120）。
+
+        - 内存 >= 85%（critical）  → dispatch("critical", "resource.memory", ...)
+        - 内存 >= 70%（warning）   → dispatch("warning", "resource.memory", ...)
+        - 同样规则适用于 CPU（resource.cpu）
+
+        ADR-120 PRD Part B §6：
+          ResourceMonitor 调用 AlertDispatcher.dispatch("warning" when 70%+/"critical" when 85%+,
+          "resource.memory", detail)
+
+        Returns:
+            check_health() 的结果 dict
+        """
+        health = self.check_health(queue_depth=queue_depth)
+        status = health["status"]
+
+        if alert_dispatcher is None or status == "ok":
+            return health
+
+        mem_pct = health["memory_percent"]
+        cpu_pct = health["cpu_percent"]
+
+        # 内存告警
+        if mem_pct >= self._mem_critical:
+            try:
+                await alert_dispatcher.dispatch(
+                    severity="critical",
+                    event_type="resource.memory",
+                    detail={
+                        "memory_percent": mem_pct,
+                        "threshold_critical": self._mem_critical,
+                        "backend_memory_mb": health.get("backend_memory_mb", 0.0),
+                        "child_count": health.get("child_count", 0),
+                        "queue_depth": queue_depth,
+                    },
+                    resource_type="system",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "resource_monitor.alert_dispatcher_failed",
+                    event="resource.memory.critical",
+                    error=str(exc),
+                )
+        elif mem_pct >= self._mem_warn:
+            try:
+                await alert_dispatcher.dispatch(
+                    severity="warning",
+                    event_type="resource.memory",
+                    detail={
+                        "memory_percent": mem_pct,
+                        "threshold_warn": self._mem_warn,
+                        "backend_memory_mb": health.get("backend_memory_mb", 0.0),
+                        "child_count": health.get("child_count", 0),
+                        "queue_depth": queue_depth,
+                    },
+                    resource_type="system",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "resource_monitor.alert_dispatcher_failed",
+                    event="resource.memory.warning",
+                    error=str(exc),
+                )
+
+        # CPU 告警
+        if cpu_pct >= self._cpu_critical:
+            try:
+                await alert_dispatcher.dispatch(
+                    severity="critical",
+                    event_type="resource.cpu",
+                    detail={
+                        "cpu_percent": cpu_pct,
+                        "threshold_critical": self._cpu_critical,
+                    },
+                    resource_type="system",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "resource_monitor.alert_dispatcher_failed",
+                    event="resource.cpu.critical",
+                    error=str(exc),
+                )
+        elif cpu_pct >= self._cpu_warn:
+            try:
+                await alert_dispatcher.dispatch(
+                    severity="warning",
+                    event_type="resource.cpu",
+                    detail={
+                        "cpu_percent": cpu_pct,
+                        "threshold_warn": self._cpu_warn,
+                    },
+                    resource_type="system",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "resource_monitor.alert_dispatcher_failed",
+                    event="resource.cpu.warning",
+                    error=str(exc),
+                )
+
+        return health

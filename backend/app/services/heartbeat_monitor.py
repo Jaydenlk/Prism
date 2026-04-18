@@ -31,6 +31,9 @@ from typing import TYPE_CHECKING
 import structlog
 
 if TYPE_CHECKING:
+    from typing import Any
+
+    from app.services.alert_dispatcher import AlertDispatcher
     from app.services.run_lifecycle import RunLifecycle
 
 logger = structlog.get_logger(__name__)
@@ -54,12 +57,14 @@ class HeartbeatMonitor:
         lifecycle: "RunLifecycle",
         scan_interval: int = 10,   # 扫描间隔，秒
         stale_threshold: int = 30, # 超过此秒数判定为 crashed
+        alert_dispatcher: "AlertDispatcher | None" = None,  # ADR-120
     ) -> None:
         self._redis = redis_client
         self._lifecycle = lifecycle
         self._scan_interval = scan_interval
         self._stale_threshold = stale_threshold
         self._running = False
+        self._alert_dispatcher = alert_dispatcher  # ADR-120 optional
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -164,6 +169,7 @@ class HeartbeatMonitor:
         )
 
         # 标记 crashed + promote 队列（DB 操作在 lifecycle 内 commit）
+        new_run_id = None
         try:
             new_run_id = self._lifecycle.mark_crashed(
                 run_id, reason=f"heartbeat_stale_{age}s"
@@ -179,6 +185,28 @@ class HeartbeatMonitor:
                 run_id=run_id,
                 error=str(exc),
             )
+
+        # AlertDispatcher — critical 告警（ADR-120 PRD Part B §5）
+        if self._alert_dispatcher is not None:
+            try:
+                await self._alert_dispatcher.dispatch(
+                    severity="critical",
+                    event_type="run.crashed",
+                    detail={
+                        "run_id": run_id,
+                        "age_seconds": age,
+                        "reason": f"heartbeat_stale_{age}s",
+                        "promoted_run_id": new_run_id,
+                    },
+                    resource_type="run",
+                    resource_id=run_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "heartbeat_monitor.alert_dispatcher_failed",
+                    run_id=run_id,
+                    error=str(exc),
+                )
 
         # 清除 key 避免重复处理（即使 mark_crashed 失败也删除）
         await self._redis.delete(raw_key)

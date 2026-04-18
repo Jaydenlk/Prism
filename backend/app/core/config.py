@@ -69,6 +69,20 @@ class Settings(BaseSettings):
     OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
     OTEL_SERVICE_NAME: str = "prism-backend"
 
+    # --- Alert Dispatcher (ADR-120) ---------------------------------------
+    # IM 群告警：格式 "{platform}:{chat_id}"，如 "feishu:oc_xxx"
+    ALERT_IM_CHANNEL: str = ""
+    # Email 告警收件人（逗号分隔多个）
+    ALERT_EMAIL: str = ""
+    # SMTP 配置（Phase 1，未配置时 email 告警降级）
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "noreply@prism.local"
+    # 告警详情页 base URL（用于 IM 消息链接）
+    PRISM_BASE_URL: str = ""
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

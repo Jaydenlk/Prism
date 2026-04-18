@@ -37,6 +37,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from sqlalchemy.orm import Session
     from app.services.harness_analytics import HarnessAnalytics
 
@@ -99,13 +101,23 @@ class EntropyDetector:
     # 主检测方法
     # ------------------------------------------------------------------
 
-    def detect(self, user_id: str | None = None) -> list[dict]:
+    def detect(
+        self,
+        user_id: str | None = None,
+        alert_dispatcher: "Any | None" = None,
+    ) -> list[dict]:
         """
         执行 Entropy 检测（8 信号）。
 
         P0 窗口约定：
           current  = aggregate(days=7, offset_days=0)
           previous = aggregate(days=7, offset_days=7)
+
+        Args:
+            user_id:          关联用户 ID（可选）
+            alert_dispatcher: AlertDispatcher 实例（可选）。
+                              传入时对每个 critical/error 告警调用 dispatch()，
+                              实现 IM 群 + Email 路由（ADR-120 PRD Part B §4）。
 
         Returns:
             告警列表，每项含 signal / current_value / threshold /
@@ -260,6 +272,46 @@ class EntropyDetector:
                 alert_count=len(alerts),
                 signals=[a["signal"] for a in alerts],
             )
+
+        # ------------------------------------------------------------------
+        # AlertDispatcher 路由（ADR-120 PRD Part B §4）
+        # ------------------------------------------------------------------
+        if alerts and alert_dispatcher is not None:
+            import asyncio
+
+            for alert in alerts:
+                alert_severity = alert.get("severity", "warning")
+                # Entropy 告警固定为 error 或 critical（PRD Part B §4）
+                dispatch_severity = "critical" if alert_severity == "critical" else "error"
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # 在 async 上下文中创建 task（fire-and-forget，不阻塞检测流程）
+                        asyncio.ensure_future(
+                            alert_dispatcher.dispatch(
+                                severity=dispatch_severity,
+                                event_type="harness.entropy_alert",
+                                detail=alert,
+                                user_id=user_id,
+                                resource_type="system",
+                            )
+                        )
+                    else:
+                        loop.run_until_complete(
+                            alert_dispatcher.dispatch(
+                                severity=dispatch_severity,
+                                event_type="harness.entropy_alert",
+                                detail=alert,
+                                user_id=user_id,
+                                resource_type="system",
+                            )
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(
+                        "entropy_detector.alert_dispatcher_failed",
+                        signal=alert.get("signal"),
+                        error=str(exc),
+                    )
 
         return alerts
 

@@ -1,0 +1,274 @@
+---
+# Prism v2 — Prometheus Alertmanager Rules (DOC-12 Task 12.8, ADR-120)
+#
+# Severity 对应 AlertDispatcher 分档：
+#   info     → structlog only
+#   warning  → audit_logs
+#   error    → audit_logs + SSE
+#   critical → audit_logs + SSE + IM 群 + Email
+#
+# 载入方式：prometheus.yml 中 rule_files 字段引用本文件
+#   rule_files:
+#     - "/etc/prometheus/rules/prism_alerts.yml"
+
+groups:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 1. Run / Agent 告警
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: prism_runs
+    rules:
+
+      - alert: PrismRunHighFailureRate
+        expr: |
+          rate(prism_runs_total{status="failed"}[5m])
+          / (rate(prism_runs_total[5m]) + 1e-9) > 0.3
+        for: 5m
+        labels:
+          severity: error
+          dispatcher_channel: audit_sse
+        annotations:
+          summary: "Run 失败率超过 30%（5 分钟窗口）"
+          description: >
+            最近 5 分钟 Run 失败率 {{ printf "%.1f" (mul $value 100) }}%，
+            超过 30% 阈值。可能原因：executor 崩溃 / Provider 故障 / 代码错误。
+
+      - alert: PrismRunCrashedDetected
+        expr: |
+          increase(prism_agent_heartbeat_stale_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          dispatcher_channel: audit_sse_im_email
+        annotations:
+          summary: "检测到 Agent 进程心跳超时（Run crashed）"
+          description: >
+            最近 5 分钟内 {{ $value }} 个 Run 心跳超时，已标记为 crashed。
+            HeartbeatMonitor 已触发 AlertDispatcher.dispatch("critical", "run.crashed")。
+
+      - alert: PrismRunQueueDepthHigh
+        expr: |
+          prism_session_queue_depth > 10
+        for: 2m
+        labels:
+          severity: warning
+          dispatcher_channel: audit
+        annotations:
+          summary: "Session 任务队列堆积（深度 > 10）"
+          description: >
+            Session 队列当前深度 {{ $value }}，超过 10 的 warning 阈值。
+            可能原因：并发 Run 上限已达，executor 处理速度跟不上。
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 2. 资源监控（ADR-111 百分比阈值）
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: prism_resources
+    rules:
+
+      - alert: PrismMemoryWarning
+        expr: |
+          prism_resource_memory_percent > 70
+        for: 5m
+        labels:
+          severity: warning
+          dispatcher_channel: audit
+        annotations:
+          summary: "内存使用率超过 70%（warn 阈值）"
+          description: >
+            系统内存使用率 {{ printf "%.1f" $value }}%，超过 70% warning 阈值。
+            ResourceMonitor.check_and_dispatch("warning", "resource.memory") 已触发。
+
+      - alert: PrismMemoryCritical
+        expr: |
+          prism_resource_memory_percent > 85
+        for: 2m
+        labels:
+          severity: critical
+          dispatcher_channel: audit_sse_im_email
+        annotations:
+          summary: "内存使用率超过 85%（critical 阈值）"
+          description: >
+            系统内存使用率 {{ printf "%.1f" $value }}%，超过 85% critical 阈值。
+            ResourceMonitor.check_and_dispatch("critical", "resource.memory") 已触发。
+
+      - alert: PrismCPUWarning
+        expr: |
+          prism_resource_cpu_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+          dispatcher_channel: audit
+        annotations:
+          summary: "CPU 使用率超过 80%（warn 阈值）"
+          description: >
+            系统 CPU 使用率 {{ printf "%.1f" $value }}%，超过 80% warning 阈值。
+
+      - alert: PrismCPUCritical
+        expr: |
+          prism_resource_cpu_percent > 95
+        for: 2m
+        labels:
+          severity: critical
+          dispatcher_channel: audit_sse_im_email
+        annotations:
+          summary: "CPU 使用率超过 95%（critical 阈值）"
+          description: >
+            系统 CPU 使用率 {{ printf "%.1f" $value }}%，超过 95% critical 阈值。
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 3. Entropy 信号（ADR-112 8 信号）
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: prism_entropy
+    rules:
+
+      - alert: PrismEntropyGuardrailRateHigh
+        expr: |
+          prism_harness_guardrail_trigger_rate > 0.3
+        for: 5m
+        labels:
+          severity: error
+          dispatcher_channel: audit_sse
+          entropy_signal: guardrail_rate
+        annotations:
+          summary: "Entropy 信号1：护栏触发率超过 30%"
+          description: >
+            护栏触发率 {{ printf "%.1f" (mul $value 100) }}%，超过 30% 阈值。
+            EntropyDetector.detect() 已触发，写入 audit_logs(harness.entropy_alert)。
+
+      - alert: PrismEntropyToolErrorRateHigh
+        expr: |
+          prism_harness_tool_error_rate > 0.2
+        for: 5m
+        labels:
+          severity: error
+          dispatcher_channel: audit_sse
+          entropy_signal: tool_error_rate
+        annotations:
+          summary: "Entropy 信号2：工具错误率超过 20%"
+          description: >
+            工具执行错误率 {{ printf "%.1f" (mul $value 100) }}%，超过 20% 阈值。
+
+      - alert: PrismEntropyProviderFailoverGrowth
+        expr: |
+          rate(prism_model_failover_total[1h]) > 0
+        for: 15m
+        labels:
+          severity: error
+          dispatcher_channel: audit_sse
+          entropy_signal: provider_failover_growth
+        annotations:
+          summary: "Entropy 信号6：Provider 故障转移增速异常"
+          description: >
+            Provider 故障转移发生频率持续 15 分钟，
+            可能 Provider 健康度持续下降。
+
+      - alert: PrismEntropyCacheHitRatioDrop
+        expr: |
+          prism_cache_hit_ratio < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          dispatcher_channel: audit
+          entropy_signal: cache_hit_ratio_drop
+        annotations:
+          summary: "Entropy 信号7：Cache 命中率低于 50%"
+          description: >
+            Cache 命中率 {{ printf "%.1f" (mul $value 100) }}%，低于 50%。
+            可能影响成本和响应速度。
+
+      - alert: PrismEntropyPermAskTimeoutHigh
+        expr: |
+          prism_permission_ask_timeout_rate > 0.15
+        for: 5m
+        labels:
+          severity: warning
+          dispatcher_channel: audit
+          entropy_signal: perm_ask_timeout_rate
+        annotations:
+          summary: "Entropy 信号8：permission_ask 超时率超过 15%"
+          description: >
+            permission_ask 超时率 {{ printf "%.1f" (mul $value 100) }}%，
+            超过 15% 阈值，用户响应延迟或中断率上升。
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 4. Provider / Model 健康
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: prism_providers
+    rules:
+
+      - alert: PrismProviderCircuitBreakerOpen
+        expr: |
+          prism_provider_circuit_state{state="open"} == 1
+        for: 0m
+        labels:
+          severity: error
+          dispatcher_channel: audit_sse
+        annotations:
+          summary: "Provider 熔断器打开（{{ $labels.provider_id }}）"
+          description: >
+            Provider {{ $labels.provider_id }} 的熔断器已打开，
+            该 Provider 将暂时不可用（恢复时间 CIRCUIT_BREAKER_RECOVERY_SECONDS）。
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. 后台服务存活
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: prism_service_health
+    rules:
+
+      - alert: PrismBackendDown
+        expr: |
+          up{job="prism-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          dispatcher_channel: audit_sse_im_email
+        annotations:
+          summary: "Prism Backend 服务不可达"
+          description: >
+            Prometheus scrape prism-backend 失败超过 1 分钟，
+            服务可能已崩溃或 /metrics 端点不可用。
+
+      - alert: PrismHealthCheckFailing
+        expr: |
+          prism_health_check_status{component=~"postgres|redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          dispatcher_channel: audit_sse_im_email
+        annotations:
+          summary: "核心依赖不健康（{{ $labels.component }}）"
+          description: >
+            {{ $labels.component }} 健康检查失败超过 2 分钟，
+            /health/ready 将返回 503。
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 6. 前端错误（ADR-119）
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: prism_frontend
+    rules:
+
+      - alert: PrismFrontendErrorSpike
+        expr: |
+          rate(prism_frontend_errors_total{severity="error"}[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+          dispatcher_channel: audit
+        annotations:
+          summary: "前端 error 级别错误上报激增"
+          description: >
+            前端 error 级别错误上报速率 {{ printf "%.2f" $value }} req/s（5 分钟窗口），
+            超过 1 req/s 的 warning 阈值。
+
+      - alert: PrismFrontendCriticalErrors
+        expr: |
+          rate(prism_frontend_errors_total{severity="critical"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: error
+          dispatcher_channel: audit_sse
+        annotations:
+          summary: "前端 critical 级别错误上报"
+          description: >
+            前端上报了 critical 级别错误（ErrorBoundary 捕获），
+            速率 {{ printf "%.4f" $value }} req/s，影响用户核心体验。

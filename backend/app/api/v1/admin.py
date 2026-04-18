@@ -1,5 +1,5 @@
 """
-Prism v2 — Admin API Endpoints (DOC-06 Task 6.2 + DOC-09 Task 9.3)
+Prism v2 — Admin API Endpoints (DOC-06 Task 6.2 + DOC-09 Task 9.3 + DOC-12 Task 12.8)
 
 All routes require the 'admin' role (via require_admin dependency at router
 level — ADR-059 / ADR-083).
@@ -15,6 +15,8 @@ Routes (all under /api/v1):
   GET    /admin/audit-logs               — paginated audit log query (ADR-084)
   GET    /admin/audit-logs/export        — export audit logs (CSV)
   GET    /admin/stats/dashboard          — system stats dashboard (ADR-085)
+  GET    /admin/alerts/config            — get current alert dispatcher config (ADR-120)
+  PATCH  /admin/alerts/config            — update alert dispatcher config (ADR-120)
 
 ADR-083: Admin permission boundaries
   1. Cannot demote the last admin (409)
@@ -23,6 +25,8 @@ ADR-083: Admin permission boundaries
 ADR-084: audit-logs action param supports prefix matching (harness. etc.)
 
 ADR-085: stats/dashboard returns SystemStatsResponse via AdminStatsService
+
+ADR-120: AlertDispatcher severity routing; admin configures ALERT_IM_CHANNEL / ALERT_EMAIL
 """
 from __future__ import annotations
 
@@ -31,6 +35,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -550,3 +555,121 @@ async def get_dashboard(
     """
     svc = AdminStatsService(db, redis_client, settings)
     return await svc.get_dashboard()
+
+
+# ---------------------------------------------------------------------------
+# Alert Dispatcher Config  (ADR-120 — DOC-12 Task 12.8)
+# ---------------------------------------------------------------------------
+
+
+class AlertConfigRequest(BaseModel):
+    """
+    PATCH /admin/alerts/config 请求体（ADR-120）。
+
+    所有字段可选：仅传入需要更新的字段。
+    Phase 1：更新写入进程内存（Settings 对象），重启后恢复 .env 值。
+    """
+
+    alert_im_channel: Optional[str] = None
+    """IM 群告警频道，格式 '{platform}:{chat_id}'，如 'feishu:oc_xxx'。空字符串 = 禁用。"""
+
+    alert_email: Optional[str] = None
+    """告警收件人 email（逗号分隔多个）。空字符串 = 禁用。"""
+
+    smtp_host: Optional[str] = None
+    """SMTP 服务器地址。空字符串 = 禁用 email 告警。"""
+
+    smtp_port: Optional[int] = None
+    """SMTP 端口（默认 587，STARTTLS）。"""
+
+    smtp_user: Optional[str] = None
+    """SMTP 用户名。"""
+
+    smtp_from: Optional[str] = None
+    """发件人地址（默认 noreply@prism.local）。"""
+
+    prism_base_url: Optional[str] = None
+    """Prism 前端 base URL，用于生成 IM 消息中的告警详情链接。"""
+
+
+class AlertConfigResponse(BaseModel):
+    """GET /admin/alerts/config 返回体（ADR-120）。"""
+
+    alert_im_channel: str
+    alert_email: str
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_from: str
+    prism_base_url: str
+
+
+@router.get("/alerts/config", response_model=ApiResponse[AlertConfigResponse])
+def get_alert_config(
+    settings=Depends(get_settings_dep),
+) -> ApiResponse[AlertConfigResponse]:
+    """Return current AlertDispatcher configuration (ADR-120).
+
+    Reflects the in-memory Settings values. Sensitive fields (SMTP_PASSWORD)
+    are not returned.
+    """
+    return ApiResponse(
+        data=AlertConfigResponse(
+            alert_im_channel=settings.ALERT_IM_CHANNEL,
+            alert_email=settings.ALERT_EMAIL,
+            smtp_host=settings.SMTP_HOST,
+            smtp_port=settings.SMTP_PORT,
+            smtp_user=settings.SMTP_USER,
+            smtp_from=settings.SMTP_FROM,
+            prism_base_url=settings.PRISM_BASE_URL,
+        )
+    )
+
+
+@router.patch("/alerts/config", response_model=ApiResponse[AlertConfigResponse])
+def update_alert_config(
+    body: AlertConfigRequest,
+    settings=Depends(get_settings_dep),
+) -> ApiResponse[AlertConfigResponse]:
+    """Update AlertDispatcher configuration at runtime (ADR-120).
+
+    Phase 1 strategy:
+      - Applies changes to the in-memory Settings object immediately.
+      - Changes are NOT persisted to .env — they reset on restart.
+      - For permanent changes, update environment variables / .env and restart.
+
+    Only provided (non-None) fields are updated.
+    """
+    _FIELD_MAP = {
+        "alert_im_channel": "ALERT_IM_CHANNEL",
+        "alert_email": "ALERT_EMAIL",
+        "smtp_host": "SMTP_HOST",
+        "smtp_port": "SMTP_PORT",
+        "smtp_user": "SMTP_USER",
+        "smtp_from": "SMTP_FROM",
+        "prism_base_url": "PRISM_BASE_URL",
+    }
+
+    updated: list[str] = []
+    for field_name, settings_attr in _FIELD_MAP.items():
+        value = getattr(body, field_name, None)
+        if value is not None:
+            object.__setattr__(settings, settings_attr, value)
+            updated.append(settings_attr)
+
+    logger.info(
+        "admin.alert_config.updated",
+        extra={"updated_fields": updated},
+    )
+
+    return ApiResponse(
+        data=AlertConfigResponse(
+            alert_im_channel=settings.ALERT_IM_CHANNEL,
+            alert_email=settings.ALERT_EMAIL,
+            smtp_host=settings.SMTP_HOST,
+            smtp_port=settings.SMTP_PORT,
+            smtp_user=settings.SMTP_USER,
+            smtp_from=settings.SMTP_FROM,
+            prism_base_url=settings.PRISM_BASE_URL,
+        )
+    )

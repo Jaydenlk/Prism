@@ -18,25 +18,31 @@ global:
     project: prism-v2
 
 # ---------------------------------------------------------------------------
-# Alerting (optional — wire to Alertmanager for Task 12.8 integration)
+# Alerting — Alertmanager integration (DOC-12 Task 12.8, ADR-120)
 # ---------------------------------------------------------------------------
+# Uncomment and set alertmanager host when Alertmanager is deployed.
 # alerting:
 #   alertmanagers:
 #     - static_configs:
 #         - targets: ["alertmanager:9093"]
 
 # ---------------------------------------------------------------------------
-# Rule files (Task 12.8 AlertDispatcher will add alert rules here)
+# Rule files (DOC-12 Task 12.8 — prism_alerts.yml)
 # ---------------------------------------------------------------------------
 rule_files:
   - "rules/*.yml"
+  # resolves to: monitoring/rules/prism_alerts.yml
+  # Contains 6 rule groups, 15+ alert rules covering:
+  #   prism_runs / prism_resources / prism_entropy /
+  #   prism_providers / prism_service_health / prism_frontend
 
 # ---------------------------------------------------------------------------
 # Scrape jobs
 # ---------------------------------------------------------------------------
 scrape_configs:
   # Backend FastAPI — exposes /metrics (ADR-116)
-  - job_name: prism_backend
+  # job label "prism-backend" matches PrismBackendDown alert expr up{job="prism-backend"}
+  - job_name: prism-backend
     metrics_path: /metrics
     scheme: http
     # In production set PROMETHEUS_METRICS_TOKEN and uncomment:
