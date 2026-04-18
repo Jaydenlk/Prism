@@ -26,6 +26,7 @@
 | DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | completed | 2026-04-18 | 2026-04-18 | 1e8ac83 | Phase 1: 5c689df 骨架; Phase 2: 1e8ac83 18 表 ORM + alembic migration — DDL 静态验证 PASS |
 | DOC-02 Task 2.2: PrismMessage 与双协议 Driver | completed | 2026-04-18 | 2026-04-18 | 1074d34 | base.py PrismMessage + 5 block types + ModelAdapter; AnthropicDriver (cache_control + Redis PUBLISH + SDK count_tokens); OpenAIDriver (ADR-007 expand + tiktoken); stream_parser.py SSE parser — 全部 6 项验证 PASS |
 | DOC-02 Task 2.3: Provider 管理与故障转移 | completed | 2026-04-18 | 2026-04-18 | db89260 | schemas/provider.py (6 schema); services/provider_presets.py (8 BUILTIN_PRESETS); services/provider_service.py (CRUD + bootstrap + scope 权限矩阵 + AES-256-GCM); api/v1/providers.py (6 端点); executor/adapters/provider_manager.py (ProviderManager + ADR-013 Redis 熔断器 + usage callback stub) — 全部 8 项验证 PASS |
+| DOC-02 Task 2.4: Prompt 动态装配引擎 | completed | 2026-04-18 | 2026-04-18 | 1463103 | executor/engine/__init__.py (导出 6 核心符号); executor/engine/prompt_sections.py (21 section getter, 静态 9 + 动态 12, compliance_section 注入 DOC-00 v4 §7 四铁律 583 字); executor/engine/prompt_assembler.py (PromptAssembler + CACHE_BOUNDARY_MARKER + MCPServerInfo + SkillInfo dataclass); executor/engine/context_budget.py (TokenEstimator Protocol + ContextBudgetManager: estimate/truncate/identify_turn_groups/compress_history) — 全部 8 项验证 PASS; DOC-02 完整收官 |
 
 ---
 
@@ -146,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 3(DOC-02 Task 2.1, DOC-02 Task 2.2, DOC-02 Task 2.3)
+- **已完成**: 4(DOC-02 Task 2.1, DOC-02 Task 2.2, DOC-02 Task 2.3, DOC-02 Task 2.4)
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 48
+- **pending**: 47
 
 ---
 
-> **最后更新**: 2026-04-18(DOC-02 Task 2.3 完成: Provider 管理 + 故障转移 + 熔断器)
-> **下一个动作**: DOC-02 Task 2.4 — Prompt 动态装配引擎
+> **最后更新**: 2026-04-18(DOC-02 Task 2.4 完成: Prompt 动态装配引擎; **DOC-02 完整收官**)
+> **下一个动作**: DOC-03 Task 3.1 — TAOR 主循环 + ToolExecutionPipeline

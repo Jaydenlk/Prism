@@ -35,6 +35,63 @@
 
 ---
 
+## 🎯 DOC-02 DONE — 2026-04-18
+
+DOC-02 全部 4 Task 已完成收官。下一步应开始 **DOC-03 Task 3.1（TAOR 主循环 + ToolExecutionPipeline）**。
+
+### DOC-03 Task 3.1 开工必读文件清单
+1. `CLAUDE.md` — 六原则 + 10 陷阱（特别注意 #1 Redis 直通 / #2 回合组 / #3 工具并行 / #8 ask BLPOP）
+2. `PRD_V4/DOC-03-v4.md` Task 3.1 Part A + Part B 完整内容
+3. `HANDOFF-LOG.md` 最近 3 条（本条 + Task 2.4 + Task 2.3）
+4. Task 2.1-2.4 产物路径快速索引：
+   - `backend/app/core/` — config.py / security.py / database.py / dependencies.py
+   - `backend/app/models/__init__.py` — 18 张 ORM 表聚合
+   - `executor/adapters/base.py` — PrismMessage / ToolDefinition / ContentBlock / StreamEvent / ModelAdapter（Task 2.2）
+   - `executor/adapters/anthropic_driver.py` — AnthropicDriver，Redis PUBLISH(ADR-022)，cache_control(ADR-008)（Task 2.2）
+   - `executor/adapters/openai_driver.py` — OpenAIDriver，ADR-007 展开规则（Task 2.2）
+   - `executor/adapters/provider_manager.py` — ProviderManager，ADR-013 Redis 熔断器（Task 2.3）
+   - `executor/engine/prompt_sections.py` — 21 section getter（Task 2.4）
+   - `executor/engine/prompt_assembler.py` — PromptAssembler + MCPServerInfo + SkillInfo（Task 2.4）
+   - `executor/engine/context_budget.py` — TokenEstimator + ContextBudgetManager（Task 2.4）
+
+---
+
+## 2026-04-18 — DOC-02 Task 2.4 completed（Prompt 动态装配引擎，DOC-02 收官）
+
+### 本次 session 做了什么
+- 读取 DOC-00 v4 §7 四铁律原文（无投资建议 / 数据溯源 / AI 标识 / 数据隔离），注入 compliance_section（583 字，防止占位）
+- 创建 `executor/engine/prompt_sections.py`：21 个 section getter 函数，静态 9（identity/system_rules/task_philosophy/risk_actions/tool_grammar/tone_style/output_efficiency/compliance/agent_behavior）+ 动态 12（session_guidance/mcp_instructions/skill_grammar/memory/env_info/language/output_style/scratchpad/function_result_clearing/summarize_tool_results/token_budget/brief）；agent_behavior_section 实现 6 档（general/research/planner/verifier/coordinator/plugin_builder）
+- 创建 `executor/engine/prompt_assembler.py`：PromptAssembler（_build_static/_build_dynamic/build/get_static_prefix/_compute_tools_hash）+ CACHE_BOUNDARY_MARKER 字面值 + MCPServerInfo / SkillInfo 临时 dataclass
+- 创建 `executor/engine/context_budget.py`：TokenEstimator Protocol + ContextBudgetManager（estimate_tokens/estimate_messages_tokens/should_compress/truncate_tool_result/identify_turn_groups/compress_history）；默认值精确对齐 PRD（compact_trigger_ratio=0.85 / reserve_for_response=4096 / max_context_tokens=128000 / tool_result_max_chars=10000）
+- 更新 `executor/engine/__init__.py`：导出 6 核心符号
+- 修复 Windows GBK stdout 编码问题（PYTHONIOENCODING=utf-8）；修复中文引号导致的 SyntaxError
+
+### 验证结果
+- 验证 1（py_compile 4 文件）：PASS
+- 验证 2（21 sections imported）：PASS
+- 验证 3（Part B 完整脚本）：Section coverage / Static cache / Verifier VERDICT / Research Bash whitelist / Tools hash cache / Context budget truncation / Turn group — 全 7 项 PASS
+- 验证 4（静态缓存字节级一致性 3 次调用）：PASS
+- 验证 5（compress_history 保留 is_skill_context）：5 组场景，组 1 skill_context 消息在裁剪后仍保留 PASS
+- 验证 6（Section 函数计数 >= 21）：精确 21 — PASS
+- 验证 7（compliance_section 长度 > 80）：583 字 PASS
+- 验证 8（build() 含 CACHE_BOUNDARY_MARKER）：PASS
+
+### 下一个 Task 需要注意 — DOC-03 Task 3.1（TAOR 主循环 + ToolExecutionPipeline）
+- **PromptAssembler 使用方式**：`assembler = PromptAssembler(agent_type=run.agent_type, tools=loaded_tools)` → `system_prompt = assembler.build(mcp_servers=[...], skills=[...], language=session.language)` → 传入 Driver.stream()；get_static_prefix() 供 AnthropicDriver cache_control 边界使用
+- **MCPServerInfo / SkillInfo 临时定义**：在 prompt_assembler.py 顶部，DOC-05 实现后替换为正式 import；Task 3.1 直接 `from executor.engine.prompt_assembler import MCPServerInfo, SkillInfo` 即可
+- **TokenEstimator 接入**：ContextBudgetManager 构造时传入 driver 适配器（或包装器）作为 estimator；目前 AnthropicDriver / OpenAIDriver 均有 count_tokens() 方法，可包装成简单适配器
+- **Windows 编码注意**：bash 环境 Python stdout 默认 GBK，运行验证脚本时加 PYTHONIOENCODING=utf-8
+
+### 遗留风险 / 未决事项
+- MCPServerInfo / SkillInfo 是本 Task 临时定义，DOC-05 Task 5.1/5.2 落地后需统一 import 路径（届时修改 prompt_assembler.py 顶部 import，不破坏接口）
+- session_guidance_section 当前对 general agent type 且无 feature gate 时返回空字符串（被 _build_dynamic 过滤），这是正确行为
+- env_info_section() 读取 os.environ["WORKSPACE_DIR"]，若未设置则 fallback "/workspace"；DOC-03 Task 7.4 子进程启动时需注入此环境变量
+
+### Commit
+- `1463103` — `feat: prompt assembly engine with 21 sections + turn-group compaction (DOC-02 Task 2.4 complete)`
+
+---
+
 ## 2026-04-18 23:58 — DOC-02 Task 2.3 completed(Provider 管理 + 故障转移)
 
 ### 本次 session 做了什么

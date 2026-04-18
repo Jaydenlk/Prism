@@ -204,6 +204,55 @@
 
 ---
 
+## DOC-02 Task 2.4: Prompt 动态装配引擎(ADR-014 / ADR-015 / ADR-016 / ADR-017 第二次补强)
+
+## ADR-014: PromptSection 对齐 CC 10+ getter 粒度(DOC-02 Task 2.4)
+- **来源**: PRD v4 DOC-02 Task 2.4 Part A §设计决策
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/engine/prompt_sections.py` — 21 个独立 section getter 函数（静态 9 + 动态 12）
+  - `executor/engine/prompt_assembler.py` — PromptAssembler._build_static()（9 section）+ _build_dynamic()（12 section）
+- **实施 commit**: 1463103
+- **偏离点**: 无。21 个 section 全部落地，每个独立函数独立可测；`task_philosophy_section()` header 使用"任务哲学 & 执行原则"（包含 PRD 验证步骤断言的子串"任务哲学"）。
+- **验证结果**: Section coverage PASS（任务哲学/工具使用/合规要求/输出规范 四个子串全在 prompt 中）；Section 函数计数 21 PASS
+- **下游影响**: DOC-03 TAOR 主循环调用 PromptAssembler.build() 生成 system prompt；DOC-04 各 Agent 类型通过 agent_type 参数选择行为约束；DOC-05 Skill/MCP 通过 SkillInfo/MCPServerInfo 注入动态 section
+
+## ADR-015: TokenEstimator Protocol + 精确 tokenizer 依赖注入(DOC-02 Task 2.4)
+- **来源**: PRD v4 DOC-02 Task 2.4 Part A §设计决策（ADR-015 v4）
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/engine/context_budget.py` — TokenEstimator Protocol（estimate + estimate_messages 两个方法）
+  - `executor/engine/context_budget.py` — ContextBudgetManager.__init__(estimator: TokenEstimator)，必传参数
+- **实施 commit**: 1463103
+- **偏离点**: 无。TokenEstimator 为 Protocol（结构子类型），不是 ABC（不强制继承）。AnthropicDriver / OpenAIDriver 已实现 count_tokens()，DOC-12 Task 12.1 实现正式 TokenEstimator 适配器时需包装 count_tokens() 接口。
+- **验证结果**: FakeEstimator 实现 Protocol 接口，ContextBudgetManager 构造成功，truncate/should_compress 方法 PASS
+- **下游影响**: DOC-03 Task 3.5 Compaction Pipeline 使用 ContextBudgetManager(estimator=driver_adapter) 构造实例；DOC-12 Task 12.1 实现正式 TokenEstimator 包装器
+
+## ADR-016: Compaction 按回合组（turn group）为原子单元裁剪(DOC-02 Task 2.4)
+- **来源**: PRD v4 DOC-02 Task 2.4 Part A §设计决策（ADR-016 v4）；CLAUDE.md 陷阱 #2
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/engine/context_budget.py` — ContextBudgetManager.identify_turn_groups()（按 user query 边界识别回合组）
+  - `executor/engine/context_budget.py` — ContextBudgetManager.compress_history()（整组删除，绝不单独删除 assistant 或 tool_result）
+- **实施 commit**: 1463103
+- **偏离点**: 无。identify_turn_groups 严格按 PRD 定义："user query = role=user AND content 不含任何 tool_result block"。Part B 验证断言 groups == [(0, 3), (4, 5)] 通过。
+- **验证结果**: Turn group identification PASS（精确匹配 [(0, 3), (4, 5)]）；compress_history 5 组场景测试 PASS
+- **下游影响**: DOC-03 Task 3.5 Compaction Pipeline Tier 1-3 在 compress_history 骨架上实现 LLM 摘要替换；绝不破坏 tool_use ↔ tool_result 配对（防止 Anthropic API 400）
+
+## ADR-017: is_skill_context 标记优先保留(DOC-02 Task 2.4 第二次补强)
+- **来源**: PRD v4 DOC-02 Task 2.4 Part A §设计决策（ADR-017 v4）；DOC-05 ADR-042
+- **实施状态**: ✅ 2026-04-18（第一次落地：Task 2.1 DB 字段；第二次落地：本 Task 运行时语义）
+- **落地位置**:
+  - `executor/engine/context_budget.py` — compress_history() 中 `elif getattr(msg, 'is_skill_context', False)` 保留路径
+  - （复用）`executor/adapters/base.py` — PrismMessage.is_skill_context 字段（Task 2.2 落地）
+  - （复用）`backend/app/models/message.py` — is_skill_context / skill_name DB 字段（Task 2.1 落地）
+- **实施 commit**: 1463103
+- **偏离点**: 无。is_skill_context 消息跨越回合组边界保留，即使整个回合组被删除，组内含 True 的消息也单独保留。
+- **验证结果**: compress_history 5 组测试 + skill_context 消息在组 1（被裁剪）中仍保留 — PASS
+- **下游影响**: DOC-05 Skill Level 2 注入逻辑写入 is_skill_context=True 时，Compaction 自动优先保留
+
+---
+
 ## Phase 1: Agent 核心(待实施)
 
 > Phase 1 的 ADR 在对应 Task 实施时按模板追加到此处。
