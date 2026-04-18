@@ -35,6 +35,37 @@
 
 ---
 
+## 2026-04-19 -- DOC-07 Task 7.1 completed (Session CRUD + 消息增量 + generate_text_preview)
+
+### 本次 session 做了什么
+- 新建 backend/app/schemas/session.py — CreateSessionRequest(title+config_snapshot) / UpdateSessionRequest / SessionResponse(含计算字段 message_count+last_message_preview) / SessionListResponse(精简版)
+- 新建 backend/app/schemas/message.py — MessageResponse(id/run_id/role/content list[dict]/text_preview/sequence_no/created_at)
+- 新建 backend/app/services/session_service.py — SessionService(list_sessions排序:pinned优先+updated_at DESC / create_session / get_session 铁律4 / update_session pin逻辑 / delete_session / get_message_count / get_last_message_preview / list_messages after_sequence_no增量) + generate_text_preview(tool_result前缀/tool_use前缀/纯text/[empty], DOC-01 v4 §4.2)
+- 新建 backend/app/api/v1/sessions.py — 6路由: GET/POST /sessions + GET/PATCH/DELETE /sessions/{id} + GET /sessions/{id}/messages(limit≤500 after_sequence_no ge=0)
+- 修改 backend/app/api/v1/__init__.py — 注册sessions_router,docstring追加sessions路由描述
+
+### 验证结果
+- Part B 验证步骤(编译4项+schema6项+generate_text_preview6项+路由6条+约束3项): 全部 PASS
+  - py_compile 4个新文件 PASS
+  - CreateSessionRequest 默认/自定义 PASS; UpdateSessionRequest 全None/is_pinned PASS; MessageResponse构造 PASS
+  - generate_text_preview: 纯text/200字截断/空->empty/assistant tool_use前缀/user tool_result前缀/空text块->empty 全PASS
+  - 6条路由注册 PASS(GET/POST /sessions + GET/PATCH/DELETE /{session_id} + GET /{session_id}/messages)
+  - limit=500常量/after_sequence_no ge=0/le=_MAX_MESSAGES_LIMIT约束 PASS
+
+### 下一个 Task 需要注意
+- DOC-07 Task 7.2 必须实现 sequence_no 写端 (per-session 序列或 advisory_xact_lock)，ADR-060 在 Task 7.1 只落地了读端
+- SessionService.get_session() 对不属于用户的 session 返回 404（不暴露 403），Task 7.2/7.3 沿用此约定
+- generate_text_preview() 已在 session_service.py 定义，Task 7.2 的消息写入时可复用生成 text_preview 字段
+- list_messages 的 content 字段：ORM content 可能是 dict(单 block) 或 list，session.py 已做 isinstance 判断兜底
+
+### 遗留风险 / 未决事项
+- 无新增风险。sequence_no 写端仍在 Task 7.2 待实施(非遗留风险，是计划内分工)
+
+### Commit
+- `870b4bb` — `feat(v4): Session CRUD + message incremental query (DOC-07 Task 7.1)`
+
+---
+
 ## 2026-04-19 -- DOC-06 Task 6.2 completed (用户管理 + 邀请码 + Admin API + ADR-059；DOC-06 完整收官)
 
 ### 本次 session 做了什么

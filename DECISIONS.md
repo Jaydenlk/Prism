@@ -945,13 +945,29 @@
   - DOC-09 Task 9.1 MCP Server 管理可复用 PluginYamlSchema 进行 Plugin 元数据 API 校验
   - DOC-11 Task 11.5 Plugin 子页上传 plugin.yaml 时，422 响应体的 errors 列表可直接展示给用户
 
-> **最后更新**: 2026-04-19（DOC-05 Task 5.7 — CC 兼容层 + ConversionReport + ADR-054/055）
+> **最后更新**: 2026-04-19（DOC-07 Task 7.1 — Session CRUD + 消息增量 + ADR-060 read-only compliance）
 
 ---
 
-## Phase 2: Backend 模块(待实施)
+## Phase 2: Backend 模块
 
-> (占位)
+## DOC-07 Task 7.1: Session CRUD + 消息增量（ADR-060 部分落地）
+
+## ADR-060: sequence_no 并发原子性（DOC-07 Task 7.1 — 读端点合规）
+- **来源**: PRD v4 DOC-07 Task 7.1/7.2 Part A ADR-060（sequence_no 并发原子性：PostgreSQL per-session 序列或 advisory_xact_lock）
+- **实施状态**: ✅ 部分（读端合规）2026-04-19 / Task 7.2 补全写端
+- **落地位置**:
+  - `backend/app/services/session_service.py` — list_messages() 读取 sequence_no 做增量过滤（after_sequence_no > N），无 max+1 写入
+  - `backend/app/api/v1/sessions.py` — GET /sessions/{id}/messages 暴露 after_sequence_no 增量接口
+  - `backend/app/models/message.py`（DOC-02 已落地）— Message.sequence_no 字段注释明确禁止 max+1
+- **实施 commit**: 870b4bb
+- **偏离点**:
+  - Task 7.1 仅实现读端（list_messages + after_sequence_no 过滤）；写端 sequence_no 分配机制（per-session 序列或 advisory_xact_lock）推迟至 Task 7.2（消息写入发生在回调链，不在本 Task 范围）
+  - generate_text_preview() 是本 Task 新增的 DOC-01 v4 §4.2 规范实现，属 Task 7.1 v4 扩展要求
+- **验证结果**: 全部验证 PASS（编译4项/schema6项/generate_text_preview6项/路由6条/约束检查3项）
+- **下游影响**:
+  - DOC-07 Task 7.2 必须实现 per-session 序列或 advisory_xact_lock 写入 sequence_no（ADR-060 完整落地）
+  - DOC-07 Task 7.3 SSE 断线重连后调用 GET /sessions/{id}/messages?after_sequence_no=N 补发消息
 
 ---
 

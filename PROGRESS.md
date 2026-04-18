@@ -80,7 +80,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-07 Task 7.1: Session CRUD + 消息增量 | pending | — | — | — | — |
+| DOC-07 Task 7.1: Session CRUD + 消息增量 | completed | 2026-04-19 | 2026-04-19 | 870b4bb | 4新文件+1修改: schemas/session.py(4 schema) + schemas/message.py(MessageResponse) + services/session_service.py(SessionService 5 CRUD方法+list_messages+generate_text_preview) + api/v1/sessions.py(6路由 limit≤500 after_sequence_no); api/v1/__init__注册sessions_router; 铁律4 user_id所有权强制; ADR-060 compliant(无max+1); 全部验证PASS |
 | DOC-07 Task 7.2: Task 提交 + Run 生命周期(sequence_no + cancel 三模式) | pending | — | — | — | — |
 | DOC-07 Task 7.3: Callback(双通道) + SSE Manager + HeartbeatMonitor + permission-answer | pending | — | — | — | — |
 | DOC-07 Task 7.4: 子进程调度(标准化参数) + coordinator_recovery + alert_dispatcher | pending | — | — | — | — |
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 24
+- **已完成**: 25
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 27
+- **pending**: 26
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-06 Task 6.2 完成: 用户管理 + 邀请码 + Admin API + ADR-059；24/51 Task 完成；DOC-06 完整收官）
-> **下一个动作**: DOC-07 Task 7.1 — Session CRUD + 消息增量
+> **最后更新**: 2026-04-19（DOC-07 Task 7.1 完成: Session CRUD + 消息增量 + generate_text_preview；25/51 Task 完成）
+> **下一个动作**: DOC-07 Task 7.2 — Task 提交 + Run 生命周期(sequence_no + cancel 三模式)
