@@ -73,6 +73,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **DOC-05 Task 5.1 原标 ADR-040/041/042 用 ADR-043/044/045**（PRD ADR-040 被 DOC-04 Task 4.3 Coordinator checkpoint 占用；ADR-041 被 DOC-04 Task 4.1 frontmatter_skills 已占用方向关联；ADR-042 被 DOC-04 Task 4.5 PluginBuilder 打分占用。Task 5.1 的三条 ADR 依次平移为 ADR-043/044/045：Skill 三级加载规范=ADR-043，Skill 匹配强制执行+agents过滤=ADR-044，is_skill_context 标记=ADR-045）。后续 DOC-05 Task 5.2+ 的 ADR 从 ADR-046 接续。
 
+**DOC-05 Task 5.2 原标 ADR-044/045 用 ADR-046/047**（PRD ADR-044 被 DOC-05 Task 5.1 Skill agents过滤占用；ADR-045 被 DOC-05 Task 5.1 is_skill_context 标记占用。Task 5.2 的两条 ADR 依次平移为 ADR-046/047：MCP instructions 双通道注入=ADR-046，agent-scoped MCP 白名单=ADR-047）。后续 DOC-05 Task 5.3+ 的 ADR 从 ADR-048 接续。
+
 ---
 
 ### Action required from human reviewer

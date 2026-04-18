@@ -662,6 +662,50 @@
 
 ---
 
+## DOC-05 Task 5.2: MCP Server 双通道 + scope（ADR-046 / ADR-047）
+
+## ADR-046: MCP instructions 双通道注入（Registry instructions + Tool instructions）（DOC-05 Task 5.2）
+- **来源**: PRD v4 DOC-05 Task 5.2 Part A ADR-044（PRD 原标 ADR-044，因 DOC-05 Task 5.1 agents过滤已占用 ADR-044，平移至 ADR-046）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/mcp_client.py` — MCPClient.start() 从 initialize 响应提取 `instructions`（第一通道：Registry instructions → PromptAssembler `<mcp_instructions>` section）
+  - `executor/plugins/mcp_client.py` — MCPToolWrapper.description 返回 mcp_tool["description"]（第二通道：Tool instructions → tool_grammar_section）
+  - `executor/engine/prompt_assembler.py` — 新增 invalidate_static_cache() + update_tools()：MCP 工具注册后调用 update_tools() 使 _static_cache=None/_tools_hash=None，下次 build() 重建静态 section 含新工具列表
+  - `executor/plugins/__init__.py` — 导出 MCPClient / MCPToolWrapper / filter_mcp_tools_for_agent / SCOPE_SYSTEM / SCOPE_USER
+- **实施 commit**: (本 Task commit)
+- **偏离点**:
+  1. 异步修复 (P0)：Part A 明确要求使用 asyncio.create_subprocess_exec + process.stdout.readline()（非阻塞），Part B 示例代码使用 subprocess.Popen（阻塞），本实现按 Part A P0 要求采用 asyncio 版本，避免阻塞事件循环。
+  2. ADR 编号从 PRD 原标 044 平移到 046（见 blocker.md 编号平移链）
+  3. update_tools() 同时置 _tools_hash=None（双重失效），确保 get_static_prefix() 路径也强制重建，不仅依赖 _static_cache=None
+- **验证结果**: Part B 全部 3 项验证 PASS
+  - Cache hit：get_static_prefix() is static1（同对象引用）PASS
+  - Cache invalidation：update_tools() 后 assembler._static_cache is None PASS
+  - New tools in prompt：re-build 后 'mcp__search__web' in prompt3 PASS
+- **下游影响**:
+  - DOC-05 Task 5.4 PluginHost 启动时调用 update_tools() 将 MCP 工具列表同步给 PromptAssembler
+  - DOC-05 Task 5.3 Hook 治理：MCP 工具注册/注销事件可触发 hook → 调用 invalidate_static_cache()
+  - DOC-09 Task 9.1 MCP Server 管理端点负责 Backend 侧 CRUD（executor 侧 MCPClient 在子进程内，不 import backend.app）
+
+## ADR-047: agent-scoped MCP 白名单（AgentDefinition.mcp_servers 过滤）（DOC-05 Task 5.2）
+- **来源**: PRD v4 DOC-05 Task 5.2 Part A ADR-045（PRD 原标 ADR-045，因 DOC-05 Task 5.1 is_skill_context 标记已占用 ADR-045，平移至 ADR-047）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/mcp_client.py` — MCPClient.scope（"system"|"user"，对齐 McpServer.scope 字段）
+  - `executor/plugins/mcp_client.py` — MCPClient.list_mcp_tool_pairs()：返回 [(server_name, tool_name)] 列表
+  - `executor/plugins/mcp_client.py` — filter_mcp_tools_for_agent(all_clients, mcp_servers_whitelist)：汇总所有 client 的工具对，按白名单过滤
+  - `executor/agents/base.py` — AgentDefinition.filter_mcp_tools()（Task 4.1 已落地 ADR-034/035）：接收 [(server_name, tool_name)] 列表，按 mcp_servers 白名单返回允许的 tool_name
+- **实施 commit**: (本 Task commit)
+- **偏离点**: filter_mcp_tools_for_agent() 是辅助函数（非方法），调用链为：all_clients → list_mcp_tool_pairs() → filter_mcp_tools_for_agent() → AgentDefinition.filter_mcp_tools()。后者在 Task 4.1 已实现，本 Task 补全前两步。
+- **验证结果**: PASS
+  - filter_mcp_tools_for_agent([client1, client2], None)：返回全部 3 个工具对 PASS
+  - filter_mcp_tools_for_agent([client1, client2], ['github'])：只返回 github 的 2 个工具对 PASS
+  - AgentDefinition.filter_mcp_tools(all_pairs)：github 白名单 → send_message 被过滤 PASS
+- **下游影响**:
+  - DOC-04 Task 4.2 Fork：子 Agent ToolRegistry 创建时调用此过滤链，确保 Fork 后子 Agent 只能看到白名单 MCP 工具
+  - DOC-05 Task 5.4 PluginHost：统一管理 MCPClient 列表，启动时调用 filter_mcp_tools_for_agent 为每个 agent_type 生成工具子集
+
+---
+
 ## Phase 2: Backend 模块(待实施)
 
 > (占位)

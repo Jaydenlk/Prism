@@ -58,7 +58,7 @@
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
 | DOC-05 Task 5.1: Skill 三级加载 | completed | 2026-04-19 | 2026-04-19 | (见 commit) | 2新文件+1修改: skill_types.py(SkillMetadata+SkillContent); skill_loader.py(SkillLoader Level 0/1/2 + agents过滤ADR-044 + audit emit ADR-045); plugins/__init__.py 导出; plugins/skills/.gitkeep; pyproject.toml pyyaml>=6.0; ADR-043/044/045 落地; 全部7项验证PASS |
-| DOC-05 Task 5.2: MCP Server(双通道 + scope) | pending | — | — | — | — |
+| DOC-05 Task 5.2: MCP Server(双通道 + scope) | completed | 2026-04-19 | 2026-04-19 | (见 commit) | 1新文件+2修改: mcp_client.py(MCPClient asyncio双通道+scope+ADR-046/047; MCPToolWrapper mcp__s__t命名; filter_mcp_tools_for_agent); prompt_assembler.py(invalidate_static_cache+update_tools); plugins/__init__.py导出5新符号; Part B验证3项全PASS |
 | DOC-05 Task 5.3: Hook 治理(4 handler) | pending | — | — | — | — |
 | DOC-05 Task 5.4: PluginHost(变量替换) | pending | — | — | — | — |
 | DOC-05 Task 5.5: Skills Registry(Local+GitHub) | pending | — | — | — | — |
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 16
+- **已完成**: 17
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 35
+- **pending**: 34
 
 ---
 
-> **最后更新**: 2026-04-19(DOC-05 Task 5.1 完成: Skill 三级加载 + ADR-043/044/045)
-> **下一个动作**: DOC-05 Task 5.2 — MCP Server 集成与热加载
+> **最后更新**: 2026-04-19(DOC-05 Task 5.2 完成: MCP Server 双通道 + scope + ADR-046/047)
+> **下一个动作**: DOC-05 Task 5.3 — Hook 治理层与 Plugin 命名空间

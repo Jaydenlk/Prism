@@ -35,6 +35,33 @@
 
 ---
 
+## 2026-04-19 -- DOC-05 Task 5.2 completed (MCP Server 双通道 + scope + ADR-046/047)
+
+### 本次 session 做了什么
+- 新建 executor/plugins/mcp_client.py — MCPClient（asyncio.create_subprocess_exec P0异步修复；start/stop/call_tool；get_instructions ADR-046第一通道；list_mcp_tool_pairs ADR-047；scope二值system/user）+ MCPToolWrapper（mcp__{server}__{tool}命名；description=ADR-046第二通道；execute委托MCPClient.call_tool）+ filter_mcp_tools_for_agent（辅助函数；None=全部/列表=白名单过滤）+ SCOPE_SYSTEM/SCOPE_USER常量
+- 修改 executor/engine/prompt_assembler.py — 新增 invalidate_static_cache()（_static_cache=None + _tools_hash=None 双重失效）+ update_tools()（更新工具列表并调用invalidate_static_cache）
+- 修改 executor/plugins/__init__.py — 导出 MCPClient / MCPToolWrapper / filter_mcp_tools_for_agent / SCOPE_SYSTEM / SCOPE_USER（共5新符号）
+- ADR-046/047 落地 DECISIONS.md；blocker.md 追加 Task 5.2 ADR 编号平移链（046=MCP双通道，047=agent-scoped白名单，后续从048起）
+
+### 验证结果
+- Part B 验证步骤：PASS（3项全PASS：Cache hit/Cache invalidation/New tools in prompt）
+- 质量门：PASS — 0 `from backend.app` import in mcp_client.py；无 TODO 占位；进程边界严格；asyncio P0修复（非阻塞readline）；ADR对齐
+
+### 下一个 Task 需要注意 — DOC-05 Task 5.3 (Hook 治理层与 Plugin 命名空间)
+- ADR-048 是下一个可用编号（DOC-05 Task 5.3 的 ADR 从 048 起编号）
+- MCPClient.stop() 在 session 结束时必须被调用（PluginHost / __main__.py finally 块），否则 MCP Server 子进程泄漏
+- invalidate_static_cache() / update_tools() 已就绪，Task 5.3 Hook 治理可在 MCP 工具注册/注销的 Hook handler 中调用 assembler.invalidate_static_cache()
+- filter_mcp_tools_for_agent 设计为辅助函数（非 MCPClient 方法），调用链：clients → list_mcp_tool_pairs → filter_mcp_tools_for_agent → AgentDefinition.filter_mcp_tools；Task 5.4 PluginHost 组装时串联此链
+
+### 遗留风险 / 未决事项
+- MCPClient._send_request() 对 stdout.readline() 无超时保护；若 MCP Server 挂死会永久阻塞 await。Phase 1 不加 timeout，Task 5.4 PluginHost 可包装 asyncio.wait_for 超时降级
+- MCPToolWrapper.execute() 捕获所有异常返回 is_error=True，不区分网络错误/业务错误；Phase 1 统一处理，后续可细化 error_code
+
+### Commit
+- (见 git log)
+
+---
+
 ## 2026-04-19 -- DOC-05 Task 5.1 completed (Skill 三级加载 Level 0/1/2 + agents过滤 + audit)
 
 ### 本次 session 做了什么
