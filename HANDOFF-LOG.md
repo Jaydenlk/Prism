@@ -35,6 +35,48 @@
 
 ---
 
+## 2026-04-19 -- DOC-05 Task 5.6 completed (Skills CLI + Agent Tool search-only + ADR-052/053)
+
+### 本次 session 做了什么
+- 新建 executor/tools/builtin/skills_search.py — SkillsSearchTool（name="skills_search", capabilities=[], input_schema{query,source,limit}, execute() 调用 SkillsRegistry.search() 返回 JSON + install 引导 note，不含任何 install/uninstall action，ADR-052 铁律）
+- 新建 executor/cli/__init__.py + executor/cli/skills_cli.py — SkillsCLI 6 子命令（search/install/uninstall/update/list/info）+ argparse build_parser() + main() 入口；有 backend_url 时 HTTP 通知 Backend API 同步 DB，无 backend_url 时仅本地文件操作（开发者模式）
+- 新建 backend/app/services/skill_install_service.py — SkillInstallService（install UPSERT + uninstall 更新 status + list_installed + get_install）+ Redis key 格式 `skill_install:status:{user_id}:{skill_name}` TTL=600s（ADR-053）
+- 新建 backend/app/api/v1/skills.py — 6 路由（GET /search / GET /installed / POST /install / DELETE /{skill_name} / POST /{skill_name}/update / GET /{skill_name}）+ Pydantic schema（内联）+ Prometheus prism_skill_searches_total / prism_skill_installs_total
+- 修改 executor/tools/builtin/__init__.py — register_builtin_tools() 追加 SkillsSearchTool 注册 + skills_registry 参数
+- 修改 backend/app/api/v1/__init__.py — include_router(skills_router)
+- ADR-052/053 落地 DECISIONS.md；blocker.md 追加 Task 5.6 ADR 平移链（DOC-06 Task 6.1 须从 ADR-054 起）
+- PROGRESS.md 更新（Task 5.6 completed，21/51）
+
+### 验证结果
+- Part B 验证步骤（全 PASS）：
+  - py_compile × 5 文件（skills_search / skills_cli / __init__ / skill_install_service / skills.py）PASS
+  - SkillsSearchTool name/capabilities/input_schema/required PASS
+  - ADR-052 约束（无 install/action schema 字段）PASS
+  - SkillsSearchTool.execute() 搜索 + 空查询 PASS
+  - register_builtin_tools() 含 skills_search PASS
+  - SkillsCLI cmd_search + cmd_list PASS
+  - Redis key 格式 + TTL=600s + mock SET 验证 PASS
+  - SkillInstallService UPSERT（INSERT/UPDATE 两路径）+ uninstall PASS
+  - Backend API 6 路由 PASS
+  - 进程边界（executor/cli/ 无 backend.app import）PASS
+- 质量门 10 项：PASS
+
+### 下一个 Task 需要注意
+- Task 5.7 CC 兼容层（ConversionReport）ADR 从 **ADR-054** 起编号（ADR-052/053 已被本 Task 占用）
+- Task 5.7 涉及 CCPluginAdapter（检测 plugin.json/plugin.yaml/skills_only 三种格式）+ export_to_cc() 返回 ConversionReport（bytes zip + lost_fields + warnings + cc_plugin_json）+ ADR-050-A/050-B（平移后需新编号）
+- skill_installs ORM 的 metadata_ JSONB 存 install_path/has_hooks/has_mcp/status，Task 5.6 的 SkillInstallService 已按此实现，后续 Tasks 直接用 metadata_["install_path"] 等 key
+
+### 遗留风险 / 未决事项
+- Backend _get_redis_client() 在 DOC-07 Task 7.1 前返回 None（Redis 未就绪时跳过缓存），生产环境需 Task 7.1 补全
+- SkillsCLI 的 cmd_info() 搜索全源以找 skill_name，对大型 GitHub 索引略慢（可接受，Phase 1）
+- Prometheus Counter 采用 lazy init + try/except，重复注册时静默降级（测试/重载安全）
+
+### Commit
+- `770679e` — `feat(v4): Skills CLI + Agent Tool search-only + Backend skill_install_service — DOC-05 Task 5.6`
+- `875978e` — `docs: update state files for DOC-05 Task 5.6 (PROGRESS/DECISIONS/HANDOFF/blocker)`
+
+---
+
 ## 2026-04-19 -- DOC-05 Task 5.5 completed (Skills Registry Local+GitHub + ADR-051)
 
 ### 本次 session 做了什么
