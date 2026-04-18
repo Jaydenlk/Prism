@@ -374,6 +374,8 @@ class SkillLoader:
 
         其余事件的 hook 配置静默忽略（Phase 2 扩展时生效）。
         若 hook_system 为 None（单元测试场景），跳过注册。
+        hook_id 格式："skill:{skill_name}:{event_type}:{idx}"，
+        卸载时用 unregister_by_prefix("skill:{skill_name}:") 批量清除（Task 5.3 ADR-048）。
         """
         from executor.harness.hooks.handlers import HookHandlerConfig  # 避免顶层循环 import
 
@@ -406,7 +408,7 @@ class SkillLoader:
                     )
                     hook_id = f"skill:{skill_name}:{event_type}:{idx}"
                     if self._hook_system is not None:
-                        self._hook_system.register(event_type, config)
+                        self._hook_system.register(event_type, config, hook_id=hook_id)
                     registered_ids.append(hook_id)
 
         self._registered_hook_ids[skill_name] = registered_ids
@@ -417,17 +419,19 @@ class SkillLoader:
         )
 
     def _unregister_skill_hooks(self, skill_name: str) -> None:
-        """注销 Skill 的 scoped hooks。
+        """注销 Skill 的 scoped hooks（Task 5.3 ADR-048 实现）。
 
-        Phase 1 HookSystem 未实现按 id 注销（DOC-05 Task 5.3 会扩展），
-        此处记录 hook_ids 日志，供后续 Task 接入。
+        调用 HookSystem.unregister_by_prefix("skill:{skill_name}:") 批量清除。
         已注册 id 从 _registered_hook_ids 移除。
+        若 hook_system 为 None，仅清除本地记录。
         """
         hook_ids = self._registered_hook_ids.pop(skill_name, [])
-        if hook_ids:
-            logger.info(
-                "skill.hooks.unregistered",
-                skill=skill_name,
-                hook_ids=hook_ids,
-                note="Phase 1: HookSystem 无按 id 注销接口，Task 5.3 扩展",
-            )
+        prefix = f"skill:{skill_name}:"
+        if self._hook_system is not None:
+            self._hook_system.unregister_by_prefix(prefix)
+        logger.info(
+            "skill.hooks.unregistered",
+            skill=skill_name,
+            hook_ids=hook_ids,
+            prefix=prefix,
+        )

@@ -23,6 +23,35 @@ HookEventType = Literal[
     "Notification",          # 通知事件
 ]
 
+# Phase 1 支持的 8 个核心事件（Task 5.3 ADR-048）
+PHASE1_EVENTS: frozenset[str] = frozenset({
+    "SessionStart",
+    "SessionEnd",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PermissionRequest",
+    "Compact",
+    "Notification",
+})
+
+# Phase 2 扩展事件（当前不触发，预留定义）
+PHASE2_EVENTS: frozenset[str] = frozenset({
+    "SubAgentStart",
+    "SubAgentStop",
+    "TeammateIdle",
+    "TaskCreated",
+    "TaskCompleted",
+    "UserPromptSubmit",
+    "Stop",
+    "CwdChanged",
+    "ConfigChanged",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "MemoryLoad",
+    "SettingsLoad",
+})
+
 
 @dataclass
 class HookEvent:
