@@ -16,6 +16,10 @@ from executor.harness.middleware.feedback_capture import (
 from executor.harness.middleware.loop_detection import LoopDetectionMiddleware
 from executor.harness.middleware.observability import ObservabilityMiddleware
 from executor.harness.middleware.pipeline import MiddlewarePipeline
+from executor.harness.middleware.plugin_builder_gate import (
+    PluginBuilderGate,
+    GR_PLUGIN_CREATE_GUARD,
+)
 
 __all__ = [
     "Middleware",
@@ -26,4 +30,6 @@ __all__ = [
     "ObservabilityMiddleware",
     "FeedbackCaptureMiddleware",
     "FeedbackEvent",
+    "PluginBuilderGate",
+    "GR_PLUGIN_CREATE_GUARD",
 ]

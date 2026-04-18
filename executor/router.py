@@ -78,15 +78,22 @@ AGENT_TYPE_PATTERNS: dict[str, list[str]] = {
         "validate",
         "audit",
     ],
-    # v4 新增：plugin_builder
+    # v4 新增：plugin_builder（简单关键词，PLUGIN_BUILDER_PATTERNS 处理完整正则）
     "plugin_builder": [
         "创建插件",
         "做个插件",
         "新建插件",
         "构建插件",
+        "搭建插件",
+        "开发插件",
+        "生成插件",
         "create plugin",
         "build plugin",
         "new plugin",
+        "make plugin",
+        "develop plugin",
+        "create skill",
+        "build skill",
     ],
     # coordinator 不走关键词，走模式匹配（见 COORDINATOR_PATTERNS）
 }
@@ -100,6 +107,19 @@ AGENT_TYPE_ALIASES: dict[str, str] = {
     "research": "explore",
     "build": "general",
 }
+
+# ---------------------------------------------------------------------------
+# PLUGIN_BUILDER_PATTERNS — 触发 PluginBuilder Agent 的正则模式（v4，中英文）
+# Task 4.5 新增：比 AGENT_TYPE_PATTERNS["plugin_builder"] 更精细的正则匹配
+# ---------------------------------------------------------------------------
+PLUGIN_BUILDER_PATTERNS: list[str] = [
+    # 中文
+    r"(创建|制作|开发|构建|搭建|生成|做).{0,10}(插件|plugin)",
+    r"(帮我|请).{0,10}(做|弄|写|建).{0,10}(插件|plugin|skill)",
+    # 英文
+    r"(create|build|make|develop|generate).{0,10}(plugin|skill)",
+    r"(help me|please).{0,10}(build|create|make).{0,10}(plugin|skill)",
+]
 
 
 class TaskRouter:
@@ -141,7 +161,16 @@ class TaskRouter:
                     reason=f"关键词匹配 Coordinator: {pattern}",
                 )
 
-        # 3. 特定 Agent 关键词匹配
+        # 3a. PLUGIN_BUILDER_PATTERNS 正则匹配（优先于简单关键词表）
+        for pattern in PLUGIN_BUILDER_PATTERNS:
+            if re.search(pattern, prompt_lower):
+                return RouteDecision(
+                    mode="direct",
+                    agent_type="plugin_builder",
+                    reason=f"正则匹配 plugin_builder: {pattern}",
+                )
+
+        # 3b. 特定 Agent 关键词匹配
         for agent_type, patterns in AGENT_TYPE_PATTERNS.items():
             for pattern in patterns:
                 if pattern in prompt_lower:

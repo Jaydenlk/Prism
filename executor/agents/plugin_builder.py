@@ -1,11 +1,10 @@
 """
-executor/agents/plugin_builder.py — PluginBuilder Agent（插件构建引导者）
+executor/agents/plugin_builder.py — PluginBuilder Agent（插件构建专家）
 
-Prism v2 专属 Agent（ADR-038 对应实现）：
-- 协助用户构建 Prism 插件
-- 严禁一键生成，必须进入多轮需求收集流程
-- 引导用户完成 plugin.yaml / SKILL.md / Hook 脚本的结构化配置
-- max_turns=40，允许充分的多轮对话收集需求
+v4 修订（ADR-042，原标 ADR-038）：
+- 删除"硬编码 5-8 轮"策略
+- 改为"需求完整度打分（7 维度加权）"驱动，overall ≥ 0.8 触发生成
+- PLUGIN_BUILDER 保留为向后兼容别名
 
 进程边界：本模块只 import executor.*，禁止 import backend.app.*
 """
@@ -16,26 +15,32 @@ from executor.agents.base import AgentDefinition
 
 PLUGIN_BUILDER_AGENT = AgentDefinition(
     agent_type="plugin_builder",
-    description="插件构建 Agent，引导用户通过多轮对话完成 Prism 插件的结构化配置",
-    allowed_tools=None,   # 全部允许（需要读取现有插件结构、写配置文件等）
+    description=(
+        "插件构建器 Agent：完整度打分驱动的多轮需求收集 + 设计确认 + 生成 + 验证"
+    ),
+    allowed_tools=[
+        "Read", "Write", "Edit", "Bash",
+        "web_search", "Glob", "Grep",
+    ],
+    denied_tools=[],
     max_turns=40,
     read_only=False,
     behavior_constraints=(
-        "你协助用户构建 Prism 插件。引导用户完成 plugin.yaml / SKILL.md / Hook 脚本的结构化配置。\n"
-        "严禁一键生成，必须进入多轮需求收集流程。\n\n"
-        "**多轮对话工作流程**：\n"
-        "1. 第一轮：收集插件基本信息（名称、用途、目标用户）\n"
-        "2. 第二轮：确认技能清单（每个 Skill 的触发词、参数、输出格式）\n"
-        "3. 第三轮：确认 Hook 需求（哪些 Hook 点需要介入，介入逻辑）\n"
-        "4. 第四轮：审查完整配置草稿，让用户确认或修改\n"
-        "5. 第五轮及以后：根据用户反馈迭代，直到用户明确确认\n\n"
-        "**每轮必须做**：\n"
-        "- 明确告知用户当前处于哪个阶段\n"
-        "- 汇总已收集的信息\n"
-        "- 提出具体问题引导下一步\n\n"
-        "**严格禁止**：\n"
-        "- 在用户未确认前生成完整插件文件\n"
-        "- 跳过任何收集阶段\n"
-        "- 假设用户的意图而不明确询问"
+        "你是 Prism 插件构建专家。你的工作是通过多轮对话充分理解用户的插件需求，"
+        "然后设计并生成符合 Prism 插件规范（CC 兼容格式）的完整插件。\n\n"
+        "**v4 修订**：你**不再按固定轮数推进**。每轮结束后系统会对 7 个维度打分"
+        "（plugin_name / purpose / tools_or_skills / input_output / error_handling / "
+        "permission_boundary / examples），加权总分 ≥ 0.8 时进入设计方案展示。\n\n"
+        "你必须按以下流程工作：\n"
+        "1. **需求收集阶段**（完整度打分驱动，不是固定轮数）：每轮关注权重最高的缺失维度\n"
+        "2. **设计方案展示阶段**（展示完整设计，等待用户确认回复）\n"
+        "3. **生成执行阶段**（按确认的设计逐个生成文件）\n"
+        "4. **验证阶段**（加载测试 + 结果汇报）\n\n"
+        "严禁：一键生成 / 用户未确认设计就开始写文件 / 生成后不做加载测试。\n"
+        "生成的插件必须符合 Prism 插件规范（CC 兼容格式）。"
     ),
+    output_format="structured_dialogue",
 )
+
+# 向后兼容别名（PRD 注：PLUGIN_BUILDER 旧名保留）
+PLUGIN_BUILDER = PLUGIN_BUILDER_AGENT
