@@ -382,6 +382,32 @@
 
 ---
 
+---
+
+## DOC-03 Task 3.6: Harness 配置 2 源简化（ADR-033）
+
+## ADR-033: Harness 配置 2 源化 + 禁止运行时修改（DOC-03 Task 3.6）
+- **来源**: PRD v4 DOC-03 Task 3.6 Part A ADR-031（PRD 原标 ADR-031，因与 DOC-03 Task 3.5 ADR-031「Compaction 回合组原子裁剪」冲突，本实现采用 ADR-033 编号）
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/harness/defaults.py` — DEFAULT_PERMISSION_POLICIES（9 项：bash/Bash/Write/Edit/Read/Grep/WebFetch/WebSearch/skill_install）+ DEFAULT_MIDDLEWARE_CONFIG（4 项：loop_detection/rate_limit/feedback_capture/observability）+ DEFAULT_AGENT_CONSTRAINTS（6 种 agent type）
+  - `executor/harness/config_loader.py` — HarnessEffectiveConfig dataclass（6 字段：custom_guardrail_rules/permission_policies/middleware_config/hook_registrations/agent_constraints/source_trace）+ HarnessConfigLoader.load()：先填默认打 source_trace="default"，再 yaml 覆盖打 "yaml"；yaml 缺失→default-only（不raise）；yaml 格式错误→raise RuntimeError（快速失败）；structlog `harness.config.loaded/load_failed`；Prometheus `prism_harness_config_load_total{source}`
+  - `backend/app/api/v1/harness.py` — GET /config（readonly，require_admin）；PATCH/POST/DELETE 不注册→FastAPI 返回 405
+  - `backend/app/api/v1/__init__.py` — include harness.router
+  - `backend/requirements.txt` — pyyaml>=6.0
+- **实施 commit**: 5381df3
+- **偏离点**:
+  - PRD 示例 yaml 用 `ask_user` 值，本实现统一为 `ask`（与 HookDecision.permission_decision Literal["allow","ask","deny"] 对齐）；yaml 中 ask_user 归一化为 ask（`.replace("ask_user","ask")`）
+  - ADR 编号修正：PRD 原标 ADR-031 与 Task 3.5 ADR-031 冲突，故本 ADR 使用 033
+  - config_file_path 从 os.environ.get("HARNESS_CONFIG_PATH","/app/config/harness_config.yaml") 读取（不硬编码）
+  - Backend 侧 import executor.harness.config_loader 是允许的单向依赖（config_loader 纯 yaml+stdlib，不反向 import backend.app）
+- **验证结果**: 10 项验证全部 PASS（py_compile 4文件/imports/default-only load/YAML override/YAML error raise/nonexistent path/router路由/GET响应结构/api_v1_router含harness.router/pyyaml in requirements）
+- **下游影响**:
+  - DOC-07 Task 7.4：subprocess 启动时调用 HarnessConfigLoader(config_file_path=...).load() 并将产物注入 HarnessRuntime（本 Task 只提供 loader，不做 HarnessRuntime 注入）
+  - DOC-05 Task 5.x：Plugin install 时一次性写入 harness_config.yaml 的 plugins 段 + 重启
+
+---
+
 ## Phase 2: Backend 模块(待实施)
 
 > (占位)

@@ -35,6 +35,79 @@
 
 ---
 
+## DOC-03 DONE — 2026-04-18 收官 checkpoint
+
+### DOC-03 6 Task 产物路径索引
+
+| Task | 核心产物 | ADR |
+|---|---|---|
+| 3.1 TAOR 主循环 | executor/engine/query_engine.py, executor/tools/, executor/callbacks/backend_callback.py, executor/__main__.py | ADR-020/021/022/023/024 |
+| 3.2 Middleware Pipeline | executor/harness/middleware/{base,pipeline,loop_detection,observability}.py | ADR-025 |
+| 3.3 Hook System + Permission Engine | executor/harness/{hook_system,permission_engine,ask_protocol,guardrails,platform_rules}.py | ADR-026/027/028 |
+| 3.4 Feedback Capture + HarnessRuntime | executor/harness/middleware/feedback_capture.py, executor/harness/lifecycle.py | ADR-029/030 |
+| 3.5 Compaction + Memory | executor/engine/compaction.py, executor/engine/memory.py | ADR-031/032 |
+| 3.6 Harness Config 2源 | executor/harness/defaults.py, executor/harness/config_loader.py, backend/app/api/v1/harness.py | ADR-033 |
+
+### DOC-03 ADR 落地清单（ADR-020 ~ ADR-033）
+
+ADR-020 Harness单实例 / ADR-021 工具并行gather / ADR-022 Redis直通 / ADR-023 心跳5s SETEX /
+ADR-024 MAX_TURNS分档 / ADR-025 Middleware 4钩点 / ADR-026 HookDecision 11字段 /
+ADR-027 merge_decisions / ADR-028 ask BLPOP / ADR-029 FeedbackEvent结构化 /
+ADR-030 SessionEnd LLM提炼user_memory / ADR-031 Compaction回合组原子裁剪 /
+ADR-032 is_skill_context优先保留 / ADR-033 Harness配置2源化+禁止运行时修改
+
+### 🟢 下一步: DOC-04 Task 4.1（Agent 专业化 + AgentPool 6 种）
+
+待办优先级（32 Task 剩余）:
+- **DOC-04** 5 Task: 4.1 AgentPool / 4.2 Planner / 4.3 Coordinator / 4.4 Verifier / 4.5 PluginBuilder
+- **DOC-05** 7 Task: Skill系统
+- **DOC-06** 2 Task: Auth/RBAC
+- **DOC-07** 4 Task: Run调度+子进程启动（HarnessRuntime注入 DOC-03产物）
+- **DOC-08** 3 Task: IM Gateway
+- **DOC-09** 3 Task: Admin API
+- **DOC-12** 8 Task: Observability
+
+下一个派工目标: **DOC-04 Task 4.1 — Agent 专业化 + AgentPool（6 种 agent_type）**
+
+---
+
+## 2026-04-18 -- DOC-03 Task 3.6 completed (Harness Config 2-Source Loader + GET /harness/config)
+
+### Done this session
+- Created executor/harness/defaults.py — 3 const dicts: DEFAULT_PERMISSION_POLICIES(9项) + DEFAULT_MIDDLEWARE_CONFIG(4项) + DEFAULT_AGENT_CONSTRAINTS(6 agent types)
+- Created executor/harness/config_loader.py — HarnessEffectiveConfig dataclass(6字段) + HarnessConfigLoader(config_file_path).load(): 2源合并 source_trace per-key "default"/"yaml"; yaml不存在→default-only; yaml格式错→raise RuntimeError + log harness.config.load_failed; 成功→log harness.config.loaded + Prometheus prism_harness_config_load_total
+- Created backend/app/api/v1/harness.py — GET /config (readonly, require_admin); PATCH/POST/DELETE 不注册(FastAPI默认405); config_file_path 从 HARNESS_CONFIG_PATH env读取
+- Modified backend/app/api/v1/__init__.py — include harness.router
+- Modified backend/requirements.txt — 追加 pyyaml>=6.0
+- DECISIONS.md 追加 ADR-033（PRD原标ADR-031冲突修正，本实现采用033）
+
+### Verification results
+- 10 项验证全部 PASS
+- py_compile 4文件 PASS
+- imports(executor+backend) + 3断言 PASS
+- Default-only load: bash=ask, source_trace=default PASS
+- YAML override: bash→allow/yaml, loop_detection.enabled=False PASS
+- YAML format error → RuntimeError + log harness.config.load_failed PASS
+- Nonexistent YAML path → default-only, no raise PASS
+- Router routes: GET /harness/config 存在, 无 PATCH/POST/DELETE PASS
+- GET endpoint response: effective(5 keys) + source_trace PASS
+- api_v1_router 含 harness.router PASS
+- pyyaml in requirements.txt PASS
+
+### Notes for next Task -- DOC-04 Task 4.1 (Agent 专业化 + AgentPool 6 种)
+- HarnessConfigLoader.load() 已提供，DOC-07 Task 7.4 子进程启动时将产物注入 HarnessRuntime（本 Task 未做）
+- DEFAULT_AGENT_CONSTRAINTS 6 种类型: chat/explore/planner/verifier/plugin_builder/coordinator — DOC-04 Task 4.1 的 AgentPool 6种类型需与之对齐
+- ask_user 值在 config_loader 中归一化为 ask，DOC-04/05/06 任何 Permission 相关实现均用 "ask" 不用 "ask_user"
+
+### Risks / Open items
+- HarnessConfigLoader 注入 HarnessRuntime: 留 DOC-07 Task 7.4（子进程启动参数读取 HARNESS_CONFIG_PATH）
+- YAML error test: `:::::::` 在 pyyaml 中解析为合法 dict，实际 YAML error 需用 `{invalid: yaml: content:}` 等真实非法内容触发
+
+### Commit
+- `5381df3` — `feat(v4): Harness config 2-source loader + GET /harness/config readonly (DOC-03 Task 3.6 — DOC-03 DONE)`
+
+---
+
 ## 2026-04-18 -- DOC-03 Task 3.5 completed (4-tier Compaction + 6-layer Memory)
 
 ### Done this session
