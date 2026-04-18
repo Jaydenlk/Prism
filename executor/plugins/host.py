@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from executor.engine.prompt_assembler import PromptAssembler
     from executor.harness.hooks.handlers import HookHandlerConfig
     from executor.harness.hooks.system import HookSystem
+    from executor.plugins.cc_compat import CCPluginAdapter
     from executor.plugins.mcp_client import MCPClient, MCPToolWrapper
     from executor.plugins.skill_loader import SkillLoader
     from executor.tools.registry import ToolRegistry
@@ -231,11 +232,18 @@ class PluginHost:
         hook_system: "HookSystem",
         tool_registry: "ToolRegistry",
         assembler: "PromptAssembler",
+        cc_adapter: "CCPluginAdapter | None" = None,
     ) -> None:
         self._skill_loader = skill_loader
         self._hook_system = hook_system
         self._registry = tool_registry
         self._assembler = assembler
+
+        # Task 5.7: CC 兼容层适配器（ADR-054/ADR-055）
+        if cc_adapter is None:
+            from executor.plugins.cc_compat import CCPluginAdapter as _CCAdapter
+            cc_adapter = _CCAdapter()
+        self._cc_adapter: "CCPluginAdapter" = cc_adapter
 
         # plugin_name → PluginConfig（已加载 Plugin 的注册表）
         self._loaded_plugins: dict[str, PluginConfig] = {}
@@ -346,6 +354,30 @@ class PluginHost:
             mcp_count=len(config.mcp_servers),
             hook_events=list(config.hooks_config.keys()),
         )
+
+    # ------------------------------------------------------------------
+    # 从目录加载（Task 5.7 — CC 兼容层入口）
+    # ------------------------------------------------------------------
+
+    async def load_plugin_from_dir(
+        self,
+        plugin_dir: str,
+        *,
+        session_id: str = "",
+        user_id: str = "",
+    ) -> PluginConfig:
+        """从目录自动检测格式（CC / Prism / skills_only）并加载 Plugin。
+
+        ADR-054/ADR-055 集成点：
+          - 调用 CCPluginAdapter.load(plugin_dir) 统一检测格式并转换为 PluginConfig
+          - 若 plugin.yaml 缺必填字段，CCPluginAdapter 抛 PluginSchemaError（Backend 转 422）
+          - 若格式无法识别，抛 PluginFormatError
+
+        返回值：已加载的 PluginConfig（供调用方查看转换结果）。
+        """
+        config = self._cc_adapter.load(plugin_dir)
+        await self.load_plugin(config, session_id=session_id, user_id=user_id)
+        return config
 
     # ------------------------------------------------------------------
     # 卸载 Plugin

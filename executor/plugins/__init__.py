@@ -6,6 +6,7 @@ DOC-05 Task 5.3: Hook 治理 + Plugin 命名空间（ADR-048/049）
 DOC-05 Task 5.4: PluginHost 统一管理 + 变量替换系统（ADR-050）
 DOC-05 Task 5.5: Skills Registry Local + GitHub 两源（ADR-051）
 DOC-05 Task 5.6: Skills CLI + Agent Tool 仅搜索（ADR-052/053）
+DOC-05 Task 5.7: CC 兼容层（ConversionReport）（ADR-054/ADR-055）
 """
 
 from executor.plugins.skill_types import SkillContent, SkillMetadata
@@ -28,6 +29,13 @@ from executor.plugins.skills_registry import (
     LocalSource,
     GitHubSource,
     SkillsRegistry,
+)
+from executor.plugins.cc_compat import (
+    CCPluginAdapter,
+    ConversionReport,
+    PluginFormatError,
+    PluginSchemaError,
+    PluginYamlSchema,
 )
 
 __all__ = [
@@ -57,4 +65,10 @@ __all__ = [
     "LocalSource",
     "GitHubSource",
     "SkillsRegistry",
+    # Task 5.7: CC 兼容层（ADR-054/ADR-055）
+    "CCPluginAdapter",
+    "ConversionReport",
+    "PluginFormatError",
+    "PluginSchemaError",
+    "PluginYamlSchema",
 ]
