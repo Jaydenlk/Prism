@@ -1,25 +1,32 @@
 """
-Prism v2 — Provider API 端点 (DOC-02 Task 2.3)
+Prism v2 — Provider API 端点 (DOC-02 Task 2.3 + DOC-09 Task 9.2)
 
 路由表 (DOC-01 v4 §6.6):
   GET    /api/v1/providers/presets         — 公开,无需认证
-  GET    /api/v1/providers                 — 列出 scope='system' + 本人的 scope='user'
+  GET    /api/v1/providers                 — 列出 scope='system' + 本人的 scope='user' + Redis 健康状态
   POST   /api/v1/providers                 — 创建,config.capabilities 必填
   PUT    /api/v1/providers/{id}            — 更新,scope='user' 仅限 owner;scope='system' require_admin
   DELETE /api/v1/providers/{id}            — 删除,权限同上
   POST   /api/v1/providers/{id}/test       — 探测连通性 + detected_capabilities
+  GET    /api/v1/providers/usage           — 用量统计(cache tokens 三字段 + savings)
 
 ADR-010: scope 权限矩阵
 ADR-011: config.capabilities 必填,缺失 422
 ADR-012: api_key 响应中永远返回掩码版本
+ADR-013: 熔断状态从 Redis harness:circuit:{id} 读取(DOC-09 Task 9.2)
+ADR-082: 用量 API 返回 cache tokens 三字段 + cache_hit_ratio + estimated_cache_savings_usd
 """
 from __future__ import annotations
 
-from typing import Annotated
+from datetime import date
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import redis as sync_redis
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.dependencies import get_current_user, get_db, require_admin
 from app.models.provider import Provider
 from app.models.user import User
@@ -32,8 +39,18 @@ from app.schemas.provider import (
     UpdateProviderRequest,
 )
 from app.services.provider_service import ProviderService
+from app.services.usage_service import UsageService
 
 router = APIRouter(prefix="/providers", tags=["providers"])
+
+
+def _get_sync_redis():
+    """Get a synchronous Redis client for circuit-breaker reads.
+
+    ADR-013: ProviderManager writes harness:circuit:{id} to Redis.
+    We use a sync client here to keep the list endpoint non-async.
+    """
+    return sync_redis.from_url(settings.REDIS_URL, decode_responses=False)
 
 
 # ---------------------------------------------------------------------------
@@ -59,15 +76,29 @@ async def list_presets() -> ApiResponse[list[ProviderPreset]]:
 @router.get(
     "",
     response_model=ApiResponse[list[ProviderResponse]],
-    summary="列出可见的 Provider",
-    description="返回 scope='system' 的全局预设 + 当前用户的 scope='user' Provider。需要认证。",
+    summary="列出可见的 Provider(含实时熔断健康状态)",
+    description=(
+        "返回 scope='system' 的全局预设 + 当前用户的 scope='user' Provider。"
+        "is_healthy 字段从 Redis harness:circuit:{id} 实时读取(ADR-013)。"
+        "Redis 不可用时降级为 DB 中存储的 is_healthy 值。"
+    ),
 )
 async def list_providers(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[list[ProviderResponse]]:
-    """ADR-010: 列出 scope='system' OR (scope='user' AND user_id=current)."""
-    providers = ProviderService.list_providers(db=db, user_id=current_user.id)
+    """ADR-010: 列出 scope='system' OR (scope='user' AND user_id=current).
+    ADR-013: is_healthy 从 Redis 实时读取熔断状态(DOC-09 Task 9.2)。
+    """
+    redis_client = _get_sync_redis()
+    try:
+        providers = ProviderService.list_providers_with_health(
+            db=db,
+            user_id=current_user.id,
+            redis_client=redis_client,
+        )
+    finally:
+        redis_client.close()
     return ApiResponse(data=providers)
 
 
@@ -182,3 +213,48 @@ async def test_provider(
         provider_id=provider_id,
     )
     return ApiResponse(data=result)
+
+
+# ---------------------------------------------------------------------------
+# GET /providers/usage — 用量统计(ADR-082: cache tokens 三字段 + savings)
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/usage",
+    response_model=ApiResponse[dict],
+    summary="当前用户 Provider 用量统计",
+    description=(
+        "聚合当前用户的 runs 表数据，返回 cache tokens 三字段 + cache_hit_ratio + "
+        "estimated_cache_savings_usd(ADR-082)。"
+        "按 Provider / 模型 / 时间维度分组。铁律4: user_id 严格隔离。"
+    ),
+)
+async def get_provider_usage(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    start_date: Optional[date] = Query(
+        default=None,
+        description="查询起始日期(含), 默认最近 30 天。格式: YYYY-MM-DD",
+    ),
+    end_date: Optional[date] = Query(
+        default=None,
+        description="查询截止日期(含), 默认今天。格式: YYYY-MM-DD",
+    ),
+    group_by: str = Query(
+        default="day",
+        description="时间分组粒度: day | week | month",
+        pattern="^(day|week|month)$",
+    ),
+) -> ApiResponse[dict]:
+    """ADR-082: 返回 cache tokens 三字段 + cache_hit_ratio + estimated_cache_savings_usd.
+
+    铁律4: user_id 严格过滤,确保用户只能查看自己的数据。
+    """
+    svc = UsageService(db)
+    data = svc.get_user_usage(
+        user_id=str(current_user.id),
+        start_date=start_date,
+        end_date=end_date,
+        group_by=group_by,
+    )
+    return ApiResponse(data=data)

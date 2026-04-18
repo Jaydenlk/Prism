@@ -298,6 +298,40 @@ class ProviderService:
             )
 
     @classmethod
+    def list_providers_with_health(
+        cls,
+        db: Session,
+        user_id: str,
+        redis_client,
+    ) -> list[ProviderResponse]:
+        """列出 Provider 并从 Redis 合并实时熔断状态.
+
+        ADR-013: ProviderManager 将熔断状态写入 Redis key
+                 `harness:circuit:{provider_id}` (JSON, TTL 设为 5 min)。
+        Backend 以 Redis 为准: key 存在 → is_healthy=False (熔断中)。
+
+        注意: redis_client 可以是 sync (redis.Redis) 或 async (redis.asyncio.Redis)。
+              路由层传入 sync 包装版或在调用前 await。此处使用同步 .get()。
+        """
+        providers = cls.list_providers(db=db, user_id=user_id)
+        for p in providers:
+            circuit_key = f"harness:circuit:{p.id}"
+            try:
+                circuit_data = redis_client.get(circuit_key)
+                if circuit_data:
+                    p.is_healthy = False
+                else:
+                    p.is_healthy = True
+            except Exception as exc:
+                # Redis 不可用时降级: 保持 DB 中的 is_healthy 值
+                logger.warning(
+                    "provider.health_check.redis_error",
+                    provider_id=p.id,
+                    error=str(exc),
+                )
+        return providers
+
+    @classmethod
     def get_presets(cls) -> list[ProviderPreset]:
         """返回内置 Provider 预设列表 (ADR-011: 每个预设带 capabilities)."""
         return BUILTIN_PRESETS
