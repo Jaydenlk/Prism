@@ -40,7 +40,7 @@
 | DOC-03 Task 3.2: Middleware Pipeline(4 钩点) | completed | 2026-04-18 | 2026-04-18 | e174ea5 | executor/harness/middleware/{base,pipeline,loop_detection,observability}; RunContext 追加 agent_type; QueryEngine 4 钩点集成(pre/post_turn + pre/post_tool_use); middleware=None 向后兼容 — 全部 10 项验证 PASS; ADR-025 落地 |
 | DOC-03 Task 3.3: Hook System + Permission Engine | completed | 2026-04-18 | 2026-04-18 | 25963bf | 11新文件+2修改: HookDecision 11字段 + merge_decisions(ADR-026/027); HookSystem asyncio.gather并行; 4 handler(command/http/prompt骨架/agent骨架); PermissionAskProtocol Redis BLPOP(ADR-028); GuardrailsEngine + 4条平台规则(GR-PLATFORM-001~004); PermissionEngine两层; lifecycle.py组装; pipeline.py Step3/7真实集成; metrics 3计数器 — 全部13项验证 PASS |
 | DOC-03 Task 3.4: Guardrails + Feedback Loop | completed | 2026-04-18 | 2026-04-18 | affb44b | feedback_capture.py FeedbackEvent ADR-029 5枚举/4枚举; FeedbackCaptureMiddleware post_turn+_extract_failures+get_run_summary; lifecycle.py HarnessRuntime 8参数+3中间件注册(loop→obs→feedback)+on_session_end ADR-030 LLM提炼+HarnessLifecycle别名; metrics 2新counter — 全部12项验证 PASS |
-| DOC-03 Task 3.5: 4 级 Compaction + 6 层 Memory | pending | — | — | — | — |
+| DOC-03 Task 3.5: 4 级 Compaction + 6 层 Memory | completed | 2026-04-18 | 2026-04-18 | ef26979 | compaction.py CompactionPipeline(TIER1=0.60/TIER2=0.85, ADR-031 turn-group atomic, ADR-032 is_skill_context保留); memory.py MemoryLayer ABC + SessionMemory/UserMemory/MemoryManager raw SQL; QueryEngine compaction=None向后兼容; HarnessRuntime budget参数+load_user_memory方法 — 全部14项验证 PASS |
 | DOC-03 Task 3.6: Harness 配置(2 源简化) | pending | — | — | — | — |
 
 ### DOC-04: Agent Orchestration(5 Task)

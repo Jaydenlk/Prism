@@ -57,6 +57,12 @@ expected-list (18 names) is authoritative for implementation.
 This report is created per Rule 4 to document the discrepancy; implementation
 proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
+---
+
+**2026-04-18 ADR-029/030 编号在 DOC-03 Task 3.4 和 3.5 重用（PRD 笔误），本实现将 Task 3.5 的两条改编为 ADR-031/032**（Compaction 按回合组原子裁剪 = ADR-031；is_skill_context 优先保留 = ADR-032）。DECISIONS.md 已按 ADR-031/032 落地，Task 3.4 的 ADR-029/030 编号不变。
+
+---
+
 ### Action required from human reviewer
 
 If a 19th table actually exists (perhaps from a review batch that did not make

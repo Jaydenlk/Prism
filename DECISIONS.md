@@ -353,6 +353,35 @@
 
 ---
 
+## DOC-03 Task 3.5: 4 级 Compaction Pipeline + 6 层 Memory（ADR-031 / ADR-032）
+
+## ADR-031: Compaction 按回合组原子裁剪（DOC-03 Task 3.5）
+- **来源**: PRD v4 DOC-03 Task 3.5 Part A ADR-029（PRD 笔误重号，本实现用 ADR-031 编号，见 blocker.md）
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/engine/compaction.py` — CompactionPipeline._tier1_micro_compact()：identify_turn_groups() → 整组保留/删除，绝不按 index 单独裁
+  - `executor/engine/compaction.py` — CompactionPipeline._tier2_auto_compact()：split_point=len(groups)//2，old_groups/recent_groups 均按组边界切分
+  - `executor/engine/compaction.py` — CompactionPipeline.reactive_truncate()：groups[-3:] 整组保留
+  - `executor/engine/context_budget.py`（Task 2.4）— identify_turn_groups() 识别边界（本 Task 不修改）
+- **实施 commit**: ef26979
+- **偏离点**: 无。tool_use↔tool_result 配对保证验证 PASS（Test 10：4组消息含 tool_use/tool_result，Tier1/Tier4 裁后 pairs 完整）
+- **验证结果**: TEST 10 PASS（所有 tier 裁剪后 tool_use id 集合 == tool_result id 集合，无悬空对）
+- **下游影响**: DOC-07 任何调用 CompactionPipeline 的上下文必须通过 identify_turn_groups() 识别组边界，不得手工按 index 裁
+
+## ADR-032: is_skill_context 优先保留（DOC-03 Task 3.5）
+- **来源**: PRD v4 DOC-03 Task 3.5 Part A ADR-030（PRD 笔误重号，本实现用 ADR-032 编号，见 blocker.md）
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/engine/compaction.py` — Tier 1 _tier1_micro_compact()：`i in to_keep or getattr(msg, 'is_skill_context', False)` 保留逻辑
+  - `executor/engine/compaction.py` — Tier 2 _tier2_auto_compact()：old_messages 排除 is_skill_context=True；result 末尾追加所有 skill_context
+  - `executor/engine/compaction.py` — Tier 4 reactive_truncate()：`i in keep_indices or getattr(msg, 'is_skill_context', False)` 保留逻辑
+- **实施 commit**: ef26979
+- **偏离点**: 无。Tier 4 hint message is_skill_context=False（hint 本身不是 Skill 注入，可参与后续裁剪）
+- **验证结果**: TEST 4 PASS（Tier1 保留 skill_context）；TEST 8 PASS（Tier4 保留 old group 的 skill_context）；TEST 5 PASS（Tier2 摘要后 skill_context 完整）
+- **下游影响**: DOC-05 Skill 注入的 PrismMessage（is_skill_context=True）在所有 Compaction Tier 均被保留
+
+---
+
 ## Phase 2: Backend 模块(待实施)
 
 > (占位)

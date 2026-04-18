@@ -35,6 +35,44 @@
 
 ---
 
+## 2026-04-18 -- DOC-03 Task 3.5 completed (4-tier Compaction + 6-layer Memory)
+
+### Done this session
+- Created executor/engine/compaction.py — CompactionPipeline: TIER1=0.60/TIER2=0.85, maybe_compact/check_and_compact 路由入口, _tier1_micro_compact (裁最老1组), _tier2_auto_compact (LLM摘要替换最老50%组, adapter=None降级Tier1+warning), reactive_truncate (保留最近3组+hint), _tier4_reactive=reactive_truncate 别名, _extract_text helper, Prometheus prism_harness_compaction_total{tier} 集成
+- Created executor/engine/memory.py — MemoryLayer ABC (load()->str|None), SessionMemory (raw SQL: sessions.config_snapshot.session_memory), UserMemory (raw SQL: user_memories.memory_text 最近10条), MemoryManager (Layer1+2, get_layer() Phase2预留, load() User先Session后)
+- Modified executor/engine/query_engine.py — __init__ 追加 compaction: CompactionPipeline | None = None; run() 循环里 if compaction: check_and_compact, else: Tier0 fallback（老代码保留）
+- Modified executor/harness/lifecycle.py — __init__ 追加 budget=None 参数; CompactionPipeline 条件组装 (budget非None时); memory_manager=None留空; 新增 load_user_memory(db_session=None)->str 方法
+- 所有 14 项验证 PASS; blocker.md 追加 ADR-029/030 重号修正记录; DECISIONS.md 追加 ADR-031/ADR-032
+
+### Verification results
+- Part B 验证步骤 14 项: 全部 PASS
+- py_compile 5 files PASS
+- imports all OK PASS
+- Tier1 裁最老组 + is_skill_context保留 PASS (TEST 3/4)
+- Tier2 mock adapter摘要 + adapter=None降级 PASS (TEST 5/6)
+- Tier4 _tier4_reactive别名 + reactive_truncate 3组+hint PASS (TEST 7/8)
+- maybe_compact 阈值路由 50%/65%/90% PASS (TEST 9)
+- tool_use↔tool_result 配对保证(ADR-031) PASS (TEST 10)
+- MemoryManager db_session=None返回"" PASS (TEST 11)
+- MemoryManager mock DB 拼接格式 + 顺序(User先) PASS (TEST 12)
+- QueryEngine compaction=None向后兼容 PASS (TEST 13)
+- grep from backend.app in executor/engine/ 新文件: 0命中 PASS (TEST 14)
+
+### Notes for next Task -- DOC-03 Task 3.6 (Harness 配置 2 源简化)
+- 配置 2 源：系统默认（config.py Settings 类）+ 用户覆盖（DB user.settings JSONB 或 .prism/config.json 文件）；不允许 per-session 第 3 源
+- PATCH 运行时 API 已删（v4）；所有 Harness 参数在子进程启动时冻结，不可运行时修改
+- Settings 当前已有 CIRCUIT_BREAKER_* / HEARTBEAT_* / LOOP_DETECTION_* / PERMISSION_ASK_TIMEOUT_SECONDS / FEEDBACK_TTL_SECONDS；Task 3.6 只补 ClaudeConfig（model/max_tokens/temperature）和 HarnessConfig（max_turns/agent_type/…）结构化封装，合并两源后注入 HarnessRuntime
+
+### Risks / Open items
+- UserMemory 列名：ORM 用 memory_text（非 PRD raw SQL 示例的 content）；memory.py 已用 memory_text，与 ORM model 对齐
+- HarnessRuntime.load_user_memory() 的真实 db_session 注入留 DOC-07 Task 7.4（__main__.py 子进程启动时）
+- CompactionPipeline 的 Prometheus metric 复用 prism_harness_compaction_total（已存在），未另建 prism_compaction_total
+
+### Commit
+- `ef26979` — `feat(v4): 4-tier Compaction + 6-layer Memory (turn-group atomic, skill_context preserved) — DOC-03 Task 3.5`
+
+---
+
 ## 2026-04-18 -- DOC-03 Task 3.4 completed (Feedback Capture + HarnessRuntime Lifecycle)
 
 ### Done this session
