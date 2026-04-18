@@ -81,7 +81,7 @@
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
 | DOC-07 Task 7.1: Session CRUD + 消息增量 | completed | 2026-04-19 | 2026-04-19 | 870b4bb | 4新文件+1修改: schemas/session.py(4 schema) + schemas/message.py(MessageResponse) + services/session_service.py(SessionService 5 CRUD方法+list_messages+generate_text_preview) + api/v1/sessions.py(6路由 limit≤500 after_sequence_no); api/v1/__init__注册sessions_router; 铁律4 user_id所有权强制; ADR-060 compliant(无max+1); 全部验证PASS |
-| DOC-07 Task 7.2: Task 提交 + Run 生命周期(sequence_no + cancel 三模式) | pending | — | — | — | — |
+| DOC-07 Task 7.2: Task 提交 + Run 生命周期(sequence_no + cancel 三模式) | completed | 2026-04-19 | 2026-04-19 | 63903c1 | 9新文件+2修改: schemas/task.py(SubmitTaskRequest/Response) + schemas/run.py(RunResponse/ListResponse/CancelRunRequest) + services/sequence_service.py(ADR-060 两方案: CREATE SEQUENCE IF NOT EXISTS + advisory_xact_lock) + services/task_service.py(TaskService.submit 即时/排队判断+QUEUE_MAX_SIZE=50) + services/run_lifecycle.py(RunLifecycle状态机+promote_next FOR UPDATE SKIP LOCKED ADR-061+cancel三模式ADR-062+mark_crashed ADR-065) + services/session_queue.py(list_queue/cancel_item/get_queue_size) + api/v1/tasks.py(POST /tasks 202 + queue端点 + cancel端点) + api/v1/runs.py(GET /runs/{id} + /sessions/{id}/runs) + alembic/versions/002(ADD subprocess_pid到runs); models/run.py追加subprocess_pid字段; api/v1/__init__注册tasks+runs_router; 全部验证PASS |
 | DOC-07 Task 7.3: Callback(双通道) + SSE Manager + HeartbeatMonitor + permission-answer | pending | — | — | — | — |
 | DOC-07 Task 7.4: 子进程调度(标准化参数) + coordinator_recovery + alert_dispatcher | pending | — | — | — | — |
 
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 25
+- **已完成**: 26
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 26
+- **pending**: 25
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-07 Task 7.1 完成: Session CRUD + 消息增量 + generate_text_preview；25/51 Task 完成）
-> **下一个动作**: DOC-07 Task 7.2 — Task 提交 + Run 生命周期(sequence_no + cancel 三模式)
+> **最后更新**: 2026-04-19（DOC-07 Task 7.2 完成: Task 提交 + Run 生命周期 + sequence_no ADR-060 + cancel 三模式 ADR-062；26/51 Task 完成）
+> **下一个动作**: DOC-07 Task 7.3 — Callback(双通道) + SSE Manager + HeartbeatMonitor + permission-answer

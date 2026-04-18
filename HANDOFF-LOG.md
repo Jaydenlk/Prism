@@ -35,6 +35,48 @@
 
 ---
 
+## 2026-04-19 -- DOC-07 Task 7.2 completed (Task 提交 + Run 生命周期 + ADR-060/061/062)
+
+### 本次 session 做了什么
+- 新建 backend/app/schemas/task.py — SubmitTaskRequest(session_id/prompt/agent_type) + SubmitTaskResponse(accepted_type/queue_position)
+- 新建 backend/app/schemas/run.py — RunResponse(harness_summary JSONB) + RunListResponse(精简) + CancelRunRequest(mode 三模式枚举校验)
+- 新建 backend/app/services/sequence_service.py — ADR-060 两方案: get_next_message_sequence_no(CREATE SEQUENCE IF NOT EXISTS + nextval) + get_next_message_sequence_no_advisory(pg_advisory_xact_lock + max+1) + get_next_queue_sequence_no(advisory+offset 2^32)
+- 新建 backend/app/services/task_service.py — TaskService.submit: session_id=None自动创session; idle→_submit_immediate(创Run+阻塞session); busy→_submit_queued(advisory_xact_lock+QUEUE_MAX_SIZE=50)
+- 新建 backend/app/services/run_lifecycle.py — RunLifecycle: mark_running/complete_and_promote/fail_and_promote/cancel(ADR-062三模式SIGTERM/SIGKILL/also_cancel_queue)/mark_crashed(ADR-065)/timeout; _promote_next()单事务FOR UPDATE SKIP LOCKED(ADR-061)
+- 新建 backend/app/services/session_queue.py — SessionQueueService: list_queue/cancel_item/get_queue_size
+- 新建 backend/app/api/v1/tasks.py — POST /tasks(202 Accepted) + GET /sessions/{id}/queue + DELETE /sessions/{id}/queue/{item_id} + POST /runs/{id}/cancel
+- 新建 backend/app/api/v1/runs.py — GET /runs/{id}(含harness_summary) + GET /sessions/{id}/runs(分页)
+- 修改 backend/app/models/run.py — 追加 subprocess_pid Integer 字段（cancel三模式 SIGTERM/SIGKILL 必需）
+- 新建 backend/alembic/versions/002_add_subprocess_pid_to_runs.py — ALTER TABLE runs ADD COLUMN subprocess_pid INTEGER
+- 修改 backend/app/api/v1/__init__.py — 注册 tasks_router + runs_router
+
+### 验证结果
+- Part B 验证步骤(8个文件编译+schema6项+RunLifecycle方法签名+promote原子性+ADR约束+路由注册): 全部 PASS
+  - py_compile 8 新文件 PASS
+  - SubmitTaskRequest/Response 构造 PASS; CancelRunRequest 三模式校验 PASS; 非法mode拒绝 PASS
+  - RunLifecycle 8方法全存在 PASS; cancel含mode+user_id PASS; complete_and_promote含harness_summary PASS
+  - FOR UPDATE SKIP LOCKED 存在 PASS; 单commit PASS
+  - CREATE SEQUENCE IF NOT EXISTS PASS; pg_advisory_xact_lock PASS
+  - lock_key message≠queue PASS
+  - Run.subprocess_pid ORM字段存在 PASS; migration 002 well-formed PASS
+  - 6条路由路径验证 PASS
+
+### 下一个 Task 需要注意
+- Task 7.3 callback_service 写 messages 时必须调用 get_next_message_sequence_no(db, session_id)，不可用 MAX+1
+- Task 7.3 run_complete 事件处理 → complete_and_promote(run_id, ..., harness_summary=json)，harness_summary 在 promote 事务中写入
+- Task 7.4 executor 启动成功后需调用 mark_running(run_id) 将 subprocess_pid 写入 DB，cancel 端点才能发信号
+- Task 7.4 _start_agent_subprocess(run_id) 在 tasks.py 中是 stub，Task 7.4 实现时替换
+
+### 遗留风险 / 未决事项
+- _start_agent_subprocess 当前为 stub（Task 7.4 实现）
+- get_next_message_sequence_no 使用方案 1（CREATE SEQUENCE），在 PG RDS 权限受限时需切换方案 2（advisory_xact_lock）
+- cancel 依赖 subprocess_pid 字段，需 Task 7.4 写入后才能发信号（pid=None 时 kill 被静默跳过）
+
+### Commit
+- `63903c1` — `feat(v4): Task 提交 + Run 生命周期 (sequence_no + cancel 三模式) — DOC-07 Task 7.2`
+
+---
+
 ## 2026-04-19 -- DOC-07 Task 7.1 completed (Session CRUD + 消息增量 + generate_text_preview)
 
 ### 本次 session 做了什么

@@ -1133,3 +1133,77 @@
   - DOC-06 完整收官(Task 6.1 + Task 6.2 均完成)；DOC-07 可依赖完整 Auth+User+Admin 链路
 
 > **最后更新**: 2026-04-19(DOC-06 Task 6.2 — 用户管理 + 邀请码 + ADR-059；DOC-06 完整收官)
+
+---
+
+## DOC-07 Task 7.2: Task 提交 + Run 生命周期(ADR-060 / ADR-061 / ADR-062)
+
+## ADR-060: sequence_no 并发原子性 — per-session PostgreSQL SEQUENCE + advisory_xact_lock 两方案(DOC-07 Task 7.2)
+- **来源**: PRD v4 DOC-07 Task 7.2 Part A ADR-060
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/sequence_service.py` — 三函数:
+    - `get_next_message_sequence_no()`: 方案 1（推荐）CREATE SEQUENCE IF NOT EXISTS "messages_seq_{session_id}" + nextval()
+    - `get_next_message_sequence_no_advisory()`: 方案 2（备选）pg_advisory_xact_lock(hash) + COALESCE(MAX,0)+1
+    - `get_next_queue_sequence_no()`: 队列 item sequence_no，advisory_xact_lock + offset 2^32 避免与 messages lock 冲突
+- **实施 commit**: 63903c1
+- **偏离点**:
+  1. queue item 使用方案 2（advisory_xact_lock），无需建 DDL 对象，因队列并发度低
+  2. lock key offset 2^32 防止 messages 和 queue_items advisory lock 相互碰撞
+- **验证结果**:
+  - 三函数签名验证 PASS
+  - lock_key message != lock_key queue（不同范围）PASS
+  - CREATE SEQUENCE IF NOT EXISTS 存在 PASS
+  - pg_advisory_xact_lock 存在 PASS
+- **下游影响**:
+  - DOC-07 Task 7.3：callback_service 写 messages 时调用 get_next_message_sequence_no()
+  - DOC-07 Task 7.4：executor 启动后 mark_running() 更新 subprocess_pid
+
+## ADR-061: promote 原子事务 — 单事务 FOR UPDATE SKIP LOCKED(DOC-07 Task 7.2)
+- **来源**: PRD v4 DOC-07 Task 7.2 Part A ADR-061
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/run_lifecycle.py` — RunLifecycle._promote_next():
+    - session.blocking_run_id=None + session.status="idle"
+    - SELECT ... FOR UPDATE SKIP LOCKED 防并发重复
+    - next_item.status="promoted" + 新 Run 创建 + session 重新阻塞
+    - complete_and_promote / fail_and_promote / mark_crashed 均在单次 commit 前完成全部操作
+  - `backend/app/api/v1/tasks.py` — commit 在 TaskService.submit() 返回后由路由层统一执行，子进程启动在 commit 后
+- **实施 commit**: 63903c1
+- **偏离点**: 无
+- **验证结果**:
+  - with_for_update(skip_locked=True) 存在 PASS
+  - complete_and_promote 单次 db.commit() PASS
+  - API 层 commit 后再启动子进程 PASS
+- **下游影响**:
+  - DOC-07 Task 7.3：callback_service 接收 run_complete 事件时调用 complete_and_promote()，同一事务写 harness_summary
+  - DOC-07 Task 7.4：新 promote 的 run_id 传递给子进程启动逻辑
+
+## ADR-062: Run cancel 三模式 — graceful/force/also_cancel_queue(DOC-07 Task 7.2)
+- **来源**: PRD v4 DOC-07 Task 7.2 Part A ADR-062
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/schemas/run.py` — CancelRunRequest(mode: Literal["graceful"|"force"|"also_cancel_queue"], default="graceful")
+  - `backend/app/services/run_lifecycle.py` — RunLifecycle.cancel(run_id, mode, user_id):
+    - pending → 直接标记 cancelled（无进程可 kill）
+    - running+graceful → SIGTERM（子进程完成 tool 后 break）
+    - running+force → SIGKILL（立即终止）
+    - running+also_cancel_queue → SIGTERM + UPDATE queue_items status=cancelled
+    - 所有模式解除 session.blocking_run_id
+  - `backend/app/api/v1/tasks.py` — POST /runs/{id}/cancel 端点
+  - `backend/app/models/run.py` — 追加 subprocess_pid Integer 字段（cancel 需要 PID）
+  - `backend/alembic/versions/002_add_subprocess_pid_to_runs.py` — ALTER TABLE runs ADD COLUMN subprocess_pid
+- **实施 commit**: 63903c1
+- **偏离点**:
+  1. Run model 原文件 docstring 提及 subprocess_pid 但未实际映射，本 Task 补全 ORM 字段 + alembic migration 002
+  2. cancel() 添加 user_id 归属校验参数（铁律 4）
+- **验证结果**:
+  - CancelRunRequest 三模式枚举验证 PASS；默认 graceful PASS；非法 mode 拒绝 PASS
+  - RunLifecycle.cancel 签名含 mode + user_id PASS
+  - Run.subprocess_pid ORM 字段存在 PASS
+  - Migration 002 well-formed PASS
+- **下游影响**:
+  - DOC-07 Task 7.4：executor 启动后调用 mark_running(run_id) 将 subprocess_pid 写入 DB，cancel 才能发信号
+  - DOC-07 Task 7.3：HeartbeatMonitor 调用 mark_crashed()（复用 _promote_next() 逻辑）
+
+> **最后更新**: 2026-04-19(DOC-07 Task 7.2 — Task 提交 + Run 生命周期 ADR-060/061/062)
