@@ -22,3 +22,4 @@ psutil>=5.9.0
 cryptography>=42.0.0
 json-repair>=0.28.0
 jsonschema>=4.0.0
+pyyaml>=6.0
