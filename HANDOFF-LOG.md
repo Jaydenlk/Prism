@@ -35,6 +35,36 @@
 
 ---
 
+## 2026-04-19 -- DOC-04 Task 4.3 completed (Coordinator + Plan checkpoint)
+
+### 本次 session 做了什么
+- Created executor/coordinator/plan.py — Plan/PlanStep dataclass + parse_from_text() 两级解析(JSON 围栏/裸 JSON / markdown `[agent] desc` / 单步 general fallback) + serialize_plan/deserialize_plan(asdict 持久化助手) + _normalize_agent_type(research→explore 规范化)
+- Created executor/engine/synthesizer.py — Synthesizer.synthesize() 模板合成(## 任务完成 + **目标** + ### desc/result)
+- Created executor/coordinator/coordinator.py — Coordinator.__init__(plan_id + resume_from_step) + execute(existing_plan可选, 初始 + 每 step 开始 + 完成 = 4 次 coordinator_plan_update) + resume_from_checkpoint(classmethod 返回 (Coordinator, Plan) 元组) + _plan(Fork Planner, 失败兜底单步 general) + _build_step_context(注入前 500 字)
+- Modified executor/coordinator/__init__.py — 追加导出 Plan/PlanStep/serialize_plan/deserialize_plan/Coordinator
+
+### 验证结果
+- Part B 验证步骤: 全部 PASS (Plan 构造 + Synthesizer 模板)
+- 扩展验证: parse_from_text JSON / markdown / fallback 三路径 PASS; serialize/deserialize roundtrip PASS
+- Coordinator 路径测试: single-step(直返 synthesis) / multi-step(4次 plan_update + 2次 step_start/end) / resume_from_step=1(只 fork 第2步) 全 PASS
+- grep `from backend.app` in executor/coordinator + executor/engine/synthesizer.py: 0 命中 PASS
+
+### 下一个 Task 需要注意 — DOC-04 Task 4.4 (TaskRouter 6 agent_type)
+- TaskRouter 集成在 executor/__main__.py 入口处,按关键词判定 general/explore/planner/verifier/coordinator/plugin_builder
+- 判定"复杂任务"→ 切换 Coordinator 模式(本 Task 实现的 Coordinator.execute)
+- Phase 1 关键词匹配(ms 级,确定性),Phase 2 LLM 分类 fallback(ADR-037 Task 4.4 原标)
+- 路由器返回 (agent_type, use_coordinator) 元组,__main__.py 按 use_coordinator 分支
+
+### 遗留风险 / 未决事项
+- ADR 编号平移: DOC-04 Task 4.3 PRD 原标 ADR-036 → 本实现 ADR-040(blocker.md 已记录)；后续 DOC-04 Task 4.4/4.5 的 ADR 从 ADR-041 接续；DOC-05 后续 ADR 需继续平移(参考 blocker.md)
+- Coordinator.resume_from_checkpoint 返回 (Coordinator, Plan) 元组(偏离 PRD 原版单返 Coordinator); DOC-07 Task 7.4 CoordinatorRecoveryService 需按此签名调用
+- coordinator_plans 表持久化逻辑在 DOC-07 Task 7.3 回调端点实现(本 Task 只 emit event)
+
+### Commit
+- `TBD` — `feat(v4): Coordinator + Plan checkpoint (parse_from_text + Synthesizer + 4-stage checkpoint) — DOC-04 Task 4.3`
+
+---
+
 ## 2026-04-19 -- DOC-04 Task 4.2 completed (Fork & Context Isolation)
 
 ### 本次 session 做了什么

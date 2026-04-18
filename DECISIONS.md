@@ -16,6 +16,7 @@
 | DOC-04 v4 | ADR-030 ~ ADR-038 | MCP 白名单 / Verifier VERDICT / Fork 3 约束 / ForkBriefing / Coordinator checkpoint / TaskRouter / PluginBuilder 打分 |
 | DOC-04 实施编号平移 | ADR-034 / ADR-035 / ADR-036 | Task 4.1 落地编号（PRD ADR-030/031/032 因 DOC-03 冲突平移至 ADR-034/035/036）|
 | DOC-04 Task 4.2 实施编号平移 | ADR-037 / ADR-038 / ADR-039 | Task 4.2 落地编号（PRD ADR-033/034/035 因 DOC-03 Task 3.6 ADR-033 冲突，平移至 ADR-037/038/039）|
+| DOC-04 Task 4.3 实施编号平移 | ADR-040 | Task 4.3 Coordinator Plan checkpoint（PRD ADR-036 因 DOC-04 Task 4.1 Verifier VERDICT 已占用 ADR-036，平移至 ADR-040）|
 | DOC-05 v4 | ADR-040 ~ ADR-050 | Skill 三级 / 强制调用 / is_skill_context / Hook 4 handler / MCP 双通道 / 变量系统 / Skills 两源 / ConversionReport |
 | DOC-06 v4 | ADR-050 ~ ADR-055 | 三密钥独立 / SSE ticket / Refresh cookie |
 | DOC-07 v4 | ADR-060 ~ ADR-067 | sequence_no 原子 / promote 事务 / cancel 三模式 / 回调方案 A / permission-answer / HeartbeatMonitor / subprocess 参数 / coordinator_recovery |
@@ -493,6 +494,43 @@
 - **偏离点**: ForkTool input_schema 保留 "agent_type"/"goal" 为 required，其余 4 字段为 optional（对应 ForkBriefing 的 field(default_factory=list)/默认 "" 字段）。ForkDepthExceeded 定义在 fork_manager.py 顶部（非独立文件，符合 Task 指令）。
 - **验证结果**: ForkBriefing.to_prompt() 6 section 标题全部存在 PASS；ForkResult 9 字段验证 PASS；ForkTool.execute() success/fail 两路径 PASS
 - **下游影响**: DOC-04 Task 4.3 Coordinator 必须通过 ForkBriefing 6 字段传递任务入参，不允许回退为 free-form string；DOC-07 Task 7.4 日志记录 ForkBriefing.goal（前 200 字）作为 fork_start 事件
+
+---
+
+---
+
+## DOC-04 Task 4.3: Coordinator + Plan checkpoint（ADR-040）
+
+## ADR-040: Coordinator Plan checkpoint 持久化 + 崩溃恢复（DOC-04 Task 4.3）
+- **来源**: PRD v4 DOC-04 Task 4.3 Part A ADR-036（PRD 原标 ADR-036，因 DOC-04 Task 4.1 Verifier VERDICT 已占用 ADR-036，平移至 ADR-040）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/coordinator/plan.py` — Plan/PlanStep dataclass + `parse_from_text()`(两级解析: JSON 围栏代码块/裸 JSON → markdown 列表 `[agent] desc` → 单步 general fallback) + `serialize_plan/deserialize_plan`(asdict 持久化) + `_normalize_agent_type`(research→explore 别名兼容)
+  - `executor/engine/synthesizer.py` — Synthesizer.synthesize()(模板化:`## 任务完成 + **目标** + ### desc/result` )
+  - `executor/coordinator/coordinator.py` — Coordinator.__init__(plan_id + resume_from_step) + execute(existing_plan 可选) + resume_from_checkpoint(classmethod 读 coordinator_plans 表) + _plan(Fork Planner) + _build_step_context(注入已完成步骤前 500 字)
+  - Checkpoint 时序: (1)初始 `coordinator_plan_update(plan_json, current_step, total_steps, status='running')` → (2)每 step 开始前 `coordinator_plan_update(current_step=i)` + `harness_event("step_start")` → (3)step 完成后 fork/synthesis + `harness_event("step_end")` → (4)最终 `coordinator_plan_update(status='completed')`
+  - `executor/coordinator/__init__.py` — 导出 Plan / PlanStep / serialize_plan / deserialize_plan / Coordinator
+- **实施 commit**: TBD(本 Task 收官时写)
+- **偏离点**:
+  - ADR 编号从 PRD 原标 036 平移到 040（见 blocker.md 编号平移链）
+  - resume_from_checkpoint 签名改为返回 `(Coordinator, Plan)` 元组(PRD 原版只返 Coordinator 实例，但 resume 路径 execute(user_prompt, existing_plan=plan) 需要 Plan 实例，合并返回避免二次 DB 查询)
+  - `_serialize_plan` 从 Part B 内联助手提升为 `plan.serialize_plan()` 模块级函数（便于 reuse + unit test）
+- **验证结果**: 全部 6 项 PASS
+  - py_compile 3 文件 PASS
+  - Plan construction(2 steps 断言) PASS
+  - Synthesizer 模板(task_summary + desc 包含) PASS
+  - parse_from_text JSON(research→explore 规范化) PASS
+  - parse_from_text markdown(2 步 `[research]`/`[general]`) PASS
+  - parse_from_text fallback(自由文本 → 单步 general) PASS
+  - serialize/deserialize roundtrip PASS
+  - Coordinator execute single-step(fork 1 次，直返 synthesis) PASS
+  - Coordinator execute multi-step(4 次 plan_update + 2 次 step_start + 2 次 step_end) PASS
+  - Coordinator execute resume_from_step=1(只 fork 第 2 步，跳过已完成) PASS
+  - grep `from backend.app` in executor/coordinator + executor/engine/synthesizer.py: 0 命中 PASS
+- **下游影响**:
+  - DOC-07 Task 7.3 回调端点需实现 `coordinator_plan_update` 事件处理（UPSERT coordinator_plans 表 current_step_index + plan_json + status）
+  - DOC-07 Task 7.4 CoordinatorRecoveryService 子进程重启时传 `--resume-from-step=N` → `Coordinator.resume_from_checkpoint(plan_id, db)` 恢复
+  - DOC-04 Task 4.4 TaskRouter 判定复杂任务时 → 切换 Coordinator 模式(Planner 拆解 → 本 Task 实现的 execute)
 
 ---
 
