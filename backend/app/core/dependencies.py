@@ -96,9 +96,14 @@ def get_current_user(
     )
     try:
         payload = decode_token(token)
+        # Reject refresh tokens used as access tokens (ADR-052)
+        if payload.get("type") != "access":
+            raise credentials_exc
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise credentials_exc
+    except HTTPException:
+        raise
     except Exception:
         raise credentials_exc
 
