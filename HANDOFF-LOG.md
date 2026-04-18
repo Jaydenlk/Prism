@@ -70,7 +70,7 @@
 - DriverTokenEstimator.estimate() 调用 adapter.count_tokens()，若底层 tokenizer 同步阻塞可能影响 async 性能；DOC-12 Task 12.1 可改为 run_in_executor 包装
 
 ### Commit
-- TBD（git commit 将在本条目补充 hash）
+- `ce382a5` — `feat(v4): TAOR main loop + dual-channel callback + heartbeat (DOC-03 Task 3.1 complete)`
 
 ---
 

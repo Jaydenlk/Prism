@@ -36,7 +36,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-03 Task 3.1: TAOR 主循环 + ToolExecutionPipeline | completed | 2026-04-18 | 2026-04-18 | TBD | executor/tools/{base,registry,pipeline,builtin}; executor/callbacks/backend_callback; executor/engine/{query_engine,token_estimator_adapter}; executor/observability/metrics; executor/__main__ — 全部 10 项验证 PASS; ADR-020/021/022/023/024 落地 |
+| DOC-03 Task 3.1: TAOR 主循环 + ToolExecutionPipeline | completed | 2026-04-18 | 2026-04-18 | ce382a5 | executor/tools/{base,registry,pipeline,builtin}; executor/callbacks/backend_callback; executor/engine/{query_engine,token_estimator_adapter}; executor/observability/metrics; executor/__main__ — 全部 10 项验证 PASS; ADR-020/021/022/023/024 落地 |
 | DOC-03 Task 3.2: Middleware Pipeline(4 钩点) | pending | — | — | — | — |
 | DOC-03 Task 3.3: Hook System + Permission Engine | pending | — | — | — | — |
 | DOC-03 Task 3.4: Guardrails + Feedback Loop | pending | — | — | — | — |
