@@ -10,6 +10,7 @@ Routers:
   harness    — GET /harness/config readonly (DOC-03 Task 3.6)
   skills     — Skills Market search/install/uninstall (DOC-05 Task 5.6)
   plugins    — Plugin load/validate/export-cc (DOC-05 Task 5.7)
+  sessions   — Session CRUD + message incremental query (DOC-07 Task 7.1)
 """
 from fastapi import APIRouter
 
@@ -19,6 +20,7 @@ from app.api.v1.providers import router as providers_router
 from app.api.v1 import harness
 from app.api.v1.skills import router as skills_router
 from app.api.v1.plugins import router as plugins_router
+from app.api.v1.sessions import router as sessions_router
 
 # Master v1 router
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -30,3 +32,4 @@ api_v1_router.include_router(providers_router)
 api_v1_router.include_router(harness.router)
 api_v1_router.include_router(skills_router)
 api_v1_router.include_router(plugins_router)
+api_v1_router.include_router(sessions_router)
