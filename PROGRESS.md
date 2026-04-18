@@ -24,6 +24,7 @@
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
 | DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | completed | 2026-04-18 | 2026-04-18 | 1e8ac83 | Phase 1: 5c689df 骨架; Phase 2: 1e8ac83 18 表 ORM + alembic migration — DDL 静态验证 PASS |
+| DOC-02 Task 2.2: PrismMessage 与双协议 Driver | completed | 2026-04-18 | 2026-04-18 | 1074d34 | base.py PrismMessage + 5 block types + ModelAdapter; AnthropicDriver (cache_control + Redis PUBLISH + SDK count_tokens); OpenAIDriver (ADR-007 expand + tiktoken); stream_parser.py SSE parser — 全部 6 项验证 PASS |
 
 ---
 
@@ -144,12 +145,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 1(DOC-02 Task 2.1)
+- **已完成**: 2(DOC-02 Task 2.1, DOC-02 Task 2.2)
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 50
+- **pending**: 49
 
 ---
 
-> **最后更新**: 2026-04-18(DOC-02 Task 2.1 完成: 18 表 ORM + alembic migration)
-> **下一个动作**: DOC-02 Task 2.2 — PrismMessage 与双协议 Driver(Anthropic + OpenAI)
+> **最后更新**: 2026-04-18(DOC-02 Task 2.2 完成: dual-protocol model adapters)
+> **下一个动作**: DOC-02 Task 2.3 — Provider 管理与故障转移

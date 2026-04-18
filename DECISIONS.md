@@ -97,6 +97,50 @@
 
 ---
 
+## DOC-02 Task 2.2: 双协议 Driver(ADR-007 / ADR-008 / ADR-009)
+
+## ADR-007: PrismMessage canonical Anthropic 语义(DOC-02 Task 2.2)
+- **来源**: PRD v4 DOC-02 Task 2.2 Part A / Part B
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/adapters/base.py` — PrismMessage(role: Literal["user","assistant"]),TextBlock / ToolUseBlock / ToolResultBlock / ContentBlock 类型定义
+  - `executor/adapters/openai_driver.py` — `_convert_messages_to_openai()` 实现 ADR-007 展开规则:含 ToolResultBlock 的 user PrismMessage 展开为多条 role=tool 消息;混合(ToolResult+Text)时先 tool_result 后 user
+  - `executor/adapters/anthropic_driver.py` — `_convert_messages_to_anthropic()` 直接映射(canonical 语义本就是 Anthropic 格式)
+- **实施 commit**: 1074d34
+- **偏离点**: 无。role 严格限定 Literal["user","assistant"],代码中无 PrismMessage(role="tool") 或 PrismMessage(role="system") 构造。
+- **验证结果**:
+  - 验收示例 [ToolResultBlock(A), ToolResultBlock(B), TextBlock("然后")] → role=tool(A), role=tool(B), role=user("然后") — PASS
+  - 完整对话序列(5 消息)测试 PASS
+  - grep 确认无 PrismMessage(role=tool/system) — PASS
+- **下游影响**: DOC-03 TAOR 主循环的消息存储以 PrismMessage 为单位;DOC-05 Compaction 依赖 is_skill_context 字段
+
+## ADR-008: Driver 接口强制接受 provider_capabilities(DOC-02 Task 2.2)
+- **来源**: PRD v4 DOC-02 Task 2.2 Part A
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/adapters/base.py` — ModelAdapter.__init__ 接受 `capabilities: ProviderCapabilities | None`;ProviderCapabilities dataclass(prompt_cache / streaming_tools / extended_thinking / vision)
+  - `executor/adapters/anthropic_driver.py` — 按 capabilities.prompt_cache 决定是否注入 cache_control(ephemeral 标记加在 system 最后 text block 和最后 user message 最后 text block)
+  - `executor/adapters/openai_driver.py` — capabilities.prompt_cache 对 OpenAI 恒为 False;cache_* tokens 恒为 0
+- **实施 commit**: 1074d34
+- **偏离点**: 无。两个 Driver 均在 constructor 接受 capabilities 参数,保守降级:capabilities=None 时默认 ProviderCapabilities()(全 False)。
+- **验证结果**: 导入和语法检查 PASS
+- **下游影响**: DOC-02 Task 2.3 ProviderManager 在构建 Driver 实例时必须传入正确的 capabilities(从 DB providers.config.capabilities 读取)
+
+## ADR-009: 精确 tokenizer 集成 Driver 层(DOC-02 Task 2.2)
+- **来源**: PRD v4 DOC-02 Task 2.2 Part A
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/adapters/base.py` — ModelAdapter.count_tokens() 抽象方法定义
+  - `executor/adapters/anthropic_driver.py` — count_tokens() 优先 Anthropic SDK client.messages.count_tokens();失败 fallback tiktoken cl100k_base + log WARNING
+  - `executor/adapters/openai_driver.py` — count_tokens() 使用 tiktoken.encoding_for_model(self.model);未知模型 fallback cl100k_base + log WARNING(含 per-message overhead 4 + reply priming 3)
+  - `backend/requirements.txt` — 新增 json-repair>=0.28.0;redis 升级为 redis[hiredis]>=5.0.0
+- **实施 commit**: 1074d34
+- **偏离点**: OpenAI 国产模型(DeepSeek/Kimi/Qwen)tiktoken 可能不精确,fallback cl100k_base 并 WARNING 提示人工校准。这是 PRD 明确允许的 fallback 路径。
+- **验证结果**: 导入和语法检查 PASS
+- **下游影响**: DOC-12 Task 12.1 TokenEstimator 会调用 count_tokens() 接口;DOC-03 Task 3.5 Compaction 计算上下文窗口占用
+
+---
+
 ## Phase 1: Agent 核心(待实施)
 
 > Phase 1 的 ADR 在对应 Task 实施时按模板追加到此处。
