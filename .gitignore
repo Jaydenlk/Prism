@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Environment
+.env
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Node / Frontend
+node_modules/
+.next/
+.nuxt/
+out/
+dist/
+
+# Docker (keep compose files)
+.docker/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Alembic generated
+# (versions dir is tracked)
+
+# Logs
+*.log
+logs/
+
+# mypy / pyright
+.mypy_cache/
+.pyright/

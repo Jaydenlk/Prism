@@ -1,0 +1,128 @@
+<h2>Prism 核心布局结构</h2>
+<p class="subtitle">对话页面的分屏方式 — Prism 最核心的交互界面</p>
+
+<div class="cards">
+
+  <!-- Layout A: Claude-style with expandable panel -->
+  <div class="card" data-choice="claude-expand" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:240px;background:#f5f4ed;border-radius:8px;padding:12px;font-family:Georgia,monospace;font-size:10px;">
+      <div style="display:flex;height:100%;gap:0;border-radius:8px;overflow:hidden;border:1px solid #e8e6dc;">
+        <!-- Sidebar -->
+        <div style="width:200px;background:#faf9f5;border-right:1px solid #e8e6dc;padding:8px;">
+          <div style="color:#4d4c48;font-size:9px;font-weight:600;margin-bottom:6px;">Sessions</div>
+          <div style="background:#f0eee6;border-radius:6px;padding:4px 6px;margin-bottom:3px;font-size:8px;color:#4d4c48;">● Agent 调试会话</div>
+          <div style="padding:4px 6px;font-size:8px;color:#87867f;">Code Review</div>
+          <div style="padding:4px 6px;font-size:8px;color:#87867f;">数据分析</div>
+        </div>
+        <!-- Main Chat -->
+        <div style="flex:1;background:#faf9f5;padding:8px;display:flex;flex-direction:column;">
+          <div style="color:#87867f;font-size:8px;margin-bottom:6px;text-align:center;">Chat Area (默认全宽)</div>
+          <div style="background:#f0eee6;border-radius:8px;padding:5px 8px;margin-bottom:4px;font-size:8px;color:#4d4c48;align-self:flex-end;">用户消息</div>
+          <div style="background:#fff;border-radius:8px;padding:5px 8px;margin-bottom:4px;font-size:8px;color:#4d4c48;border:1px solid #e8e6dc;">AI 回复 streaming...</div>
+          <div style="background:#fff;border:1px solid #e8e6dc;border-radius:8px;padding:5px 8px;font-size:8px;color:#c96442;">🔧 Tool: search_code ▸</div>
+          <div style="flex:1;"></div>
+          <div style="background:#fff;border:1px solid #e8e6dc;border-radius:8px;padding:6px 8px;font-size:8px;color:#87867f;">输入消息...</div>
+        </div>
+        <!-- Expandable Panel (collapsed indicator) -->
+        <div style="width:32px;background:#f5f4ed;border-left:1px solid #e8e6dc;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;font-size:8px;color:#87867f;cursor:pointer;">
+          ◂ Agent 详情
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Claude 风格 + 可展开面板</h3>
+      <p>默认对话全宽（像 Claude.ai），点击工具卡片或侧边按钮展开右侧 Agent 详情面板。</p>
+      <p style="font-size:12px;opacity:0.7;">Harness 通知、步骤列表、工具结果 → 右侧面板展开查看<br>日常对话时保持简洁，需要时才展开 → 渐进式复杂度</p>
+    </div>
+  </div>
+
+  <!-- Layout B: Persistent Split -->
+  <div class="card" data-choice="persistent-split" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:240px;background:#f5f4ed;border-radius:8px;padding:12px;font-family:Georgia,monospace;font-size:10px;">
+      <div style="display:flex;height:100%;gap:0;border-radius:8px;overflow:hidden;border:1px solid #e8e6dc;">
+        <!-- Sidebar -->
+        <div style="width:180px;background:#faf9f5;border-right:1px solid #e8e6dc;padding:8px;">
+          <div style="color:#4d4c48;font-size:9px;font-weight:600;margin-bottom:6px;">Sessions</div>
+          <div style="background:#f0eee6;border-radius:6px;padding:4px 6px;margin-bottom:3px;font-size:8px;">● Agent 调试</div>
+          <div style="padding:4px 6px;font-size:8px;color:#87867f;">Code Review</div>
+        </div>
+        <!-- Left: Chat -->
+        <div style="flex:1;background:#faf9f5;padding:8px;display:flex;flex-direction:column;border-right:1px solid #e8e6dc;">
+          <div style="color:#87867f;font-size:8px;margin-bottom:6px;">Chat</div>
+          <div style="background:#f0eee6;border-radius:8px;padding:4px 8px;margin-bottom:3px;font-size:8px;align-self:flex-end;">用户消息</div>
+          <div style="background:#fff;border:1px solid #e8e6dc;border-radius:8px;padding:4px 8px;margin-bottom:3px;font-size:8px;">AI streaming...</div>
+          <div style="flex:1;"></div>
+          <div style="background:#fff;border:1px solid #e8e6dc;border-radius:8px;padding:5px 8px;font-size:8px;color:#87867f;">输入消息...</div>
+        </div>
+        <!-- Right: Agent Panel -->
+        <div style="width:240px;background:#fff;padding:8px;">
+          <div style="color:#4d4c48;font-size:8px;font-weight:600;margin-bottom:6px;">Agent Activity</div>
+          <div style="display:flex;gap:4px;margin-bottom:6px;">
+            <span style="background:#c96442;color:white;padding:1px 6px;border-radius:4px;font-size:7px;">Steps</span>
+            <span style="background:#f0eee6;padding:1px 6px;border-radius:4px;font-size:7px;">Tools</span>
+            <span style="background:#f0eee6;padding:1px 6px;border-radius:4px;font-size:7px;">Harness</span>
+          </div>
+          <div style="border-left:2px solid #c96442;padding-left:6px;margin-bottom:4px;">
+            <div style="font-size:7px;color:#4d4c48;">✓ 分析需求</div>
+            <div style="font-size:7px;color:#4d4c48;">✓ 搜索代码</div>
+            <div style="font-size:7px;color:#c96442;">● 执行修改...</div>
+            <div style="font-size:7px;color:#87867f;">○ 运行测试</div>
+          </div>
+          <div style="background:#faf9f5;border-radius:6px;padding:4px 6px;margin-top:6px;font-size:7px;color:#87867f;">
+            ⚡ Harness: 2 guardrails active
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 常驻分屏（Devin 风格）</h3>
+      <p>左侧对话 + 右侧始终显示 Agent 活动面板（步骤/工具/Harness 标签切换）。</p>
+      <p style="font-size:12px;opacity:0.7;">Agent 执行过程始终可见 → 透明度最高<br>但简单对话时右侧面板会显得空旷</p>
+    </div>
+  </div>
+
+  <!-- Layout C: Hybrid Adaptive -->
+  <div class="card" data-choice="hybrid-adaptive" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:240px;background:#f5f4ed;border-radius:8px;padding:12px;font-family:Georgia,monospace;font-size:10px;">
+      <div style="display:flex;height:100%;gap:0;border-radius:8px;overflow:hidden;border:1px solid #e8e6dc;">
+        <!-- Sidebar -->
+        <div style="width:180px;background:#faf9f5;border-right:1px solid #e8e6dc;padding:8px;">
+          <div style="color:#4d4c48;font-size:9px;font-weight:600;margin-bottom:6px;">Sessions</div>
+          <div style="background:#f0eee6;border-radius:6px;padding:4px 6px;margin-bottom:3px;font-size:8px;">● Agent 调试</div>
+          <div style="padding:4px 6px;font-size:8px;color:#87867f;">Code Review</div>
+        </div>
+        <!-- Chat (with inline cards) -->
+        <div style="flex:1;background:#faf9f5;padding:8px;display:flex;flex-direction:column;">
+          <div style="color:#87867f;font-size:8px;margin-bottom:4px;">自适应：Agent 运行时自动展开右面板</div>
+          <div style="display:flex;flex:1;gap:0;">
+            <div style="flex:1;display:flex;flex-direction:column;padding-right:6px;">
+              <div style="background:#f0eee6;border-radius:8px;padding:4px 8px;margin-bottom:3px;font-size:8px;align-self:flex-end;">启动 Coordinator</div>
+              <div style="background:#fff;border:1px solid #e8e6dc;border-radius:8px;padding:4px 8px;font-size:8px;">正在执行多步骤计划...</div>
+              <div style="flex:1;"></div>
+              <div style="background:#fff;border:1px solid #e8e6dc;border-radius:8px;padding:5px 8px;font-size:8px;color:#87867f;">输入...</div>
+            </div>
+            <!-- Auto-expanded panel -->
+            <div style="width:200px;background:#fff;border-left:1px solid #e8e6dc;padding:6px;border-radius:0 8px 8px 0;">
+              <div style="font-size:7px;color:#c96442;font-weight:600;margin-bottom:4px;">⚡ Live Activity</div>
+              <div style="border-left:2px solid #c96442;padding-left:4px;font-size:7px;">
+                <div>✓ Step 1: Analyze</div>
+                <div style="color:#c96442;">● Step 2: Execute</div>
+                <div style="color:#87867f;">○ Step 3: Verify</div>
+              </div>
+              <div style="background:#f5f4ed;border-radius:4px;padding:3px 5px;margin-top:6px;font-size:7px;">
+                🔧 tool_call: edit_file<br>
+                📊 tokens: 1.2k/4k
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 混合自适应（推荐）</h3>
+      <p>简单对话时 = 全宽 Chat；Agent 运行时 = 自动展开右侧面板；可手动切换。</p>
+      <p style="font-size:12px;opacity:0.7;">兼顾简洁和透明度 → 根据上下文自动适配<br>简单问答不打扰，复杂任务全面展示</p>
+    </div>
+  </div>
+
+</div>

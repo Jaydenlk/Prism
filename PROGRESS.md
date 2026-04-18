@@ -1,0 +1,155 @@
+# Prism v2 Task 执行进度
+
+> **规范**: 每 Task 完成时追加 / 更新一行;状态取值 `pending` / `in_progress` / `completed` / `blocked`
+> **初始化**: 2026-04-18
+> **更新规则**: Sonnet 每次 session 结束前必须更新该 Task 的对应行(status / completed / commit / session_notes)
+
+---
+
+## Phase 0: PRD v4(文档阶段,已完成)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-00 v4 改写 | completed | — | 2026-04-18 | — | Claude Web Opus 4.7 完成 |
+| DOC-01 v4 改写 | completed | — | 2026-04-18 | — | 19 张表 Schema + API 总表 |
+| DOC-02 v4 改写 | completed | — | 2026-04-18 | — | Model Adapter + Prompt Engine |
+| DOC-03~12 v4 改写 | completed | 2026-04-18 | 2026-04-18 | — | Claude Code Opus 4.7 完成(本次 session) |
+| DOC-CC-ONBOARDING 新建 | completed | 2026-04-18 | 2026-04-18 | — | 13 节先导文档 |
+| execution-strategy-design 撰写 | completed | 2026-04-18 | 2026-04-18 | — | 执行策略 spec(本次 session) |
+
+---
+
+## Phase 1 Prelude: 项目骨架(DOC-02 Task 2.1 partial)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | in_progress | 2026-04-18 | — | TBD | 骨架 + 最小 FastAPI 完成,19 表 ORM/alembic 留给下一个 session |
+
+---
+
+## Phase 1: Agent 核心(DOC-03 / DOC-04 / DOC-05)
+
+### DOC-03: Agent Runtime & Harness Core(6 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-03 Task 3.1: TAOR 主循环 + ToolExecutionPipeline | pending | — | — | — | — |
+| DOC-03 Task 3.2: Middleware Pipeline(4 钩点) | pending | — | — | — | — |
+| DOC-03 Task 3.3: Hook System + Permission Engine | pending | — | — | — | — |
+| DOC-03 Task 3.4: Guardrails + Feedback Loop | pending | — | — | — | — |
+| DOC-03 Task 3.5: 4 级 Compaction + 6 层 Memory | pending | — | — | — | — |
+| DOC-03 Task 3.6: Harness 配置(2 源简化) | pending | — | — | — | — |
+
+### DOC-04: Agent Orchestration(5 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-04 Task 4.1: Agent 专业化 + AgentPool(6 种) | pending | — | — | — | — |
+| DOC-04 Task 4.2: Fork + Context Isolation(capability) | pending | — | — | — | — |
+| DOC-04 Task 4.3: Coordinator + Plan checkpoint | pending | — | — | — | — |
+| DOC-04 Task 4.4: TaskRouter(6 agent_type) | pending | — | — | — | — |
+| DOC-04 Task 4.5: PluginBuilder(完整度打分) | pending | — | — | — | — |
+
+### DOC-05: Plugin Ecosystem(7 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-05 Task 5.1: Skill 三级加载 | pending | — | — | — | — |
+| DOC-05 Task 5.2: MCP Server(双通道 + scope) | pending | — | — | — | — |
+| DOC-05 Task 5.3: Hook 治理(4 handler) | pending | — | — | — | — |
+| DOC-05 Task 5.4: PluginHost(变量替换) | pending | — | — | — | — |
+| DOC-05 Task 5.5: Skills Registry(Local+GitHub) | pending | — | — | — | — |
+| DOC-05 Task 5.6: Skills CLI + Agent Tool(仅搜索) | pending | — | — | — | — |
+| DOC-05 Task 5.7: CC 兼容层(ConversionReport) | pending | — | — | — | — |
+
+---
+
+## Phase 2: Backend 模块(DOC-06 / 07 / 08 / 09)
+
+### DOC-06: Auth & User(2 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-06 Task 6.1: 认证体系(三密钥 + SSE ticket) | pending | — | — | — | — |
+| DOC-06 Task 6.2: 用户管理 + 邀请码 | pending | — | — | — | — |
+
+### DOC-07: Session-Run-Task(4 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-07 Task 7.1: Session CRUD + 消息增量 | pending | — | — | — | — |
+| DOC-07 Task 7.2: Task 提交 + Run 生命周期(sequence_no + cancel 三模式) | pending | — | — | — | — |
+| DOC-07 Task 7.3: Callback(双通道) + SSE Manager + HeartbeatMonitor + permission-answer | pending | — | — | — | — |
+| DOC-07 Task 7.4: 子进程调度(标准化参数) + coordinator_recovery + alert_dispatcher | pending | — | — | — | — |
+
+### DOC-08: IM Gateway(3 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-08 Task 8.1: IMAdapter + 消息路由 + Webhook 幂等 | pending | — | — | — | — |
+| DOC-08 Task 8.2: 飞书 + 企微 + Telegram 适配器 | pending | — | — | — | — |
+| DOC-08 Task 8.3: 用户绑定(三元组) | pending | — | — | — | — |
+
+### DOC-09: MCP/Provider/Admin(3 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-09 Task 9.1: MCP Server 管理 | pending | — | — | — | — |
+| DOC-09 Task 9.2: Provider 配置 + 用量 API(cache tokens) | pending | — | — | — | — |
+| DOC-09 Task 9.3: Admin 审计 + 系统统计 + 用户管理 | pending | — | — | — | — |
+
+---
+
+## Phase 3: 前端(DOC-10 / DOC-11)
+
+### DOC-10: Frontend Foundation(4 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-10 Task 10.1: Next.js 搭建 + 设计系统 | pending | — | — | — | — |
+| DOC-10 Task 10.2: useSSE hook(状态机 + ticket) | pending | — | — | — | — |
+| DOC-10 Task 10.3: apiClient + 错误上报 + ErrorBoundary | pending | — | — | — | — |
+| DOC-10 Task 10.4: 视觉系统 + 基础组件库 | pending | — | — | — | — |
+
+### DOC-11: Frontend Features(6 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-11 Task 11.1: 对话界面(+ permission/plan/crash) | pending | — | — | — | — |
+| DOC-11 Task 11.2: 会话管理(+ export/share/fork/tag) | pending | — | — | — | — |
+| DOC-11 Task 11.3: 设置页面(+ IM UX 完整流程) | pending | — | — | — | — |
+| DOC-11 Task 11.4: 用量仪表盘(+ Cache 卡) | pending | — | — | — | — |
+| DOC-11 Task 11.5: Skills / Plugin / Harness Config 3 子页 | pending | — | — | — | — |
+| DOC-11 Task 11.6: Admin Observability 面板 | pending | — | — | — | — |
+
+---
+
+## Phase 4: 运维封装(DOC-12)
+
+### DOC-12: Observability(8 Task)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| DOC-12 Task 12.1: TokenEstimator + ResourceMonitor(百分比) | pending | — | — | — | — |
+| DOC-12 Task 12.2: Harness Analytics + Entropy(8 信号) | pending | — | — | — | — |
+| DOC-12 Task 12.3: /health 3 子端点 + Docker 资源限制 | pending | — | — | — | — |
+| DOC-12 Task 12.4: Prometheus Metrics(60+) + 4 Grafana Dashboard | pending | — | — | — | — |
+| DOC-12 Task 12.5: OTel Tracing(跨进程 W3C) | pending | — | — | — | — |
+| DOC-12 Task 12.6: 结构化日志(structlog + contextvars) | pending | — | — | — | — |
+| DOC-12 Task 12.7: 前端错误上报端点 | pending | — | — | — | — |
+| DOC-12 Task 12.8: AlertDispatcher(severity 分档) | pending | — | — | — | — |
+
+---
+
+## 统计
+
+- **总 Task 数**: 51
+- **已完成**: 0(Phase 0 文档阶段不计入)
+- **in_progress**: 1(DOC-02 Task 2.1)
+- **blocked**: 0
+- **pending**: 50
+
+---
+
+> **最后更新**: 2026-04-18(骨架 + 最小 FastAPI session)
+> **下一个动作**: DOC-02 Task 2.1 第二步 — 19 表 ORM + alembic 迁移

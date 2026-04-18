@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:www.emerge.haus)",
+      "WebFetch(domain:intuitionlabs.ai)",
+      "WebFetch(domain:fuselabcreative.com)",
+      "Bash(bash:*)",
+      "Bash(claude plugin:*)",
+      "Bash(CLAUDE_CODE_GIT_BASH_PATH=\"C:\\\\\\\\Program Files\\\\\\\\Git\\\\\\\\bin\\\\\\\\bash.exe\" claude plugin:*)",
+      "Bash(CLAUDE_CODE_GIT_BASH_PATH=\"D:\\\\\\\\Git\\\\\\\\bin\\\\\\\\bash.exe\" claude plugin:*)",
+      "Bash(export:*)",
+      "Bash(echo taste-skill + soft-skill copied:*)",
+      "Bash(grep -oP 'ADR-\\\\d+' PRD/DOC-*.md)",
+      "Bash(grep:*)",
+      "Bash(do echo:*)",
+      "Bash(claude --version)",
+      "Bash(npm update:*)"
+    ]
+  }
+}

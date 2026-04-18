@@ -1,0 +1,122 @@
+<h2>AI Agent 平台 UI 设计格局 — 市场调研</h2>
+<p class="subtitle">基于 12+ 款主流产品的 UI 范式分析，为 Prism v2 找到最佳参考方向</p>
+
+<div class="section">
+  <h3>三大 UI 范式</h3>
+  <p>当前 AI Agent 平台的 UI 设计已经收敛为三种主导范式：</p>
+</div>
+
+<div class="options">
+  <!-- Option A: Chat-Centric -->
+  <div class="option" data-choice="chat-centric" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Chat-Centric（对话为中心）</h3>
+      <p><strong>代表产品：</strong>Claude.ai / ChatGPT / Gemini</p>
+      <div style="background:#1a1a2e;border-radius:8px;padding:16px;margin:12px 0;color:#e0e0e0;font-family:monospace;font-size:12px;">
+        <div style="display:flex;height:220px;">
+          <div style="width:220px;border-right:1px solid #333;padding:8px;">
+            <div style="color:#888;font-size:10px;margin-bottom:8px;">SIDEBAR</div>
+            <div style="background:#252540;border-radius:6px;padding:6px 8px;margin-bottom:4px;font-size:11px;">◉ New Chat</div>
+            <div style="background:#2a2a45;border-radius:6px;padding:6px 8px;margin-bottom:4px;font-size:11px;opacity:0.7">Yesterday's chat</div>
+            <div style="background:#2a2a45;border-radius:6px;padding:6px 8px;margin-bottom:4px;font-size:11px;opacity:0.5">Older chat...</div>
+          </div>
+          <div style="flex:1;padding:8px 16px;display:flex;flex-direction:column;">
+            <div style="color:#888;font-size:10px;margin-bottom:8px;">MAIN CHAT AREA</div>
+            <div style="background:#252540;border-radius:12px 12px 4px 12px;padding:8px 12px;margin-bottom:6px;font-size:11px;align-self:flex-end;max-width:70%;">用户消息</div>
+            <div style="background:#1e3a5f;border-radius:4px 12px 12px 12px;padding:8px 12px;margin-bottom:6px;font-size:11px;max-width:80%;">AI 回复（streaming）<span style="animation:blink 1s infinite">▊</span></div>
+            <div style="flex:1"></div>
+            <div style="background:#252540;border-radius:12px;padding:8px 12px;font-size:11px;border:1px solid #444;">💬 输入消息...</div>
+          </div>
+        </div>
+      </div>
+      <p><strong>特点：</strong>极简、对话优先、Artifacts/Canvas 侧面板扩展</p>
+      <p><strong>适合：</strong>通用对话、写作、分析任务</p>
+    </div>
+  </div>
+
+  <!-- Option B: Split-Screen Agent -->
+  <div class="option" data-choice="split-screen" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Split-Screen Agent（分屏代理）</h3>
+      <p><strong>代表产品：</strong>Devin / Manus / OpenAI Operator / Bolt.new</p>
+      <div style="background:#0a0a0f;border-radius:8px;padding:16px;margin:12px 0;color:#e0e0e0;font-family:monospace;font-size:12px;">
+        <div style="display:flex;height:220px;">
+          <div style="width:50%;border-right:1px solid #222;padding:8px;display:flex;flex-direction:column;">
+            <div style="color:#888;font-size:10px;margin-bottom:8px;">CHAT + CONTROL</div>
+            <div style="background:#1a1a2e;border-radius:8px;padding:6px 8px;margin-bottom:4px;font-size:11px;">🤖 分析需求中...</div>
+            <div style="background:#1a1a2e;border-radius:8px;padding:6px 8px;margin-bottom:4px;font-size:11px;">🔧 执行: npm install</div>
+            <div style="background:#1a1a2e;border-radius:8px;padding:6px 8px;margin-bottom:4px;font-size:11px;">📝 编辑 src/app.tsx</div>
+            <div style="flex:1"></div>
+            <div style="background:#151525;border-radius:8px;padding:8px;font-size:11px;border:1px solid #333;">输入指令...</div>
+          </div>
+          <div style="width:50%;padding:8px;">
+            <div style="color:#888;font-size:10px;margin-bottom:8px;">LIVE WORKSPACE</div>
+            <div style="background:#111;border-radius:6px;padding:8px;height:85%;display:flex;flex-direction:column;">
+              <div style="display:flex;gap:4px;margin-bottom:6px;">
+                <span style="background:#5e6ad2;color:white;padding:2px 8px;border-radius:4px;font-size:10px;">Terminal</span>
+                <span style="background:#333;padding:2px 8px;border-radius:4px;font-size:10px;">Browser</span>
+                <span style="background:#333;padding:2px 8px;border-radius:4px;font-size:10px;">Editor</span>
+              </div>
+              <div style="flex:1;background:#0a0a0a;border-radius:4px;padding:6px;font-size:10px;color:#4af626;">
+                $ npm install<br>
+                ✓ added 142 packages<br>
+                $ npm run dev<br>
+                ▶ Server running on :3000
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p><strong>特点：</strong>左聊天右工作区、实时观察 Agent 行为、多标签页（终端/浏览器/编辑器）</p>
+      <p><strong>适合：</strong>自主执行任务、代码开发、复杂工作流</p>
+    </div>
+  </div>
+
+  <!-- Option C: IDE-Integrated -->
+  <div class="option" data-choice="ide-integrated" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>IDE-Integrated（IDE 集成）</h3>
+      <p><strong>代表产品：</strong>Cursor / Windsurf / Copilot / Replit Agent</p>
+      <div style="background:#1e1e1e;border-radius:8px;padding:16px;margin:12px 0;color:#d4d4d4;font-family:monospace;font-size:12px;">
+        <div style="display:flex;height:220px;">
+          <div style="width:180px;border-right:1px solid #333;padding:8px;">
+            <div style="color:#888;font-size:10px;margin-bottom:8px;">FILE TREE</div>
+            <div style="font-size:11px;padding:2px 0;">📁 src/</div>
+            <div style="font-size:11px;padding:2px 0;padding-left:12px;">📄 app.tsx</div>
+            <div style="font-size:11px;padding:2px 0;padding-left:12px;">📄 index.ts</div>
+            <div style="font-size:11px;padding:2px 0;">📁 tests/</div>
+          </div>
+          <div style="flex:1;padding:8px;border-right:1px solid #333;">
+            <div style="color:#888;font-size:10px;margin-bottom:8px;">EDITOR</div>
+            <div style="background:#1a1a1a;border-radius:4px;padding:8px;height:85%;font-size:10px;">
+              <span style="color:#569cd6">function</span> <span style="color:#dcdcaa">main</span>() {<br>
+              &nbsp;&nbsp;<span style="color:#4ec9b0">// AI generated ✨</span><br>
+              &nbsp;&nbsp;<span style="color:#569cd6">const</span> app = ...
+            </div>
+          </div>
+          <div style="width:240px;padding:8px;">
+            <div style="color:#888;font-size:10px;margin-bottom:8px;">AI CHAT PANEL</div>
+            <div style="background:#252526;border-radius:6px;padding:6px 8px;margin-bottom:4px;font-size:10px;">Agent: 已修改 3 个文件</div>
+            <div style="background:#252526;border-radius:6px;padding:6px 8px;margin-bottom:4px;font-size:10px;">
+              <span style="color:#4ec9b0">✓</span> app.tsx
+              <span style="color:#4ec9b0">✓</span> index.ts
+              <span style="color:#f44">✗</span> test.ts
+            </div>
+            <div style="flex:1"></div>
+          </div>
+        </div>
+      </div>
+      <p><strong>特点：</strong>编辑器为中心、AI 面板作为辅助、inline diff、代码补全</p>
+      <p><strong>适合：</strong>开发者专属、纯代码场景</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px;">
+  <h3>Prism v2 的定位</h3>
+  <p>Prism 是一个 <strong>Agent 运行平台</strong>（非 IDE），支持多种 Agent 类型（单轮/多轮/Coordinator）、SSE 实时流、Harness 治理、Skills 市场、插件创建。</p>
+  <p>请选择你认为最适合 Prism 的基础范式，或者在终端告诉我你想要的混合方案。</p>
+</div>
