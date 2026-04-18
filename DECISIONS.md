@@ -1267,4 +1267,36 @@
 - **验证结果**: HeartbeatMonitor defaults(10/30) PASS；lifespan create_task/stop PASS；/internal/run-crashed endpoint PASS
 - **下游影响**: DOC-12 Task 12.4 prism_agent_heartbeat_stale_total counter（已在 heartbeat_monitor.py 懒加载注册）；DOC-07 Task 7.4 新子进程由 promoted_run_id 启动（mark_crashed 内部 promote）
 
-> **最后更新**: 2026-04-19(DOC-07 Task 7.3 — Callback 双通道 + SSE Manager + HeartbeatMonitor + permission-answer ADR-063/064/065)
+---
+
+## DOC-07 Task 7.4: subprocess 调度(标准化参数) + coordinator_recovery + alert_dispatcher (ADR-066 / ADR-067)
+
+## ADR-066: subprocess 启动参数标准化(DOC-07 Task 7.4)
+- **来源**: PRD v4 DOC-07 Task 7.4 Part A ADR-066；DOC-01 v4 §9.1, Batch 3 §A7-6
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/process_manager.py` — ProcessManager._build_command() / _build_env()
+  - `backend/app/main.py` — lifespan step 6: ProcessManager 单例初始化 + app.state.process_manager
+  - `backend/app/api/v1/tasks.py` — submit_task 使用 process_manager.start_run() 替换 stub
+  - `backend/app/api/v1/internal.py` — promoted_run_id 触发 process_manager.start_run()
+- **实施 commit**: e04f08b
+- **偏离点**:
+  1. CALLBACK_SECRET 放在 argv（--callback-secret），符合 ADR-066 设计（executor 主动 POST 回调时必须携带）
+  2. ENCRYPTION_KEY 放在 env var（不在 argv），避免日志泄露
+  3. start_run() 在 ProcessManager 不可用时记录 WARNING 并静默跳过（非严格强制）
+- **验证结果**: ADR-066 6 必传 argv 断言 PASS；--resume-from-step 可选 PASS；_build_env ENCRYPTION_KEY PASS；kill_run SIGTERM/SIGKILL PASS
+
+## ADR-067: coordinator_recovery 服务(DOC-07 Task 7.4)
+- **来源**: PRD v4 DOC-07 Task 7.4 Part A ADR-067；Master M3, Batch 2 §A4-3
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/coordinator_recovery.py` — CoordinatorRecoveryService.resume()
+  - `backend/app/api/v1/runs.py` — POST /runs/{run_id}/resume 端点
+- **实施 commit**: e04f08b
+- **偏离点**:
+  1. 只允许恢复 status='failed' + error_message 含 'heartbeat_stale' 的 Run（其他失败类型返回 409）
+  2. coordinator_plans 取最新 checkpoint（ORDER BY updated_at DESC）而非指定 plan_id
+- **验证结果**: 404(run not found)/409(wrong status)/409(not heartbeat_stale) 三路校验 PASS；新 Run 创建 + plan.run_id 更新 + start_run(resume_from_step) 链路验证 PASS
+- **下游影响**: executor/__main__.py 需解析 --resume-from-step 并调用 Coordinator.resume_from_checkpoint(DOC-04 Task 4.3 已实现)
+
+> **最后更新**: 2026-04-19(DOC-07 Task 7.4 — subprocess scheduler ADR-066 + coordinator_recovery ADR-067 + alert_dispatcher; DOC-07 完整收官 4/4)

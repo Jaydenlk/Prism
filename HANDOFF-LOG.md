@@ -35,6 +35,43 @@
 
 ---
 
+## 2026-04-19 -- DOC-07 Task 7.4 COMPLETED + DOC-07 完整收官 4/4 (subprocess 调度 + coordinator_recovery + alert_dispatcher)
+
+### 本次 session 做了什么
+- 新建 backend/app/services/process_manager.py — ProcessManager(ADR-066): _build_command 6必传argv + _build_env ENCRYPTION_KEY/OTEL via env; start_run() ThreadPoolExecutor提交; kill_run(force=False/True) SIGTERM/SIGKILL; shutdown(); _mark_running 写 subprocess_pid; _notify_timeout/_notify_failure HTTP回调(3次重试)
+- 新建 backend/app/services/coordinator_recovery.py — CoordinatorRecoveryService(ADR-067): resume(run_id, user_id) 校验 failed+heartbeat_stale → 查 coordinator_plans → 新建 Run → plan.run_id → process_manager.start_run(resume_from_step)
+- 新建 backend/app/services/alert_dispatcher.py — AlertDispatcher 4级severity分档: info仅structlog / warning→audit_logs / error→audit+SSE / critical→audit+SSE+IM stub+Email stub
+- 修改 backend/app/services/run_lifecycle.py — mark_running(run_id, pid=None) 追加 pid 参数，写 runs.subprocess_pid
+- 修改 backend/app/api/v1/runs.py — 追加 POST /runs/{run_id}/resume 端点（ADR-067）；从 request.app.state.process_manager 获取单例
+- 修改 backend/app/api/v1/tasks.py — 替换 _start_agent_subprocess stub，改为从 request.app.state.process_manager 调用 start_run()
+- 修改 backend/app/api/v1/internal.py — handle_callback 处理 promoted_run_id 时调用 process_manager.start_run()（完成 Task 7.3 的 deferred TODO）
+- 修改 backend/app/main.py — lifespan step 6 新增 ProcessManager 初始化 + app.state.process_manager 挂载 + shutdown()
+
+### 验证结果
+- py_compile 8 新文件/修改文件: PASS
+- ADR-066 命令构建: 6必传argv + --resume-from-step可选 + ENCRYPTION_KEY in env: PASS
+- ProcessManager kill_run SIGTERM/SIGKILL/非存在: PASS
+- AlertDispatcher 4级severity路由(info/warning/error/critical): PASS
+- CoordinatorRecoveryService 404/409(wrong status)/409(not heartbeat_stale): PASS
+- POST /runs/{run_id}/resume 路由注册: PASS
+- tasks.py ProcessManager集成(无stub残留): PASS
+- internal.py promoted_run_id→start_run: PASS
+- 质量门 10 项: PASS
+
+### 下一个 Task 需要注意
+- DOC-08 Task 8.1 启动: IM Webhook 幂等需用 im_message_dedup 表（已在 DOC-01 v4 §4.2 定义）
+- AlertDispatcher im_service 参数：DOC-08 完成后 IMAdapter 实例可直接注入
+- ProcessManager._post_callback 向 http://localhost:8000 发 HTTP，Docker 网络内应改为 http://backend:8000（遗留风险）
+
+### 遗留风险 / 未决事项
+- ProcessManager._post_callback hardcode localhost:8000，Docker 生产环境需配置化（DOC-12 或 DOC-09）
+- ALERT_IM_CHANNEL/ALERT_EMAIL 尚未加入 Settings class（alert_dispatcher 用 getattr 兜底，DOC-12 Task 12.8 添加）
+
+### Commit
+- `e04f08b` — `feat(v4): subprocess scheduler (ADR-066) + coordinator_recovery (ADR-067) + alert_dispatcher — DOC-07 Task 7.4`
+
+---
+
 ## 2026-04-19 -- DOC-07 Task 7.3 completed (Callback 双通道 + SSE Manager + HeartbeatMonitor + permission-answer)
 
 ### 本次 session 做了什么
