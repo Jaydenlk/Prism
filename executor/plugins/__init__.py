@@ -5,6 +5,7 @@ DOC-05 Task 5.2: MCP Server 双通道 + scope（ADR-046/047）
 DOC-05 Task 5.3: Hook 治理 + Plugin 命名空间（ADR-048/049）
 DOC-05 Task 5.4: PluginHost 统一管理 + 变量替换系统（ADR-050）
 DOC-05 Task 5.5: Skills Registry Local + GitHub 两源（ADR-051）
+DOC-05 Task 5.6: Skills CLI + Agent Tool 仅搜索（ADR-052/053）
 """
 
 from executor.plugins.skill_types import SkillContent, SkillMetadata
