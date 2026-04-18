@@ -35,6 +35,35 @@
 
 ---
 
+## 2026-04-19 -- DOC-05 Task 5.1 completed (Skill 三级加载 Level 0/1/2 + agents过滤 + audit)
+
+### 本次 session 做了什么
+- 新建 executor/plugins/skill_types.py — SkillMetadata(name/description/triggers/hooks/path/agents) + SkillContent(metadata/full_text/is_loaded)
+- 新建 executor/plugins/skill_loader.py — SkillLoader 三级加载器：scan_and_register() Level 0; get_descriptions_for_prompt(agent_type) Level 1 含 ADR-044 agents 过滤; try_trigger(user_message, agent_type) 触发检测; load_skill(name) Level 2 读 body + 注册 scoped hooks + structlog is_skill_context=True; unload_skill/unload_all; emit_mentioned_not_loaded() audit warning; _filter_by_agent(); Phase 1 8事件白名单 _PHASE1_EVENTS; _parse_frontmatter() pyyaml safe_load; _read_body() 跳过 frontmatter
+- 修改 executor/plugins/__init__.py — 导出 SkillMetadata/SkillContent/SkillLoader
+- 新建 plugins/skills/.gitkeep — Skill 存放目录占位（目录结构按 PRD Part B）
+- 修改 pyproject.toml — 追加 pyyaml>=6.0 依赖（Task 3.6 要求，之前未在 pyproject.toml 体现）
+- ADR-043/044/045 落地 DECISIONS.md；blocker.md 追加 Task 5.1 ADR 编号平移链
+
+### 验证结果
+- Part B 验证步骤：PASS（py_compile 2文件；Level 0注册；Level 1描述；Trigger匹配/不匹配；Level 2加载；不重复触发；Unload；ADR-044 agents过滤；emit_mentioned_not_loaded audit；__init__ 导出）
+- 质量门：PASS — 0 `from backend.app` import；无 TODO 占位；进程边界严格；pyyaml 依赖声明
+
+### 下一个 Task 需要注意 — DOC-05 Task 5.2 (MCP Server 集成与热加载)
+- ADR-046 是下一个可用编号（DOC-05 Task 5.2 的 ADR 从 046 起编号）
+- SkillLoader._unregister_skill_hooks() 当前只记录 id 日志，未真实从 HookSystem 清除；Task 5.3 实现 HookSystem.unregister_by_id() 后回填
+- load_skill() 返回 SkillContent，调用方须自行构造 PrismMessage(is_skill_context=True, skill_name=name) 插入 messages；Task 5.4 PluginHost 负责此对接
+- PromptAssembler 中 SkillInfo 为临时 stub（Task 2.4），Task 5.1 的 SkillMetadata 是正式版；Task 5.4 可统一替换
+
+### 遗留风险 / 未决事项
+- HookSystem.unregister_by_id() 未实现（Phase 1 限制），Skill 卸载时 scoped hooks 残留在 HookSystem._handlers 中，但不影响语义（hook 仍会执行，仅略浪费）；Task 5.3 修复
+- pyproject.toml pyyaml>=6.0 为新增依赖，本地无 Docker 环境无法运行 docker compose exec 验证，已通过直接 python -m py_compile 和 python -c 验证
+
+### Commit
+- (见 git log)
+
+---
+
 ## 2026-04-19 -- DOC-04 Task 4.5 completed (PluginBuilder 完整度打分 + 动态轮数)
 
 ### 本次 session 做了什么

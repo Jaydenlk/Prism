@@ -71,6 +71,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **DOC-04 Task 4.5 原标 ADR-038 用 ADR-042**（PRD ADR-038 被 DOC-04 Task 4.2 Fork 3 硬约束占用，Task 4.5 的 PluginBuilder 需求完整度打分（7 维度加权）平移至 ADR-042）。后续 DOC-05 Task 5.1+ 的 ADR 从 ADR-043 接续（DOC-05 原定 ADR-040~050 范围已被 Task 4.3/4.5 吃掉 ADR-040/042，后续从 ADR-043 起编号）。
 
+**DOC-05 Task 5.1 原标 ADR-040/041/042 用 ADR-043/044/045**（PRD ADR-040 被 DOC-04 Task 4.3 Coordinator checkpoint 占用；ADR-041 被 DOC-04 Task 4.1 frontmatter_skills 已占用方向关联；ADR-042 被 DOC-04 Task 4.5 PluginBuilder 打分占用。Task 5.1 的三条 ADR 依次平移为 ADR-043/044/045：Skill 三级加载规范=ADR-043，Skill 匹配强制执行+agents过滤=ADR-044，is_skill_context 标记=ADR-045）。后续 DOC-05 Task 5.2+ 的 ADR 从 ADR-046 接续。
+
 ---
 
 ### Action required from human reviewer

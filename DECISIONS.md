@@ -604,6 +604,64 @@
 
 ---
 
+## DOC-05 Task 5.1: Skill 三级加载（ADR-043 / ADR-044 / ADR-045）
+
+## ADR-043: Skill 三级加载规范（Level 0 注册 / Level 1 描述注入 / Level 2 完整按需加载）（DOC-05 Task 5.1）
+- **来源**: PRD v4 DOC-05 Task 5.1 Part A ADR-040（PRD 原标 ADR-040，因 DOC-04 Task 4.3 Coordinator Plan checkpoint 已占用 ADR-040，平移至 ADR-043）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/skill_types.py` — SkillMetadata / SkillContent 数据类
+  - `executor/plugins/skill_loader.py` — SkillLoader 三级加载器（scan_and_register / get_descriptions_for_prompt / try_trigger / load_skill / unload_skill / unload_all）
+  - `executor/plugins/__init__.py` — 导出 SkillMetadata / SkillContent / SkillLoader
+  - `plugins/skills/.gitkeep` — Skill 存放目录占位
+  - `pyproject.toml` — 追加 pyyaml>=6.0
+- **实施 commit**: (本 Task commit)
+- **偏离点**:
+  1. ADR 编号从 PRD 原标 040 平移到 043（见 blocker.md 编号平移链）
+  2. HookSystem Phase 1 无 unregister-by-id 接口；_unregister_skill_hooks() 记录日志 + 清除本地 id 映射，实际从 HookSystem 注销留给 DOC-05 Task 5.3 扩展
+  3. PRD Part B 中 hook 注册代码示例是注释掉的 stub，本实现根据 HookSystem.register() 签名做了真实注册（hook_system 非 None 时）
+- **验证结果**: 全部 7 项验证 PASS
+  - py_compile skill_types.py / skill_loader.py PASS
+  - Level 0 注册 'test-skill' in registry PASS
+  - Level 1 get_descriptions_for_prompt 包含 test-skill + 触发词 PASS
+  - Trigger 匹配 '帮我测试一下' → ['test-skill'] PASS
+  - Trigger 不匹配 '帮我翻译' → [] PASS
+  - Level 2 load_skill is_loaded=True，body 包含 '完整内容' PASS
+  - 已加载不重复触发 PASS；unload 清除 PASS
+  - grep `from backend.app` in executor/plugins/: 0 命中 PASS
+- **下游影响**:
+  - DOC-05 Task 5.3：HookSystem 扩展 unregister_by_id()，激活 _unregister_skill_hooks() 真实清除
+  - DOC-05 Task 5.4：PluginHost 集成 SkillLoader，管理 Skill 生命周期
+  - DOC-05 Task 5.5/5.6：SkillRegistry 多源聚合后需更新 SkillLoader._registry
+
+## ADR-044: Skill 匹配时强制执行（frontmatter.agents 字段过滤 + skill_mentioned_not_loaded 审计）（DOC-05 Task 5.1）
+- **来源**: PRD v4 DOC-05 Task 5.1 Part A ADR-041（PRD 原标 ADR-041，因 DOC-04 Task 4.1 MCP 白名单已占用 ADR-035，frontmatter skills 已占用 ADR-035，平移至 ADR-044）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/skill_loader.py` — `_filter_by_agent()` 按 frontmatter.agents 过滤可见 Skill
+  - `executor/plugins/skill_loader.py` — `emit_mentioned_not_loaded()` 触发 skill_mentioned_not_loaded structlog warning（audit=True）
+  - `executor/plugins/skill_types.py` — SkillMetadata.agents 字段
+- **实施 commit**: (本 Task commit)
+- **偏离点**: emit_mentioned_not_loaded() 由调用方（QueryEngine / Middleware）主动调用，非 SkillLoader 自行检测（SkillLoader 无 messages 上下文）
+- **验证结果**: PASS
+  - agents=[] 全 agent 可见 PASS；agents=['explore'] 仅 explore 可见、general 不可见 PASS
+  - emit_mentioned_not_loaded 触发 warning 日志 PASS
+- **下游影响**: DOC-03 QueryEngine 或 DOC-05 Task 5.3 Hook 可订阅 skill_mentioned_not_loaded 事件补充处理
+
+## ADR-045: is_skill_context=True 标记 Level 2 加载的 user message（DOC-05 Task 5.1）
+- **来源**: PRD v4 DOC-05 Task 5.1 Part A ADR-042（PRD 原标 ADR-042，因 DOC-04 Task 4.5 PluginBuilder 打分已占用 ADR-042，平移至 ADR-045）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/skill_loader.py` — load_skill() 文档 + structlog 标注 is_skill_context=True
+  - `executor/adapters/base.py` — PrismMessage.is_skill_context 字段（Task 2.2 已落地）
+  - `executor/engine/compaction.py` — is_skill_context=True 消息 Compaction 优先保留（Task 3.5 已落地 ADR-032）
+- **实施 commit**: (本 Task commit)
+- **偏离点**: Level 2 产生的 user message 由调用方构造（SkillLoader.load_skill() 返回 SkillContent，调用方负责 PrismMessage(role='user', is_skill_context=True, skill_name=name) 构造并插入 messages）。SkillLoader 只保证 SkillContent.is_loaded=True 语义一致。
+- **验证结果**: PASS（structlog is_skill_context=True 日志确认）
+- **下游影响**: DOC-05 Task 5.4 PluginHost 在注入 skill message 时设置 is_skill_context=True
+
+---
+
 ## Phase 2: Backend 模块(待实施)
 
 > (占位)
