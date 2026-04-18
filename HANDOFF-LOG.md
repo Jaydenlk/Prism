@@ -35,6 +35,94 @@
 
 ---
 
+## 2026-04-19 -- DOC-05 Task 5.7 completed + DOC-05 DONE checkpoint (CC 兼容层 + ADR-054/055)
+
+### 本次 session 做了什么
+- 新建 executor/plugins/cc_compat.py — CCPluginAdapter（detect_format 4路径优先级 / load 统一入口 / _load_prism/cc/skills_only 三路加载 / export_to_cc 返回 ConversionReport / _scan_hooks_dir CC→Prism event_type 映射 / _scan_mcp_servers_dir config.json 解析 / _build_cc_zip zip 生成含 CONVERSION_NOTES.md）；ConversionReport dataclass（success/cc_compat_zip/lost_fields/warnings/plugin_name/cc_plugin_json 6字段 ADR-054）；PluginSchemaError（errors list ADR-055）；PluginYamlSchema（Pydantic extra="allow" forward-compat）
+- 修改 executor/plugins/host.py — PluginHost.__init__ 追加 cc_adapter 参数（默认自动注入 CCPluginAdapter）；新增 load_plugin_from_dir() 方法（目录级统一入口，自动格式检测）
+- 修改 executor/plugins/__init__.py — 导出 5 新符号（CCPluginAdapter/ConversionReport/PluginFormatError/PluginSchemaError/PluginYamlSchema）
+- 新建 backend/app/api/v1/plugins.py — 3 路由（POST /load 格式检测+摘要; POST /export-cc ConversionReport zip base64; POST /validate Pydantic 校验+extra_fields 告警）；内联 Pydantic schema；PluginSchemaError → HTTP 422；进程边界（Backend 不启动 MCP 子进程）
+- 修改 backend/app/api/v1/__init__.py — include plugins_router；更新 docstring
+- ADR-054/055 落地 DECISIONS.md；blocker.md 追加 Task 5.7 ADR 平移链（DOC-06 Task 6.1 须从 ADR-056 起）
+- PROGRESS.md 更新（Task 5.7 completed，22/51；下一动作 DOC-06 Task 6.1）
+
+### 验证结果
+- Part B 验证步骤（全 19 项 PASS）：
+  - py_compile × 5 文件（cc_compat.py / host.py / __init__.py / plugins.py / api_v1/__init__.py）PASS
+  - CCPluginAdapter/ConversionReport/PluginFormatError/PluginSchemaError/PluginYamlSchema 导入 PASS
+  - executor.plugins 导出 5 新符号 PASS
+  - PluginHost.__init__ cc_adapter 参数 + load_plugin_from_dir 方法 PASS
+  - ConversionReport 6 字段完整 PASS
+  - detect_format 4 场景（unknown/skills_only/cc/prism 优先级）PASS
+  - PluginFormatError on load nonexistent dir PASS
+  - _load_cc_plugin（plugin.json + skills/ + mcp-servers/）PASS
+  - _load_skills_collection PASS
+  - _load_prism_plugin（valid plugin.yaml）PASS
+  - PluginSchemaError on missing name（errors 携带详细位置）PASS
+  - export_to_cc ConversionReport（lost_fields/warnings/cc_compat_zip/cc_plugin_json）PASS
+  - zip 含 plugin.json + README.md + CONVERSION_NOTES.md PASS
+  - MCP 名称冲突 → warnings PASS
+  - forward-compat 未知字段不拒绝 PASS
+  - _scan_hooks_dir CC→Prism event_type 映射 PASS
+  - _scan_mcp_servers_dir config.json 读取 PASS
+  - 3 Backend 路由声明（/load / /export-cc / /validate）PASS
+  - 进程边界（cc_compat.py 无实际 backend.app import）PASS
+- 质量门 10 项：PASS
+
+### 下一个 Task 需要注意
+- DOC-06 Task 6.1 ADR 须从 **ADR-056** 起接续（ADR-054 = ConversionReport，ADR-055 = plugin.yaml 严格校验）
+- DOC-06 原规划 ADR-050~055 范围已全部被 DOC-05 Tasks 5.4~5.7 占用，ADR-050/051/052/053/054/055 均已落地
+- plugins_router prefix="/plugins"，务必不与 DOC-09 Task 9.1 MCP Server 管理路由（prefix="/mcp-servers"）混淆
+- PluginHost.load_plugin_from_dir() 是 Task 5.7 新增的目录级入口，DOC-07 Task 7.4 子进程调度可通过此方法加载插件目录
+
+### 遗留风险 / 未决事项
+- _scan_mcp_servers_dir Phase 1 仅读 config.json（若 CC 插件用子目录结构无 config.json，则扫描子目录名生成 stub，command 为空字符串）；Phase 2 可扩展按子目录中的 package.json 读取 command
+- PluginYamlSchema 的 extra_field_names() 在 pydantic v2 中通过 model_dump() - model_fields 计算；若 pydantic 升级 API 变化需更新
+- Backend POST /plugins/export-cc 返回 cc_compat_zip_b64（base64），前端需 decode 后落盘；大文件场景可考虑 streaming response（Phase 2）
+
+### Commit
+- `4558a25` — `feat(v4): CC 兼容层 + ConversionReport — DOC-05 Task 5.7 (ADR-054/055)`
+- `a37a6cc` — `docs: DOC-05 DONE — update PROGRESS/DECISIONS/HANDOFF-LOG/blocker (Task 5.7 + DOC-05 收官)`
+
+---
+
+## ================== DOC-05 DONE CHECKPOINT ==================
+**日期**: 2026-04-19
+**阶段**: DOC-05 Plugin Ecosystem — 全部 7/7 Task 完整收官
+
+### 完成的 Task 列表（7/7）
+- Task 5.1: Skill 三级加载（ADR-043/044/045）— commit: 见 git log
+- Task 5.2: MCP Server 双通道 + scope（ADR-046/047）— commit: 见 git log
+- Task 5.3: Hook 治理 + Plugin 命名空间（ADR-048/049）— commit: 见 git log
+- Task 5.4: PluginHost 统一管理 + 变量替换系统（ADR-050）— commit: 见 git log
+- Task 5.5: Skills Registry Local + GitHub 两源（ADR-051）— commit: 见 git log
+- Task 5.6: Skills CLI + Agent Tool 仅搜索（ADR-052/053）— commit: 见 git log
+- Task 5.7: CC 兼容层 + ConversionReport（ADR-054/055）— commit: 4558a25
+
+### 核心能力交付
+- Skill **三级加载**（L0 注册 → L1 描述注入 → L2 按需完整加载 + is_skill_context 标记）
+- MCP stdio 集成（**双通道 instructions + agent-scoped 白名单**）
+- Hook 治理层（4 种 handler / 优先级排序 / Phase 1 事件过滤 / scoped 注册-注销）
+- Plugin 命名空间（**变量替换系统 + CC 兼容映射 + Platform/User/Session 三级加载**）
+- PluginHost 统一管理 + **目录级统一入口 load_plugin_from_dir()**
+- Skills 市场（**Phase 1 仅 Local + GitHub 两源**）
+- Skills CLI + Agent Tool（**仅搜索**，安装需用户手动触发）
+- CC 插件格式兼容层（**ConversionReport + plugin.yaml 严格校验 + PluginSchemaError → 422**）
+
+### ADR 落地总计（DOC-05）
+ADR-043 / ADR-044 / ADR-045 / ADR-046 / ADR-047 / ADR-048 / ADR-049 / ADR-050 / ADR-051 / ADR-052 / ADR-053 / ADR-054 / ADR-055（13条 ADR）
+
+### 进程边界严格遵守
+- executor/ 所有新模块：无 from backend.app 实际 import
+- backend/ 插件 API：不启动 MCP 子进程（格式检测+转换只做数据结构操作）
+
+### 下一步：DOC-06 Task 6.1 认证体系（三密钥 + SSE ticket）
+- ADR 从 ADR-056 起编号（所有 DOC-05 ADR 已占用 ADR-043~055）
+- 参考 DOC-06-v4.md Task 6.1 Part A + Part B
+## ==================== END DOC-05 DONE =======================
+
+---
+
 ## 2026-04-19 -- DOC-05 Task 5.6 completed (Skills CLI + Agent Tool search-only + ADR-052/053)
 
 ### 本次 session 做了什么
