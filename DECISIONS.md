@@ -1404,3 +1404,53 @@
 - **偏离点**: McpServer 原始 ORM model 无 user_id 字段 → 新增 migration 004 + 更新 ORM model。PRD 未明确说明需要 migration，但 user-scope 功能必须有 user_id 列才能实现铁律4隔离，属必要扩展非越界。
 - **验证结果**: 10项验证全PASS（py_compile×3 + schema字段 + 服务方法签名 + 路由结构8端点 + scope守护逻辑 + builtin bootstrap + ORM+migration + main.py wiring）
 - **下游影响**: DOC-09 Task 9.2 可在 provider_service.py 追加健康状态读取；DOC-05 MCPClient 通过 user_mcp_installs 动态加载用户启用的 MCP Server
+
+---
+
+## DOC-09 Task 9.2: Provider 健康状态 + 用量 API（ADR-080 / ADR-081 / ADR-082）
+
+## ADR-080: Provider scope 字段 CRUD(platform/user 分层)已在 Task 2.3 落地，Task 9.2 补强健康读取(DOC-09 Task 9.2)
+- **来源**: PRD v4 DOC-09 Task 9.2 Part A ADR-080
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/provider_service.py` — scope='system'(全局可见) + scope='user'(owner-only) 已在 Task 2.3 完成
+  - Task 9.2 补强: list_providers_with_health() 合并 Redis 熔断状态到 Provider 列表响应
+- **实施 commit**: e2a5463
+- **偏离点**: PRD ADR-080 定义 scope 为 platform/user；已有实现为 system/user(Task 2.3)。Task 9.2 不修改此字段(99%原文保留原则)，scope 语义实质等价。
+- **验证结果**: list_providers_with_health() 方法签名(db/user_id/redis_client)、harness:circuit:{id} key、try/except 降级 — 全PASS
+- **下游影响**: DOC-11 Task 11.4 用量仪表盘 + Provider 健康状态卡直接消费此端点
+
+## ADR-081: capabilities 探测强制(POST /providers/{id}/test 返回 detected_capabilities)(DOC-02 Task 2.3 已完成)
+- **来源**: PRD v4 DOC-09 Task 9.2 Part A ADR-081
+- **实施状态**: ✅ 2026-04-18(Task 2.3 已完成)
+- **落地位置**:
+  - `backend/app/services/provider_service.py` — test_provider() + _probe_capabilities(): Anthropic 协议探测 prompt_cache; OpenAI 协议保守 False
+  - `backend/app/schemas/provider.py` — TestProviderResponse.detected_capabilities: ProviderCapabilitiesSchema
+- **实施 commit**: db89260(Task 2.3) + e2a5463(Task 9.2 确认引用)
+- **偏离点**: vision/extended_thinking 保守默认 False(需真实模型专项探测)
+- **验证结果**: 已在 Task 2.3 验证全PASS
+- **下游影响**: 前端 Provider 卡片展示能力徽章；PromptAssembler 根据 capabilities 决定 cache_control 注入
+
+## ADR-082: 用量 API 返回 cache tokens 三字段 + cache_hit_ratio + estimated_cache_savings_usd(DOC-09 Task 9.2)
+- **来源**: PRD v4 DOC-09 Task 9.2 Part A ADR-082; Batch 1 v2 §R6; Master M7
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/usage_service.py` — UsageService(get_user_usage/get_global_usage/_build_usage_response/_build_timeline); 铁律4: user_id strict filter; ADR-082 全字段: cache_hit_tokens / cache_miss_tokens / cache_creation_tokens / cache_hit_ratio / estimated_cache_savings_usd / total_cost_usd / by_provider / by_model / timeline
+  - `backend/app/api/v1/providers.py` — GET /providers/usage 端点(group_by=day|week|month, start_date/end_date); ADR-082 完整响应结构
+  - `backend/app/api/v1/providers.py` — list_providers 端点改用 list_providers_with_health()(Redis 实时健康状态)
+- **实施 commit**: e2a5463
+- **偏离点**:
+  1. cache_savings 估算用 $3.00/1M tokens × 90%(节省比例)作保守基准；PRD未指定具体公式，此为合理近似
+  2. _compute_cache_savings 提取为模块级函数，便于单元测试
+  3. timeline 使用 PostgreSQL date_trunc() 做时间分组(比 SQLite 更精确)；与 SQLite 不兼容，但 Prism v2 生产环境锁定 PostgreSQL
+- **验证结果**: 7项验证全PASS
+  - py_compile 3文件 PASS
+  - cache_savings 计算逻辑(_compute_cache_savings) PASS
+  - _resolve_date_range 默认/显式日期 PASS
+  - list_providers_with_health 方法签名+try/except PASS
+  - ADR-082 全字段(10字段)存在 PASS
+  - 铁律4 user_id filter PASS
+  - harness:circuit: key格式 + REDIS_URL PASS
+- **下游影响**: DOC-11 Task 11.4 前端用量仪表盘 + Cache 节省卡(ADR-103 Cache 突出显示)直接消费 GET /providers/usage
+
+> **最后更新**: 2026-04-19(DOC-09 Task 9.2 — Provider health from Redis + usage stats ADR-082; 33/51 Task 完成)

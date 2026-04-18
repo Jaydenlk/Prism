@@ -35,6 +35,38 @@
 
 ---
 
+## 2026-04-19 -- DOC-09 Task 9.2 COMPLETED (Provider 健康状态 Redis + 用量 API ADR-082)
+
+### 本次 session 做了什么
+- 新建 backend/app/services/usage_service.py — UsageService: get_user_usage()(铁律4 user_id严格过滤) + get_global_usage()(Admin用); ADR-082全字段: cache_hit_tokens/cache_miss_tokens/cache_creation_tokens/cache_hit_ratio/estimated_cache_savings_usd/total_cost_usd/by_provider(含name lookup via IN)/by_model/timeline(date_trunc day|week|month); _compute_cache_savings($3.00/1M × 90%)
+- 修改 backend/app/services/provider_service.py — 追加 list_providers_with_health(db, user_id, redis_client): 读 Redis harness:circuit:{id} key → is_healthy=False(熔断); Redis不可用时 try/except 降级保持DB值
+- 修改 backend/app/api/v1/providers.py — list_providers端点改用 list_providers_with_health(sync Redis client via _get_sync_redis()); 新增 GET /providers/usage 端点(group_by=day|week|month, start_date/end_date query params, ADR-082完整响应)
+
+### 验证结果
+- py_compile 3文件(usage_service.py / provider_service.py / providers.py): PASS
+- cache_savings计算(_compute_cache_savings 8000 tokens → $0.0216): PASS
+- _resolve_date_range(默认最近30天/显式日期): PASS
+- list_providers_with_health 方法签名(db/user_id/redis_client)+try/except: PASS
+- ADR-082全字段(cache_hit/miss/creation_tokens+ratio+savings+cost+by_provider+by_model): PASS
+- 铁律4 user_id filter(Run.user_id == user_id): PASS
+- harness:circuit:{id} key格式 + REDIS_URL配置: PASS
+- 共7项验证全 PASS
+
+### 下一个 Task 需要注意
+- DOC-09 Task 9.3: Admin 审计日志查询 + 系统统计 + 用户管理; ADR-083/084/085
+- admin.py 已有基础路由(Task 6.2实现: list_users/update_role/invite_codes/audit_logs/usage); Task 9.3 需补完: audit-logs导出CSV + stats/dashboard(AdminStatsService) + 禁止降级最后一个admin(ADR-083) + 禁止禁用自己(ADR-083)
+- admin.py 现有 list_users 无分页+搜索 → Task 9.3需补充page/search参数; 现有update_user_role只阻止自己修改自己但未检查"最后一个admin" → Task 9.3补充409逻辑
+- UsageService.get_global_usage() 已实现供 AdminStatsService 调用(Task 9.3)
+
+### 遗留风险 / 未决事项
+- providers.py 用 sync redis client(同步) 做健康检查; 非 async 路由中调用同步 redis.get() 可能轻微阻塞事件循环。生产建议改用 asyncio redis + await，但当前实现足够 Phase 1。
+- usage_service.py 的 date_trunc() 是 PostgreSQL 函数，不支持 SQLite；Prism v2 锁定 PostgreSQL，此限制已知可接受。
+
+### Commit
+- `e2a5463` — `feat(v4): DOC-09 Task 9.2 — Provider health from Redis + usage statistics API (ADR-082)`
+
+---
+
 ## 2026-04-19 -- DOC-09 Task 9.1 COMPLETED (MCP Server CRUD + install/uninstall + scope权限 + builtin bootstrap)
 
 ### 本次 session 做了什么
