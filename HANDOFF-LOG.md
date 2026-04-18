@@ -61,7 +61,7 @@
 - coordinator_plans 表持久化逻辑在 DOC-07 Task 7.3 回调端点实现(本 Task 只 emit event)
 
 ### Commit
-- `TBD` — `feat(v4): Coordinator + Plan checkpoint (parse_from_text + Synthesizer + 4-stage checkpoint) — DOC-04 Task 4.3`
+- `c0f394d` — `feat(v4): Coordinator + Plan checkpoint (parse_from_text + Synthesizer + 4-stage checkpoint) — DOC-04 Task 4.3`
 
 ---
 

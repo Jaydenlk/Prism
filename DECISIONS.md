@@ -510,7 +510,7 @@
   - `executor/coordinator/coordinator.py` — Coordinator.__init__(plan_id + resume_from_step) + execute(existing_plan 可选) + resume_from_checkpoint(classmethod 读 coordinator_plans 表) + _plan(Fork Planner) + _build_step_context(注入已完成步骤前 500 字)
   - Checkpoint 时序: (1)初始 `coordinator_plan_update(plan_json, current_step, total_steps, status='running')` → (2)每 step 开始前 `coordinator_plan_update(current_step=i)` + `harness_event("step_start")` → (3)step 完成后 fork/synthesis + `harness_event("step_end")` → (4)最终 `coordinator_plan_update(status='completed')`
   - `executor/coordinator/__init__.py` — 导出 Plan / PlanStep / serialize_plan / deserialize_plan / Coordinator
-- **实施 commit**: TBD(本 Task 收官时写)
+- **实施 commit**: c0f394d
 - **偏离点**:
   - ADR 编号从 PRD 原标 036 平移到 040（见 blocker.md 编号平移链）
   - resume_from_checkpoint 签名改为返回 `(Coordinator, Plan)` 元组(PRD 原版只返 Coordinator 实例，但 resume 路径 execute(user_prompt, existing_plan=plan) 需要 Plan 实例，合并返回避免二次 DB 查询)
