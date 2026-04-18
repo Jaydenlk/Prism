@@ -1,5 +1,5 @@
 """
-Harness 生命周期控制器（v4 Task 3.4）
+Harness 生命周期控制器（v4 Task 3.4 / 4.1）
 
 职责：一站式组装所有 Harness 子系统，返回给 __main__.py 使用。
 
@@ -12,6 +12,7 @@ Harness 生命周期控制器（v4 Task 3.4）
 6. LoopDetectionMiddleware（ADR-025）
 7. ObservabilityMiddleware
 8. MiddlewarePipeline（注册顺序：loop → observability → feedback）
+9. [v4 Task 4.1] 若 agent_def.read_only=True，追加 AGENT-READONLY GuardrailRule
 
 SessionEnd Hook 触发 user_memory 提炼（ADR-030）：
 - turns > 5 时 LLM 凝练本 session 要点 → callback.harness_event("user_memory_extracted")
@@ -30,6 +31,7 @@ import structlog
 from executor.engine.compaction import CompactionPipeline
 from executor.engine.memory import MemoryManager
 from executor.harness.guardrails.engine import GuardrailsEngine
+from executor.harness.guardrails.rules import GuardrailRule
 from executor.harness.hooks.events import HookEvent
 from executor.harness.hooks.system import HookSystem
 from executor.harness.middleware.feedback_capture import FeedbackCaptureMiddleware
@@ -41,10 +43,33 @@ from executor.harness.permissions.engine import PermissionEngine
 
 if TYPE_CHECKING:
     from executor.adapters.base import PrismMessage
+    from executor.agents.base import AgentDefinition
     from executor.callbacks.backend_callback import BackendCallback
     from executor.engine.context_budget import ContextBudgetManager
 
 logger = structlog.get_logger()
+
+# v4 Task 4.1: Explore/Research Bash 严格白名单（与 research.py 保持一致）
+_BASH_READONLY_WHITELIST: frozenset[str] = frozenset([
+    "ls", "git status", "git log", "git diff",
+    "find", "grep", "cat", "head", "tail",
+])
+
+
+def _is_write_bash(command: str) -> bool:
+    """判断 Bash 命令是否为写操作（用于 read_only Agent 的护栏）。
+
+    逻辑：若命令首词不在白名单中，视为写操作（需拦截）。
+    空命令默认为写操作（保守策略）。
+    """
+    if not command:
+        return True
+    # 取命令首词（可能含路径分隔符，取最后一段 + 去掉引号）
+    first_token = command.strip().split()[0].strip("\"'")
+    # 同时检查完整的两词命令（如 "git status"）
+    parts = command.strip().split()
+    two_word = " ".join(parts[:2]) if len(parts) >= 2 else first_token
+    return first_token not in _BASH_READONLY_WHITELIST and two_word not in _BASH_READONLY_WHITELIST
 
 
 def _extract_text(msg) -> str:
@@ -69,6 +94,7 @@ class HarnessRuntime:
         adapter,
         settings,
         budget: "ContextBudgetManager | None" = None,  # Task 3.5: CompactionPipeline 需要
+        agent_def: "AgentDefinition | None" = None,    # Task 4.1: Agent 专业化护栏
     ) -> None:
         self.run_id = run_id
         self.session_id = session_id
@@ -118,6 +144,44 @@ class HarnessRuntime:
         self.middleware.register(self.loop_mw)
         self.middleware.register(self.observability_mw)
         self.middleware.register(self.feedback_mw)
+
+        # Task 4.1: 若 agent_def.read_only=True，追加只读护栏规则（AGENT-READONLY）
+        if agent_def is not None and agent_def.read_only:
+            # 获取该 Agent 的 bash_whitelist（None 则用默认只读白名单）
+            _whitelist = frozenset(agent_def.bash_whitelist) if agent_def.bash_whitelist else _BASH_READONLY_WHITELIST
+
+            def _readonly_match(tool_name: str, tool_input: dict, run_context=None) -> bool:
+                """拦截写操作工具（read_only Agent 专用）"""
+                tn = tool_name.lower()
+                if tn in {"write", "edit", "multiedit", "delete"}:
+                    return True
+                if tn == "rm":
+                    return True
+                if tn == "bash":
+                    cmd = tool_input.get("command", "") if isinstance(tool_input, dict) else ""
+                    if not cmd:
+                        return True
+                    parts = cmd.strip().split()
+                    first_token = parts[0].strip("\"'") if parts else ""
+                    two_word = " ".join(parts[:2]) if len(parts) >= 2 else first_token
+                    return first_token not in _whitelist and two_word not in _whitelist
+                return False
+
+            self.guardrails.add_rule(
+                GuardrailRule(
+                    id="AGENT-READONLY",
+                    reason="Agent 配置为只读，拒绝写操作",
+                    scope="agent",
+                    tool_pattern=".*",
+                    input_patterns=[],
+                    custom_match=_readonly_match,
+                )
+            )
+            logger.info(
+                "harness.runtime.readonly_rule_added",
+                agent_type=agent_def.agent_type,
+                run_id=run_id,
+            )
 
         # Task 3.5: CompactionPipeline（budget 由调用方传入；None 时 compaction 不可用）
         if budget is not None:
