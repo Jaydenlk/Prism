@@ -141,6 +141,69 @@
 
 ---
 
+---
+
+## DOC-02 Task 2.3: Provider 管理与故障转移(ADR-010 / ADR-011 / ADR-012 / ADR-013)
+
+## ADR-010: providers.scope 二值权限矩阵(DOC-02 Task 2.3)
+- **来源**: PRD v4 DOC-02 Task 2.3 Part A; DOC-09 ADR-080
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `backend/app/schemas/provider.py` — ProviderResponse.scope: str ('system'|'user')
+  - `backend/app/services/provider_service.py` — list/create/update/delete 全部按 scope 校验
+    - `list_providers()`: SELECT WHERE scope='system' OR (scope='user' AND user_id=current)
+    - `create_provider()`: 强制 scope='user', user_id=current_user
+    - `update_provider()` / `delete_provider()`: user scope 要求 owner; system scope 要求 admin
+  - `backend/app/services/provider_presets.py` + `ProviderService.bootstrap_presets()` — scope='system' 预设幂等注册
+- **实施 commit**: db89260
+- **偏离点**: 本 Task 保守地只允许 user scope 创建(system 预设仅由 bootstrap 注入)。PRD 未明确说 admin 可通过 API 创建 system scope,遵守最小授权原则。
+- **验证结果**: 8 项验证全 PASS; scope 权限矩阵路径全部有代码实现
+- **下游影响**: DOC-09 Task 9.2 实现更完整的 Provider 用量 API 时需对齐此 scope 语义
+
+## ADR-011: config.capabilities 强制字段 + 内置预设 capabilities 声明(DOC-02 Task 2.3)
+- **来源**: PRD v4 DOC-02 Task 2.3 Part A
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `backend/app/schemas/provider.py` — CreateProviderRequest.capabilities_required() @field_validator: 缺失 "capabilities" key → ValueError → FastAPI 422
+  - `backend/app/services/provider_presets.py` — BUILTIN_PRESETS(8条): 每个 ProviderPreset 含 ProviderCapabilitiesSchema 实例
+  - `backend/app/services/provider_service.py` — update_provider() 若传入 config 则二次校验 capabilities 存在
+  - `backend/app/api/v1/providers.py` — GET /providers/presets 公开端点(无需认证)
+- **实施 commit**: db89260
+- **偏离点**: test_provider() 探测策略: Anthropic 协议发 cache_control 探测 prompt_cache; OpenAI 协议保守设 prompt_cache=False; vision/extended_thinking 保守 False(需人工确认)。
+- **验证结果**: Pydantic 422 校验测试 PASS; BUILTIN_PRESETS[0].capabilities isinstance ProviderCapabilitiesSchema PASS
+- **下游影响**: DOC-03 TAOR 主循环使用 ProviderManager.get_adapter() 时需要 capabilities 完整(影响 AnthropicDriver cache_control 注入行为)
+
+## ADR-012: API Key AES-256-GCM 加密 + 掩码响应(DOC-02 Task 2.3)
+- **来源**: PRD v4 DOC-02 Task 2.3 Part A; DOC-02 Task 2.1 ADR-004
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `backend/app/services/provider_service.py` — create_provider(): `encrypt_value(api_key, settings.ENCRYPTION_KEY)`; update_provider(): 同上; _to_response(): `decrypt_value(api_key_encrypted, settings.ENCRYPTION_KEY)` 仅用于生成掩码
+  - `backend/app/schemas/provider.py` — `_mask_key()`: len<8 → '***'; else 首3 + '...' + 末4
+  - `executor/adapters/provider_manager.py` — ProviderManager 只接受已解密明文 key(Backend 侧解密后注入)
+- **实施 commit**: db89260
+- **偏离点**: 复用 Task 2.1 已实现的 `security.encrypt_value` / `security.decrypt_value`(nonce:ciphertext hex 格式),未新增 encrypt_api_key / decrypt_api_key 函数(PRD Part B 示例为风格参考,实际以已有实现为准)。
+- **验证结果**: 加密/解密 roundtrip PASS; 掩码逻辑 5 case 全 PASS
+- **下游影响**: DOC-07 Task 7.4 子进程启动时需从 Backend 获取已解密的 API Key(通过参数或环境变量注入)
+
+## ADR-013: 熔断器仅存 Redis + 多进程共享(DOC-02 Task 2.3)
+- **来源**: PRD v4 DOC-02 Task 2.3 Part A
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/adapters/provider_manager.py`:
+    - key: `harness:circuit:{provider_id}`
+    - value: JSON `{"failures": N, "opened_at": ts, "last_error": "..."}`
+    - TTL: `CIRCUIT_BREAKER_RECOVERY_SECONDS` (setex)
+    - CLOSED: key 不存在; OPEN: key 存在且 failures >= threshold; 恢复: DELETE key
+    - record_failure(): 累计 → 达阈值触发熔断 + Prometheus prism_provider_healthy=0 + harness_event stub
+    - record_success(): DELETE key + prism_provider_healthy=1
+    - get_adapter(): 遍历 providers 按 (is_default, -priority) 选第一个 CLOSED; 切换时 prism_provider_failover_total +1
+- **实施 commit**: db89260
+- **偏离点**: Prometheus metrics 通过 executor.observability.metrics 导入(ImportError 时静默降级 — executor 侧 metrics 模块在 DOC-12 实现前不存在)。进程边界严格: ProviderManager 无任何 backend.app.* import。
+- **验证结果**: 熔断状态机测试(FakeRedis mock): 3次失败触发熔断→切换备用→record_success恢复→主 Provider 重新选中 — 全 PASS
+- **下游影响**: DOC-07 Task 7.3 实现 /internal/callback/harness_event 接收端; DOC-07 Task 7.4 实际启动子进程并传入解密后的 ProviderConfig 列表
+
+---
+
 ## Phase 1: Agent 核心(待实施)
 
 > Phase 1 的 ADR 在对应 Task 实施时按模板追加到此处。

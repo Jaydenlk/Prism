@@ -35,6 +35,42 @@
 
 ---
 
+## 2026-04-18 23:58 — DOC-02 Task 2.3 completed(Provider 管理 + 故障转移)
+
+### 本次 session 做了什么
+- 创建 `backend/app/schemas/provider.py`: ProviderCapabilitiesSchema / ProviderPreset / CreateProviderRequest(capabilities 422) / UpdateProviderRequest / ProviderResponse(api_key_masked) / TestProviderResponse
+- 创建 `backend/app/services/provider_presets.py`: BUILTIN_PRESETS 8 条(Anthropic/OpenAI/MiniMax/DeepSeek/Kimi/Qwen/智谱/Gemini),每条含 ProviderCapabilitiesSchema
+- 创建 `backend/app/services/provider_service.py`: ProviderService(list/create/update/delete/test + bootstrap_presets 幂等 + scope 权限矩阵 + AES-256-GCM encrypt/decrypt via security.encrypt_value)
+- 创建 `backend/app/api/v1/providers.py`: 6 端点(presets/list/create/update/delete/test),presets 公开,其余 JWT 认证
+- 更新 `backend/app/api/v1/__init__.py`: api_v1_router 聚合器,注册 providers_router
+- 更新 `backend/app/main.py`: lifespan 阶段调用 bootstrap_presets() + include api_v1_router
+- 创建 `executor/adapters/provider_manager.py`: ProviderManager(get_adapter/record_success/record_failure/record_usage) + ADR-013 Redis 熔断器 + HMAC 签名 usage/harness_event 回调 stub
+
+### 验证结果
+- 验证 1 (py_compile 7 文件): PASS
+- 验证 2 (All imports OK, Presets count: 8): PASS
+- 验证 3 (capabilities 422 ValidationError): PASS
+- 验证 4 (encrypt/decrypt roundtrip): PASS
+- 验证 5 (mask_key 5 cases): PASS
+- 验证 6 (circuit breaker 熔断→切换→恢复状态机): PASS
+- 验证 7 (router.routes 6 条, paths/methods 正确): PASS
+- 验证 8 (BUILTIN_PRESETS[0].capabilities isinstance ProviderCapabilitiesSchema): PASS
+
+### 下一个 Task 需要注意 — DOC-02 Task 2.4(Prompt 装配引擎)
+- **ProviderService.decrypt 路径**:Task 2.4 的 PromptAssembler 若需要在 Backend 侧构建最终 prompt,不需要 API Key — 但如果需要动态调用 Provider(如 few-shot 探测),需通过 `provider_service.decrypt_value(provider.api_key_encrypted, settings.ENCRYPTION_KEY)` 获取明文 key
+- **capabilities 与 Prompt 模板关系**:Task 2.4 的 system prompt 装配需要感知 Provider capabilities — 例如 `prompt_cache=True` 时在 system prompt 末尾 text block 加 `cache_control: ephemeral`(ADR-008,AnthropicDriver 已实现,Task 2.4 需要在装配层预留 cache_control 注入点)
+- **BUILTIN_PRESETS 路径**:Task 2.4 如需读取预设能力声明,import 路径是 `from app.services.provider_presets import BUILTIN_PRESETS`(app.* 路径,在 Docker backend 容器内);测试时 `from backend.app.services.provider_presets import BUILTIN_PRESETS`(含 fallback)
+
+### 遗留风险 / 未决事项
+- `executor/adapters/provider_manager.py` 中 Prometheus metrics 通过 `executor.observability.metrics` 导入 — 该模块在 DOC-12 实现前不存在,ImportError 时静默降级(已处理)
+- `test_provider()` 探测逻辑发送真实 HTTP 请求 — 无 API Key 或无网络时会抛异常并被捕获返回 success=False,行为正确
+- `bootstrap_presets()` 在 lifespan 时 DB 未就绪(docker compose 健康检查未完成)会 log WARNING 并继续启动,不阻断。首次真实请求到来时 DB 已就绪
+
+### Commit
+- `db89260` — `feat: provider management + failover + circuit breaker (DOC-02 Task 2.3)`
+
+---
+
 ## 2026-04-18 23:30 — DOC-02 Task 2.2 completed(双协议 Driver)
 
 ### 本次 session 做了什么
