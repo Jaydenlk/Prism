@@ -35,6 +35,7 @@ from executor.adapters.base import (
     ToolUseBlock,
 )
 from executor.callbacks.backend_callback import BackendCallback
+from executor.engine.compaction import CompactionPipeline
 from executor.engine.context_budget import ContextBudgetManager
 from executor.engine.prompt_assembler import PromptAssembler
 from executor.harness.middleware.base import MiddlewareContext
@@ -118,6 +119,7 @@ class QueryEngine:
         max_turns: int,
         middleware_pipeline: MiddlewarePipeline | None = None,  # Task 3.2: 可选中间件管道
         agent_type: str = "general",  # Task 3.2: 供 MiddlewareContext 使用
+        compaction: CompactionPipeline | None = None,  # Task 3.5: 4 级 Compaction Pipeline
     ) -> None:
         self._adapter = adapter
         self._assembler = assembler
@@ -128,6 +130,7 @@ class QueryEngine:
         self._max_turns = max_turns
         self._middleware = middleware_pipeline  # None 时所有钩点 no-op
         self._agent_type = agent_type
+        self._compaction = compaction  # Task 3.5: None 时回退 Task 2.4 budget.compress_history 路径
         self._messages: list[PrismMessage] = []
         self._turn_count = 0
         self._total_input_tokens = 0
@@ -215,33 +218,41 @@ class QueryEngine:
                     # 执行工具（asyncio.gather 并行，ADR-021）
                     await self._execute_tools(tool_use_blocks)
 
-                    # Compaction 检查（Tier 0 基础压缩）
-                    if self._budget.should_compress(self._messages, system_prompt):
-                        before_count = len(self._messages)
-                        self._messages = self._budget.compress_history(self._messages)
-                        after_count = len(self._messages)
-                        logger.info(
-                            "harness.compaction.tier0",
-                            run_id=self._run_context.run_id,
-                            before=before_count,
-                            after=after_count,
+                    # Compaction 检查（Task 3.5：若传入 CompactionPipeline 则走 Tier 1/2；
+                    # 否则回退 Task 2.4 的 Tier 0 budget.compress_history 路径）
+                    if self._compaction is not None:
+                        # Task 3.5 路径：4 级 CompactionPipeline（ADR-031/032）
+                        self._messages = await self._compaction.check_and_compact(
+                            self._messages, system_prompt
                         )
-                        await self._callback.harness_event(
-                            "compaction",
-                            {
-                                "tier": 0,
-                                "messages_before": before_count,
-                                "messages_after": after_count,
-                            },
-                        )
-                        try:
-                            from executor.observability.metrics import (
-                                prism_harness_compaction_total,
+                    else:
+                        # Task 2.4 fallback 路径（Tier 0，保持向后兼容，不删除）
+                        if self._budget.should_compress(self._messages, system_prompt):
+                            before_count = len(self._messages)
+                            self._messages = self._budget.compress_history(self._messages)
+                            after_count = len(self._messages)
+                            logger.info(
+                                "harness.compaction.tier0",
+                                run_id=self._run_context.run_id,
+                                before=before_count,
+                                after=after_count,
                             )
+                            await self._callback.harness_event(
+                                "compaction",
+                                {
+                                    "tier": 0,
+                                    "messages_before": before_count,
+                                    "messages_after": after_count,
+                                },
+                            )
+                            try:
+                                from executor.observability.metrics import (
+                                    prism_harness_compaction_total,
+                                )
 
-                            prism_harness_compaction_total.labels(tier="0").inc()
-                        except Exception:
-                            pass
+                                prism_harness_compaction_total.labels(tier="0").inc()
+                            except Exception:
+                                pass
 
                     # Task 3.2: MiddlewarePipeline.post_turn() 钩点
                     if self._middleware is not None:

@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from executor.engine.compaction import CompactionPipeline
+from executor.engine.memory import MemoryManager
 from executor.harness.guardrails.engine import GuardrailsEngine
 from executor.harness.hooks.events import HookEvent
 from executor.harness.hooks.system import HookSystem
@@ -40,6 +42,7 @@ from executor.harness.permissions.engine import PermissionEngine
 if TYPE_CHECKING:
     from executor.adapters.base import PrismMessage
     from executor.callbacks.backend_callback import BackendCallback
+    from executor.engine.context_budget import ContextBudgetManager
 
 logger = structlog.get_logger()
 
@@ -65,6 +68,7 @@ class HarnessRuntime:
         redis_url: str,
         adapter,
         settings,
+        budget: "ContextBudgetManager | None" = None,  # Task 3.5: CompactionPipeline 需要
     ) -> None:
         self.run_id = run_id
         self.session_id = session_id
@@ -115,6 +119,19 @@ class HarnessRuntime:
         self.middleware.register(self.observability_mw)
         self.middleware.register(self.feedback_mw)
 
+        # Task 3.5: CompactionPipeline（budget 由调用方传入；None 时 compaction 不可用）
+        if budget is not None:
+            self.compaction: CompactionPipeline | None = CompactionPipeline(
+                budget=budget,
+                adapter=adapter,
+                callback=callback,
+            )
+        else:
+            self.compaction = None
+
+        # Task 3.5: MemoryManager — 本 Task 不强制 db_session，留空；真实注入在 DOC-07 Task 7.4
+        self.memory_manager: MemoryManager | None = None
+
         logger.info(
             "harness.runtime.initialized",
             run_id=run_id,
@@ -122,6 +139,26 @@ class HarnessRuntime:
             middleware_count=len(self.middleware._middlewares),
             guardrail_rules=len(self.guardrails._rules),
         )
+
+    async def load_user_memory(self, db_session=None) -> str:
+        """Task 3.5：加载用户 + 会话 Memory（Layer 1 + Layer 2）。
+
+        db_session 非 None 时构造 MemoryManager 并调用 load()。
+        db_session=None（默认）时返回 ""，不崩溃（单测场景 / DOC-07 Task 7.4 之前）。
+        真实 db_session 注入在 DOC-07 Task 7.4 的 __main__.py 子进程启动时提供。
+        """
+        if db_session is None:
+            return ""
+        try:
+            mgr = MemoryManager(
+                user_id=self.user_id,
+                session_id=self.session_id,
+                db_session=db_session,
+            )
+            return await mgr.load()
+        except Exception as exc:
+            logger.warning("harness.runtime.load_user_memory_failed", error=str(exc))
+            return ""
 
     def inject_into_pipeline(self, pipeline) -> None:
         """将 Harness 子系统注入到 ToolExecutionPipeline（ADR-020）"""
