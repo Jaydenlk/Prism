@@ -1453,4 +1453,44 @@
   - harness:circuit: key格式 + REDIS_URL PASS
 - **下游影响**: DOC-11 Task 11.4 前端用量仪表盘 + Cache 节省卡(ADR-103 Cache 突出显示)直接消费 GET /providers/usage
 
-> **最后更新**: 2026-04-19(DOC-09 Task 9.2 — Provider health from Redis + usage stats ADR-082; 33/51 Task 完成)
+---
+
+## DOC-09 Task 9.3: Admin 审计日志 + 系统统计 + 用户管理（ADR-083 / ADR-084 / ADR-085）
+
+## ADR-083: Admin 权限边界 — 禁止降级最后一个 admin + 禁止禁用自己(DOC-09 Task 9.3)
+- **来源**: PRD v4 DOC-09 Task 9.3 Part A ADR-083; Batch 3 C-1
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/api/v1/admin.py` — PATCH /admin/users/{id}/role: 检查 admin_count <= 1 → 409 "Cannot demote the last admin"; DELETE /admin/users/{id}: 检查 current_user.id == user_id → 409 "Cannot disable yourself"
+  - `backend/app/models/user.py` — 追加 is_active: Mapped[bool] Boolean NOT NULL DEFAULT TRUE
+  - `backend/alembic/versions/005_add_is_active_to_users.py` — ADD COLUMN is_active; downgrade: DROP COLUMN
+- **实施 commit**: 93d6694
+- **偏离点**: 无
+- **验证结果**: ADR-083 guards + endpoint routing PASS
+- **下游影响**: 前端 Admin 用户管理页面(DOC-11 Task 11.6)直接依赖此边界逻辑
+
+## ADR-084: 审计日志 action 字段支持 Harness 事件前缀匹配(DOC-09 Task 9.3)
+- **来源**: PRD v4 DOC-09 Task 9.3 Part A ADR-084; Batch 3 C-1
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/schemas/audit.py` — AuditLogQuery(action前缀说明) + AuditLogResponse(severity字段)
+  - `backend/app/services/audit_service.py` — AuditService._base_query(): AuditLog.action.like(f"{q.action}%") LIKE prefix; severity filter via details->>'severity' JSONB; export_csv() max 10k rows → HTTP 400; UTF-8 BOM for Excel
+  - `backend/app/api/v1/admin.py` — GET /admin/audit-logs(severity+start_time+end_time 新参数); GET /admin/audit-logs/export(CSV only)
+- **实施 commit**: 93d6694
+- **偏离点**: 无; severity 存在 JSONB details 字段中(AuditLog model 无 top-level severity column)
+- **验证结果**: ADR-084 prefix matching PASS
+- **下游影响**: DOC-11 Task 11.6 Admin Observability 面板消费 GET /admin/audit-logs
+
+## ADR-085: admin_stats_service 系统统计 Dashboard(DOC-09 Task 9.3)
+- **来源**: PRD v4 DOC-09 Task 9.3 Part A ADR-085; Batch 3 C-1
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/schemas/admin.py` — SystemStatsResponse(runs_24h/runs_7d/cost_usd_7d/cache_savings_usd_7d/harness_events_24h/active_sessions/active_users_24h/component_health/timestamp)
+  - `backend/app/services/admin_stats_service.py` — AdminStatsService.get_dashboard(): DB聚合(Runs+AuditLog+Session+User); Redis ping健康+scan_iter harness:circuit:* 熔断计数; cache savings = cache_hit_tokens * $0.30/1M * 90%
+  - `backend/app/api/v1/admin.py` — GET /admin/stats/dashboard async端点; Depends(get_redis)
+- **实施 commit**: 93d6694
+- **偏离点**: 无
+- **验证结果**: AdminStatsService content(harness.*+scan_iter+component_health+cache_savings) PASS
+- **下游影响**: DOC-11 Task 11.6 Admin Observability 面板 Dashboard 卡片消费此端点
+
+> **最后更新**: 2026-04-19(DOC-09 Task 9.3 — Admin audit logs + stats dashboard + user management ADR-083/084/085; DOC-09 完整收官 3/3; 34/51 Task 完成)

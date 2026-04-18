@@ -99,7 +99,7 @@
 |---|---|---|---|---|---|
 | DOC-09 Task 9.1: MCP Server 管理 | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 3新文件+3修改: schemas/mcp.py(5 schema); services/mcp_service.py(MCPService 9方法+register_builtin_servers+env masking); api/v1/mcp.py(8路由); models/mcp_server.py(+user_id FK nullable); alembic/004(ADD user_id to mcp_servers); main.py(MCP bootstrap); api/v1/__init__.py(mcp_router); scope二值强制(system→403/user→owner only); 铁律4全覆盖; UNIQUE409捕获; 10项验证全PASS |
 | DOC-09 Task 9.2: Provider 配置 + 用量 API(cache tokens) | completed | 2026-04-19 | 2026-04-19 | e2a5463 | 1新文件+2修改: usage_service.py(UsageService 用量统计 ADR-082 全字段+cache tokens 三字段+savings估算); provider_service.py(+list_providers_with_health Redis熔断读取); providers.py(list端点→with_health+GET /usage group_by); 7项验证全PASS |
-| DOC-09 Task 9.3: Admin 审计 + 系统统计 + 用户管理 | pending | — | — | — | — |
+| DOC-09 Task 9.3: Admin 审计 + 系统统计 + 用户管理 | completed | 2026-04-19 | 2026-04-19 | 93d6694 | 2新schema+2新service+1改model+1改admin.py+1 migration: audit.py(AuditLogQuery ADR-084+AuditLogResponse); admin.py(SystemStatsResponse ADR-085); audit_service.py(query LIKE prefix+export_csv 10k cap); admin_stats_service.py(get_dashboard 24h/7d runs+cost+harness events+Redis scan_iter); admin.py 4新端点(export/dashboard/role+last-admin guard ADR-083/soft-disable); User.is_active+migration 005; 9项验证全PASS |
 
 ---
 
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 33
+- **已完成**: 34
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 19
+- **pending**: 18
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-09 Task 9.2 完成: Provider health from Redis + usage stats ADR-082; 33/51 Task 完成）
-> **下一个动作**: DOC-09 Task 9.3 — Admin 审计日志 + 系统统计 + 用户管理
+> **最后更新**: 2026-04-19（DOC-09 Task 9.3 完成: Admin audit logs + stats dashboard + user management ADR-083/084/085; DOC-09 完整收官 3/3; 34/51 Task 完成）
+> **下一个动作**: DOC-10 Task 10.1 — Next.js 搭建 + 设计系统

@@ -35,6 +35,54 @@
 
 ---
 
+## 2026-04-19 -- DOC-09 Task 9.3 COMPLETED + DOC-09 DONE 收官 checkpoint
+
+### 本次 session 做了什么
+- 新建 backend/app/schemas/audit.py — AuditLogQuery(ADR-084 prefix action filter, severity, start_time, end_time, page/page_size) + AuditLogResponse(7字段)
+- 新建 backend/app/schemas/admin.py — SystemStatsResponse(ADR-085 9字段: runs_24h/runs_7d/cost_usd_7d/cache_savings/harness_events_24h/active_sessions/active_users_24h/component_health/timestamp)
+- 新建 backend/app/services/audit_service.py — AuditService: _base_query(LIKE前缀+severity JSONB+时间范围) + query(分页) + export_csv(max 10k行 UTF-8 BOM)
+- 新建 backend/app/services/admin_stats_service.py — AdminStatsService.get_dashboard(): DB聚合 + Redis ping健康 + scan_iter harness:circuit:* + cache savings $0.27/1M
+- 修改 backend/app/api/v1/admin.py — 4新端点(GET /audit-logs/export CSV; GET /stats/dashboard ADR-085; PATCH /users/{id}/role last-admin guard ADR-083; DELETE /users/{id} soft-disable no-self guard ADR-083); list_users追加pagination+search(ilike or_)
+- 修改 backend/app/models/user.py — 追加 is_active: Mapped[bool] Boolean NOT NULL DEFAULT TRUE(ADR-083)
+- 新建 backend/alembic/versions/005_add_is_active_to_users.py — ADD COLUMN is_active; chain 004→005
+
+### 验证结果
+- py_compile 5新文件(schemas/audit+admin, services/audit_service+admin_stats_service, api/v1/admin): PASS
+- AuditLogQuery+AuditLogResponse 字段实例化: PASS
+- SystemStatsResponse 字段实例化: PASS
+- ADR-083 guards(last-admin 409 + no-self 409) + endpoint routing: PASS
+- AuditService methods(query+export_csv+_base_query): PASS
+- AdminStatsService methods(__init__+get_dashboard): PASS
+- list_users pagination+search(ilike+or_): PASS
+- ADR-084 prefix matching(LIKE): PASS
+- ADR-085 AdminStatsService content(harness.*+scan_iter+component_health+cache_savings): PASS
+- 共9项验证全 PASS
+
+### 下一个 Task 需要注意
+- **DOC-09 完整收官** — 所有3个Task完成(9.1 MCP管理 + 9.2 Provider用量 + 9.3 Admin管理)
+- DOC-10 Task 10.1: Next.js搭建 + 设计系统; 无直接后端依赖
+- Admin端点(stats/dashboard)依赖 get_redis() async依赖; 确保 lifespan Redis已初始化
+- User.is_active字段需 alembic upgrade head (005 migration); 测试环境需注意
+- GET /admin/users 接口签名已从 ApiResponse[list] 改为 ApiResponse[PagedResponse]，前端DOC-11 Task 11.6需按新结构解析
+
+### 遗留风险 / 未决事项
+- AuditLog.severity 存在 JSONB details字段中而非 top-level column; ADR-084 severity filter使用 details["severity"].as_string()，仅 PostgreSQL JSONB有效(SQLite不兼容)，Prism v2锁定PG已知可接受
+- AdminStatsService 使用同步 DB session 但 async get_dashboard; 混合同步/异步在 FastAPI 中可能轻微阻塞，Phase 1 可接受
+
+### Commit
+- `93d6694` — `feat(v4): DOC-09 Task 9.3 — Admin audit logs + stats dashboard + user management (ADR-083/084/085)`
+
+---
+
+## ===== DOC-09 DONE checkpoint (2026-04-19) =====
+DOC-09 Backend MCP/Provider/Admin 完整收官：
+- Task 9.1 (commit未记录) — MCP Server CRUD + install/uninstall + scope + bootstrap
+- Task 9.2 (commit e2a5463) — Provider health Redis + usage API ADR-082
+- Task 9.3 (commit 93d6694) — Admin audit logs + stats dashboard + user management ADR-083/084/085
+下一步: DOC-10 Frontend Foundation
+
+---
+
 ## 2026-04-19 -- DOC-09 Task 9.2 COMPLETED (Provider 健康状态 Redis + 用量 API ADR-082)
 
 ### 本次 session 做了什么
