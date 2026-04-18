@@ -85,6 +85,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **DOC-05 Task 5.7 原标 ADR-050-A/050-B（CC 导出返回 ConversionReport + plugin.yaml 严格校验）用 ADR-054/055**（PRD ADR-050-A/050-B 编号前缀 ADR-050 已被 DOC-05 Task 5.4 PluginHost 统一生命周期+变量替换系统占用。Task 5.7 的两条 ADR 依次平移为 ADR-054/055：ConversionReport 结构化返回=ADR-054；plugin.yaml Pydantic 严格校验+缺字段422=ADR-055）。⚠️ DOC-06 Task 6.1 落地时 ADR 须从 **ADR-056** 起接续（ADR-054/055 已被本 Task 占用）。
 
+**DOC-07 Task 7.3 原标 ADR-063/064/065 按原编号落地**（DOC-07 原规划 ADR-060~067，Task 7.1 用 ADR-060，Task 7.2 用 ADR-060/061/062（补强），Task 7.3 用 ADR-063/064/065：方案 A 双通道回调接收=ADR-063；permission-answer 端点=ADR-064；HeartbeatMonitor 崩溃恢复=ADR-065）。后续 DOC-07 Task 7.4 的 ADR 从 ADR-066 接续（subprocess 参数标准化=ADR-066；coordinator_recovery=ADR-067；alert_dispatcher=ADR-068 如需）。
+
 ---
 
 ### Action required from human reviewer

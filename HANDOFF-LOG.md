@@ -35,6 +35,38 @@
 
 ---
 
+## 2026-04-19 -- DOC-07 Task 7.3 completed (Callback 双通道 + SSE Manager + HeartbeatMonitor + permission-answer)
+
+### 本次 session 做了什么
+- 新建 backend/app/services/sse_manager.py — SSEManager(ADR-063): MAX_CONNS=3/STREAM_BUFFER=200/publish+subscribe+backfill_since+acquire_conn_slot+release_conn_slot+start_subscribe_async
+- 新建 backend/app/services/heartbeat_monitor.py — HeartbeatMonitor(ADR-065): 每 10s SCAN harness:heartbeat:*，超 30s 标记 crashed; scan_interval=10, stale_threshold=30; run/stop/_scan_once/_handle_key
+- 新建 backend/app/services/callback_service.py — CallbackService(ADR-063): 10 event handlers (text_delta/tool_start/tool_end/message_complete/run_complete/run_error/permission_ask/harness_event/coordinator_plan_update/session_title); _extract_text_preview helper; 幂等设计; coordinator_plan_update UPSERT
+- 新建 backend/app/api/v1/internal.py — POST /internal/callbacks (X-Callback-Secret 认证+统一 commit) + POST /internal/run-crashed (ADR-065 mark_crashed endpoint)
+- 修改 backend/app/api/v1/sessions.py — 追加 GET /sessions/{id}/stream (SSE ticket auth ADR-057 + last_event_id 补发 + 多 tab 限制 429) + POST /sessions/{id}/permission-answer (ADR-064 UPDATE permission_requests + RPUSH perm_answer:{request_id})
+- 修改 backend/app/api/v1/__init__.py — 注册 internal_router
+- 修改 backend/app/main.py — lifespan 追加 HeartbeatMonitor asyncio.create_task 启动 + 优雅关闭 (cancel+wait)
+- 修改 backend/app/core/dependencies.py — get_redis() 从 NotImplementedError 实装为 async redis.asyncio.Redis
+- 修改 backend/app/models/permission_request.py — 追加 decision VARCHAR(10) NULLABLE 字段 (ADR-064 UPDATE decision=X)
+- 新建 backend/alembic/versions/003_add_decision_to_permission_requests.py — ALTER TABLE permission_requests ADD COLUMN decision VARCHAR(10)
+
+### 验证结果
+- Part B 验证步骤: 全 12 项 PASS (+ 2 bonus: migration + _extract_text_preview)
+- 质量门 10 项: PASS
+
+### 下一个 Task 需要注意
+- Task 7.4 子进程调度：internal.py handle_callback 在 run_complete/run_error 时返回 promoted_run_id，Task 7.4 需接收并启动新子进程
+- Task 7.4 subprocess 启动参数：--callback-url=http://backend:8000/api/v1/internal/callbacks --callback-secret=${CALLBACK_SECRET}（已在 internal.py 使用 CALLBACK_SECRET 认证）
+- ADR-066 编号：Task 7.4 的 subprocess 参数标准化从 ADR-066 起；Task 7.3 已用 ADR-063/064/065
+
+### 遗留风险 / 未决事项
+- callback_service 的 asyncio.create_task() 在同步 handler 内 fire-and-forget SSE publish：需要 FastAPI 的 event loop 存活，不影响 DB 同步路径；但如果 SSE publish 失败不会报错（设计为容错）
+- get_redis() dependency 实装为每请求创建/关闭连接，高并发时可用连接池优化（Task 7.4 或 DOC-12 优化）
+
+### Commit
+- `a2c43b5` — `feat(v4): Callback(双通道) + SSE Manager + HeartbeatMonitor + permission-answer — DOC-07 Task 7.3`
+
+---
+
 ## 2026-04-19 -- DOC-07 Task 7.2 completed (Task 提交 + Run 生命周期 + ADR-060/061/062)
 
 ### 本次 session 做了什么

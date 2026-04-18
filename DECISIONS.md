@@ -1206,4 +1206,65 @@
   - DOC-07 Task 7.4：executor 启动后调用 mark_running(run_id) 将 subprocess_pid 写入 DB，cancel 才能发信号
   - DOC-07 Task 7.3：HeartbeatMonitor 调用 mark_crashed()（复用 _promote_next() 逻辑）
 
-> **最后更新**: 2026-04-19(DOC-07 Task 7.2 — Task 提交 + Run 生命周期 ADR-060/061/062)
+---
+
+## DOC-07 Task 7.3: Callback(双通道) + SSE Manager + HeartbeatMonitor + permission-answer (ADR-063 / ADR-064 / ADR-065)
+
+## ADR-063: 回调协议方案 A 双通道(DOC-07 Task 7.3)
+- **来源**: PRD v4 DOC-07 Task 7.3 Part A ADR-063；Batch 1 §3.3 D3, Master M2
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/callback_service.py` — CallbackService.handle() 10 event handlers
+    - text_delta: 仅 SSE forward，不写 DB（Adapter 本地累积；message_complete 整条写）
+    - tool_start/tool_end: 创建/更新 ToolExecution + Message
+    - message_complete: 整条 assistant Message 落库
+    - run_complete/run_error: RunLifecycle.complete_and_promote() / fail_and_promote()
+    - permission_ask: INSERT permission_requests（幂等 request_id 查重）
+    - harness_event: INSERT audit_logs + SSE
+    - coordinator_plan_update: UPSERT coordinator_plans（DOC-04 Task 4.3）
+    - session_title: UPDATE sessions.title
+  - `backend/app/services/sse_manager.py` — SSEManager
+    - publish(): Redis pub/sub + xadd Stream(maxlen=200, approximate)
+    - subscribe() / start_subscribe_async(): 返回 PubSub 对象
+    - backfill_since(): xrange 补发 last_event_id 之后事件
+    - acquire_conn_slot() / release_conn_slot(): MAX_CONNS_PER_SESSION=3
+  - `backend/app/api/v1/internal.py` — POST /internal/callbacks（X-Callback-Secret 认证）
+  - `backend/app/api/v1/sessions.py` — GET /sessions/{id}/stream（SSE stream）
+- **实施 commit**: a2c43b5
+- **偏离点**: asyncio.create_task() 在同步 handler 内 fire-and-forget SSE publish（容错，不阻塞 DB 同步路径）
+- **验证结果**: Part B 12 项验证全 PASS（+ 2 bonus）
+- **下游影响**: DOC-07 Task 7.4 接收 promoted_run_id 启动新子进程；DOC-11 前端 useSSE hook 订阅 /sessions/{id}/stream
+
+## ADR-064: permission-answer 端点(DOC-07 Task 7.3)
+- **来源**: PRD v4 DOC-07 Task 7.3 Part A ADR-064；Batch 2 §A3-7
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/api/v1/sessions.py` — POST /sessions/{session_id}/permission-answer
+    1. 校验 request_id 归属当前用户 session（铁律 4）
+    2. UPDATE permission_requests SET status='answered', decision=X, answered_at=now()
+    3. RPUSH perm_answer:{request_id} {decision}（key 格式严格对齐 ADR-028）
+    4. INSERT audit_logs: permission.answered
+  - `backend/app/models/permission_request.py` — 追加 decision VARCHAR(10) NULLABLE 字段
+  - `backend/alembic/versions/003_add_decision_to_permission_requests.py` — migration
+- **实施 commit**: a2c43b5
+- **偏离点**: 无。Redis key 格式 `perm_answer:{request_id}` 严格匹配 ADR-028（executor/harness/permissions/ask_protocol.py BLPOP 等待端）
+- **验证结果**: perm_answer key 格式断言 PASS；decision field 添加 PASS；409 Conflict for non-pending PASS
+- **下游影响**: ADR-028 executor 端 BLPOP `perm_answer:{request_id}` 将收到 allow/deny 响应
+
+## ADR-065: HeartbeatMonitor 崩溃恢复(DOC-07 Task 7.3)
+- **来源**: PRD v4 DOC-07 Task 7.3 Part A ADR-065；Batch 3 B3-2
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/heartbeat_monitor.py` — HeartbeatMonitor
+    - run(): 后台 while loop，scan_interval=10s 调用 _scan_once()
+    - _scan_once(): SCAN harness:heartbeat:* cursor=0 分批扫，count=100
+    - _handle_key(): age=now-heartbeat_ts; age>30 → lifecycle.mark_crashed() + DELETE key
+    - stop(): 设 _running=False 优雅退出
+  - `backend/app/main.py` — lifespan 中 asyncio.create_task(heartbeat_monitor.run())；shutdown 时 cancel + wait
+  - `backend/app/api/v1/internal.py` — POST /internal/run-crashed（external trigger，幂等）
+- **实施 commit**: a2c43b5
+- **偏离点**: mark_crashed() 调用使用独立 DB Session（非请求级），避免请求 Session 竞争
+- **验证结果**: HeartbeatMonitor defaults(10/30) PASS；lifespan create_task/stop PASS；/internal/run-crashed endpoint PASS
+- **下游影响**: DOC-12 Task 12.4 prism_agent_heartbeat_stale_total counter（已在 heartbeat_monitor.py 懒加载注册）；DOC-07 Task 7.4 新子进程由 promoted_run_id 启动（mark_crashed 内部 promote）
+
+> **最后更新**: 2026-04-19(DOC-07 Task 7.3 — Callback 双通道 + SSE Manager + HeartbeatMonitor + permission-answer ADR-063/064/065)
