@@ -37,6 +37,8 @@ from executor.adapters.base import (
 from executor.callbacks.backend_callback import BackendCallback
 from executor.engine.context_budget import ContextBudgetManager
 from executor.engine.prompt_assembler import PromptAssembler
+from executor.harness.middleware.base import MiddlewareContext
+from executor.harness.middleware.pipeline import MiddlewarePipeline
 from executor.tools.pipeline import ToolExecutionPipeline
 
 logger = structlog.get_logger()
@@ -84,15 +86,17 @@ def _block_to_dict(block: ContentBlock) -> dict:
 class RunContext:
     """执行上下文（跨组件传递，供 Hook / Permission / Metrics 使用）
 
-    三字段精确对应 Backend 子进程启动参数：
+    字段精确对应 Backend 子进程启动参数：
     - run_id:     UUID7，对应 runs 表主键
     - session_id: UUID7，对应 sessions 表主键
     - user_id:    UUID7，对应 users 表主键
+    - agent_type: Agent 类型（默认 "general"），供 MiddlewareContext 使用（Task 3.2）
     """
 
     run_id: str
     session_id: str
     user_id: str
+    agent_type: str = "general"
 
 
 class QueryEngine:
@@ -112,7 +116,8 @@ class QueryEngine:
         callback: BackendCallback,
         run_context: RunContext,
         max_turns: int,
-        # HARNESS_INTEGRATION_POINT: middleware_pipeline 在 Task 3.2 注入
+        middleware_pipeline: MiddlewarePipeline | None = None,  # Task 3.2: 可选中间件管道
+        agent_type: str = "general",  # Task 3.2: 供 MiddlewareContext 使用
     ) -> None:
         self._adapter = adapter
         self._assembler = assembler
@@ -121,6 +126,8 @@ class QueryEngine:
         self._callback = callback
         self._run_context = run_context
         self._max_turns = max_turns
+        self._middleware = middleware_pipeline  # None 时所有钩点 no-op
+        self._agent_type = agent_type
         self._messages: list[PrismMessage] = []
         self._turn_count = 0
         self._total_input_tokens = 0
@@ -163,10 +170,24 @@ class QueryEngine:
                     )
                     return
 
-                # HARNESS_INTEGRATION_POINT: MiddlewarePipeline.pre_turn() 在 Task 3.2 注入
-                # ctx = MiddlewareContext(run_id=..., turn_count=self._turn_count, ...)
-                # await self._middleware.pre_turn(ctx)
-                # if ctx.abort: ...
+                # Task 3.2: MiddlewarePipeline.pre_turn() 钩点
+                _mw_ctx: MiddlewareContext | None = None
+                if self._middleware is not None:
+                    _mw_ctx = MiddlewareContext(
+                        run_id=self._run_context.run_id,
+                        session_id=self._run_context.session_id,
+                        user_id=self._run_context.user_id,
+                        turn_count=self._turn_count,
+                        agent_type=getattr(self._run_context, "agent_type", self._agent_type),
+                        messages=self._messages,
+                        system_prompt="",  # system_prompt 在 build() 调用后才有，此处传空占位
+                    )
+                    await self._middleware.run_pre_turn(_mw_ctx)
+                    if _mw_ctx.abort:
+                        await self._callback.run_error(
+                            f"pre_turn aborted: {_mw_ctx.abort_reason}"
+                        )
+                        return
 
                 # 构造 System Prompt（PromptAssembler 按 agent_type 动态组装）
                 system_prompt = self._assembler.build(language="zh-CN")
@@ -222,7 +243,21 @@ class QueryEngine:
                         except Exception:
                             pass
 
-                    # HARNESS_INTEGRATION_POINT: MiddlewarePipeline.post_turn() 在 Task 3.2 注入
+                    # Task 3.2: MiddlewarePipeline.post_turn() 钩点
+                    if self._middleware is not None:
+                        # 将本轮工具调用数写入 ctx.custom_data 供 ObservabilityMiddleware 使用
+                        if _mw_ctx is None:
+                            _mw_ctx = MiddlewareContext(
+                                run_id=self._run_context.run_id,
+                                session_id=self._run_context.session_id,
+                                user_id=self._run_context.user_id,
+                                turn_count=self._turn_count,
+                                agent_type=getattr(self._run_context, "agent_type", self._agent_type),
+                                messages=self._messages,
+                                system_prompt="",
+                            )
+                        _mw_ctx.custom_data["tool_call_count"] = len(tool_use_blocks)
+                        await self._middleware.run_post_turn(_mw_ctx)
                     continue
 
                 # 未知 stop_reason（例如模型返回空或自定义 stop）
@@ -392,9 +427,32 @@ class QueryEngine:
     async def _execute_single_tool(self, block: ToolUseBlock) -> ToolResultBlock:
         """单工具执行，走完整 Pipeline（Schema校验 → 执行 → 截断）
 
+        Task 3.2: 在 Pipeline 前后注入 pre_tool_use / post_tool_use 中间件钩点。
         Task 3.3 将在 Pipeline 内添加 Hook / Permission 集成点。
         run_context 已透传到 pipeline.execute()，Task 3.3 可直接使用。
         """
+        # Task 3.2: pre_tool_use 钩点（在 tool_start 回调之前，允许 abort）
+        if self._middleware is not None:
+            tool_ctx = MiddlewareContext(
+                run_id=self._run_context.run_id,
+                session_id=self._run_context.session_id,
+                user_id=self._run_context.user_id,
+                turn_count=self._turn_count,
+                agent_type=getattr(self._run_context, "agent_type", self._agent_type),
+                messages=self._messages,
+                system_prompt="",
+                tool_use_block=block,
+            )
+            await self._middleware.run_pre_tool_use(tool_ctx)
+            if tool_ctx.abort:
+                return ToolResultBlock(
+                    tool_use_id=block.id,
+                    content=f"Middleware aborted: {tool_ctx.abort_reason}",
+                    is_error=True,
+                )
+        else:
+            tool_ctx = None
+
         await self._callback.tool_start(block.id, block.name, block.input)
         start = time.monotonic()
 
@@ -428,6 +486,13 @@ class QueryEngine:
                 is_error=result.is_error,
                 duration_ms=duration_ms,
             )
+
+            # Task 3.2: post_tool_use 钩点（全部执行，不短路，可改写 result）
+            if self._middleware is not None and tool_ctx is not None:
+                tool_ctx.tool_result_block = result
+                await self._middleware.run_post_tool_use(tool_ctx)
+                return tool_ctx.tool_result_block
+
             return result
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
