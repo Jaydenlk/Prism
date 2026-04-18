@@ -890,7 +890,62 @@
   - DOC-07 Task 7.1 实现 Redis 连接池后，_get_redis_client() 切换为真实连接
   - DOC-11 Task 11.5 Skills Store UI 页面调用 GET /api/v1/skills/search + POST /api/v1/skills/install
 
-> **最后更新**: 2026-04-19（DOC-05 Task 5.6 — Skills CLI + Agent Tool 仅搜索 + ADR-052/053）
+---
+
+## DOC-05 Task 5.7: CC 兼容层（ConversionReport）（ADR-054 / ADR-055）
+
+## ADR-054: export_to_cc 返回 ConversionReport 结构化报告（DOC-05 Task 5.7）
+- **来源**: PRD v4 DOC-05 Task 5.7 Part A ADR-050-A（PRD 原标 ADR-050-A；因 DOC-05 Task 5.4 PluginHost 统一生命周期已占用 ADR-050，平移至 ADR-054；DOC-06 Task 6.1 落地时须从 ADR-056 起编号，见 blocker.md）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/cc_compat.py` — `ConversionReport` dataclass（6 字段：success/cc_compat_zip/lost_fields/warnings/plugin_name/cc_plugin_json）
+  - `executor/plugins/cc_compat.py` — `CCPluginAdapter.export_to_cc(config)` 返回 `ConversionReport`，不直接写文件
+  - `executor/plugins/cc_compat.py` — `_build_cc_zip()` 构建 zip（plugin.json + README.md + CONVERSION_NOTES.md）
+  - `backend/app/api/v1/plugins.py` — `POST /api/v1/plugins/export-cc` 返回 `ConversionReportResponse`（cc_compat_zip_b64 base64 编码）
+  - `executor/plugins/__init__.py` — 新增导出 CCPluginAdapter / ConversionReport / PluginFormatError / PluginSchemaError / PluginYamlSchema
+- **实施 commit**: (本 Task feat commit)
+- **偏离点**:
+  1. ADR 编号从 PRD 原标 ADR-050-A 平移至 ADR-054（ADR-050 已被 DOC-05 Task 5.4 占用，见 blocker.md）
+  2. 双向不对称（PRD 明确允许）：CC→Prism 完整支持；Prism→CC 可能 lost_fields 非空（vertical_tuning/harness_overrides CC 不支持）
+  3. zip 包含 CONVERSION_NOTES.md 详尽说明 lost_fields + warnings（禁止静默成功，PRD 明确要求）
+  4. Backend API 返回 cc_compat_zip_b64（base64）而非二进制流，便于 JSON 响应体一致性；调用方 decode 后落盘
+  5. MCP server 名称冲突写 warnings（不 raise），保证 export 始终返回有效 ConversionReport（success=True）
+- **验证结果**: 全部验证 PASS
+  - ConversionReport 6 字段完整 PASS（success/cc_compat_zip/lost_fields/warnings/plugin_name/cc_plugin_json）
+  - export_to_cc prism plugin（含 vertical_tuning/harness_overrides）→ lost_fields 含 "prism.vertical_tuning"/"prism.harness_overrides" PASS
+  - cc_compat_zip 是合法 zip，含 plugin.json + README.md + CONVERSION_NOTES.md PASS
+  - plugin.json 内容与 cc_plugin_json 一致 PASS
+  - MCP server 名称冲突 → warnings 含冲突告警 PASS
+  - 进程边界（cc_compat.py 无 backend.app import）PASS
+- **下游影响**:
+  - DOC-06 Task 6.1 落地三密钥 ADR 时，须从 ADR-056 起编号（ADR-054/055 已被本 Task 占用）
+  - DOC-11 Task 11.5 Skills/Plugin 子页可展示 ConversionReport.lost_fields 清单，提示用户人工审查
+  - PluginHost.load_plugin_from_dir() 集成 CCPluginAdapter，实现目录级统一入口
+
+## ADR-055: plugin.yaml Pydantic 严格校验（缺字段 422）（DOC-05 Task 5.7）
+- **来源**: PRD v4 DOC-05 Task 5.7 Part A ADR-050-B（PRD 原标 ADR-050-B；因 ADR-050 已被占用，平移至 ADR-055，与 ADR-054 配对）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/plugins/cc_compat.py` — `PluginYamlSchema`（Pydantic BaseModel，必填 name，extra="allow" forward-compat）
+  - `executor/plugins/cc_compat.py` — `PluginSchemaError`（含 errors: list[dict] 与 Pydantic ValidationError 格式对齐）
+  - `executor/plugins/cc_compat.py` — `CCPluginAdapter._validate_plugin_yaml()` 捕获 ValidationError → 抛 PluginSchemaError
+  - `backend/app/api/v1/plugins.py` — `POST /api/v1/plugins/load` + `POST /api/v1/plugins/validate`：捕获 PluginSchemaError → HTTP 422 + `{"message": ..., "errors": [...]}`
+- **实施 commit**: (本 Task feat commit)
+- **偏离点**:
+  1. ADR 编号从 PRD 原标 ADR-050-B 平移至 ADR-055（见 ADR-054 偏离点）
+  2. pydantic 不可用时 fallback：手动检查 `name` 字段存在性，保证降级场景不崩溃
+  3. 未识别字段（extra="allow"）收集后写 structlog WARNING（不拒绝），forward-compat 策略，符合 PRD 描述
+  4. extra_field_names() 方法区分 schema 已知字段 vs 动态额外字段，供 Backend validate 端点返回 `extra_fields` 列表
+- **验证结果**: 全部验证 PASS
+  - plugin.yaml 缺 name → PluginSchemaError，errors[0].loc==['name'] PASS
+  - plugin.yaml 含额外字段 → 加载成功（不拒绝）+ structlog WARNING "plugin.yaml.unknown_fields" PASS
+  - PluginSchemaError.errors 携带详细错误位置 PASS
+  - Backend POST /plugins/validate extra_fields 返回额外字段列表 PASS
+- **下游影响**:
+  - DOC-09 Task 9.1 MCP Server 管理可复用 PluginYamlSchema 进行 Plugin 元数据 API 校验
+  - DOC-11 Task 11.5 Plugin 子页上传 plugin.yaml 时，422 响应体的 errors 列表可直接展示给用户
+
+> **最后更新**: 2026-04-19（DOC-05 Task 5.7 — CC 兼容层 + ConversionReport + ADR-054/055）
 
 ---
 

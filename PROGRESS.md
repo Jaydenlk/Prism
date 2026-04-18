@@ -63,7 +63,7 @@
 | DOC-05 Task 5.4: PluginHost(变量替换) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 2新文件+1修改: plugin_types.py(PluginConfig+PluginScope 三级); host.py(PluginHost+PluginVariableExpander+ENV_WHITELIST sandbox); plugins/__init__导出5新符号; 变量替换9种${VAR}; CC兼容${CLAUDE_PLUGIN_ROOT}; Platform/User/Session冲突检测+audit; shutdown()解Task5.2 MCPClient.stop() TODO; ADR-050落地; 全部验证PASS |
 | DOC-05 Task 5.5: Skills Registry(Local+GitHub) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 1新文件+1修改: skills_registry.py(SkillPackage/SkillBundle/InstalledSkill 3 dataclass + SkillSource ABC + LocalSource + GitHubSource + SkillsRegistry); __init__.py 导出 7 新符号; ADR-051 落地; 全部 9 项验证 PASS |
 | DOC-05 Task 5.6: Skills CLI + Agent Tool(仅搜索) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 5新文件+2修改: skills_search.py(SkillsSearchTool ADR-052 只读 capabilities=[]); cli/__init__.py + cli/skills_cli.py(SkillsCLI 6子命令+backend_url HTTP同步); skill_install_service.py(UPSERT+Redis TTL=600s ADR-053); skills.py(6路由+Prometheus); builtin/__init__追加SkillsSearchTool; api/v1/__init__追加skills_router; 全部验证PASS |
-| DOC-05 Task 5.7: CC 兼容层(ConversionReport) | pending | — | — | — | — |
+| DOC-05 Task 5.7: CC 兼容层(ConversionReport) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 2新文件+3修改: cc_compat.py(CCPluginAdapter+ConversionReport+PluginFormatError+PluginSchemaError+PluginYamlSchema ADR-054/055); backend/api/v1/plugins.py(3路由: /load/export-cc/validate); host.py追加cc_adapter参数+load_plugin_from_dir(); __init__.py导出5新符号; api/v1/__init__追加plugins_router; 全部19项验证PASS |
 
 ---
 
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 21
+- **已完成**: 22
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 30
+- **pending**: 29
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-05 Task 5.6 完成: Skills CLI + Agent Tool 仅搜索 + ADR-052/053）
-> **下一个动作**: DOC-05 Task 5.7 — CC 兼容层（ConversionReport）
+> **最后更新**: 2026-04-19（DOC-05 Task 5.7 完成: CC 兼容层 + ConversionReport + ADR-054/055；DOC-05 全部 7/7 Task 完整收官）
+> **下一个动作**: DOC-06 Task 6.1 — 认证体系（三密钥 + SSE ticket），ADR 须从 ADR-056 起编号

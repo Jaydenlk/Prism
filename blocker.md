@@ -83,6 +83,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **DOC-05 Task 5.6 原标 ADR-048/049（Agent Tool 仅搜索 + Backend 写 skill_installs 表）用 ADR-052/053**（PRD ADR-048 已被 DOC-05 Task 5.3 HookSystem 优先级+Phase1过滤+scoped注销占用；PRD ADR-049 已被 DOC-05 Task 5.3 Plugin 命名空间占用。Task 5.6 的两条 ADR 依次平移为 ADR-052/053：Agent Tool 仅搜索权限=ADR-052；Backend skill_install_service+Redis缓存key格式=ADR-053）。⚠️ DOC-06 Task 6.1 落地时 ADR 须从 **ADR-054** 起接续（ADR-052/053 已被本 Task 占用）。后续 DOC-05 Task 5.7 的 ADR 从 ADR-054 接续（须检查与 DOC-06 剩余范围是否冲突）。
 
+**DOC-05 Task 5.7 原标 ADR-050-A/050-B（CC 导出返回 ConversionReport + plugin.yaml 严格校验）用 ADR-054/055**（PRD ADR-050-A/050-B 编号前缀 ADR-050 已被 DOC-05 Task 5.4 PluginHost 统一生命周期+变量替换系统占用。Task 5.7 的两条 ADR 依次平移为 ADR-054/055：ConversionReport 结构化返回=ADR-054；plugin.yaml Pydantic 严格校验+缺字段422=ADR-055）。⚠️ DOC-06 Task 6.1 落地时 ADR 须从 **ADR-056** 起接续（ADR-054/055 已被本 Task 占用）。
+
 ---
 
 ### Action required from human reviewer
