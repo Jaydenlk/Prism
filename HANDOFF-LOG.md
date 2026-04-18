@@ -35,6 +35,42 @@
 
 ---
 
+## 2026-04-19 -- DOC-06 Task 6.2 completed (用户管理 + 邀请码 + Admin API + ADR-059；DOC-06 完整收官)
+
+### 本次 session 做了什么
+- 新建 backend/app/schemas/invite.py — CreateInviteCodeRequest(max_uses≥1校验) + InviteCodeResponse.from_orm_model(is_valid 计算: 未过期 AND used_count<max_uses)
+- 新建 backend/app/schemas/user.py — UserListResponse + UpdateUserRoleRequest(Literal["admin","user"])
+- 新建 backend/app/services/invite_service.py — InviteService: generate_code(PRISM-前缀+8位大写字母数字 secrets.choice) / create(碰撞去重) / validate(存在+未过期+未用完) / consume / list_all / revoke(max_uses=used_count)
+- 新建 backend/app/api/v1/admin.py — 7 端点全部实现: GET/PATCH /admin/users; POST/GET/DELETE /admin/invite-codes; GET /admin/usage(totals+per_provider+30天趋势); GET /admin/audit-logs(LIKE前缀筛+user_id筛+分页); router-level dependencies=[Depends(require_admin)](ADR-059); 自我角色修改防护(400)
+- 修改 backend/app/api/v1/__init__.py — 注册 admin_router, docstring 追加 admin 路由描述
+- DOC-06 完整收官: Task 6.1 + Task 6.2 均已 completed; ADR-056/057/058/059 全部落地
+
+### 验证结果
+- Part B 验证步骤(编译4项+逻辑7项): 全部 PASS
+  - py_compile schemas/invite.py + schemas/user.py + services/invite_service.py + api/v1/admin.py PASS
+  - CreateInviteCodeRequest 默认/自定义/max_uses=0拒绝 PASS
+  - UpdateUserRoleRequest 合法/非法role拒绝 PASS
+  - generate_code() 100样本 PRISM-前缀+8位大写字母数字+总长14 PASS
+  - InviteCodeResponse.from_orm_model is_valid 3场景(有效/过期/用完) PASS
+  - revoke() 逻辑(max_uses=used_count → is_valid=False) PASS
+  - admin router 7条路由全注册 + router-level require_admin dependency PASS
+
+### 下一个 Task 需要注意
+- DOC-07 Task 7.1 Session CRUD: admin.py GET /admin/usage 使用了 Run 模型的 func.date() 聚合，PostgreSQL 环境测试时注意 date() 函数兼容性
+- InviteService.validate() 用于 AuthService.register() 中的邀请码校验——Task 6.1 的 auth_service.py 已内联邀请码检查逻辑，Task 6.2 的 InviteService.validate() 是独立服务层；若后续需统一，可将 auth_service.py 的内联检查替换为 InviteService.validate() 调用
+- GET /admin/audit-logs 支持 action 前缀 LIKE 筛选，DOC-07 Task 7.x 写 harness.* 审计日志后可通过 ?action=harness. 查询
+
+### 遗留风险 / 未决事项
+- Redis 未初始化时 SSE ticket 端点返回 503（Task 6.1 遗留，DOC-07 Task 7.3 解决）
+- GET /admin/usage daily_trend 使用 func.date() — PostgreSQL 原生支持，SQLite 测试需注意
+- GET /admin/users 无分页（Phase 1 设计，用户量小时可接受）
+
+### Commit
+- `e47c31d` — `feat(v4): user management + invite codes + admin API (DOC-06 Task 6.2)`
+- docs commit: 后续更新 PROGRESS/DECISIONS/HANDOFF-LOG
+
+---
+
 ## 2026-04-19 -- DOC-06 Task 6.1 completed (认证体系 JWT+SSE ticket + ADR-056/057/058)
 
 ### 本次 session 做了什么

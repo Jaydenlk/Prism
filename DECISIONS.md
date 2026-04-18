@@ -1082,3 +1082,38 @@
 - **下游影响**: 前端 useSSE hook(DOC-10 Task 10.2)的 credential=include fetch 选项依赖此 cookie
 
 > **最后更新**: 2026-04-19(DOC-06 Task 6.1 — 认证体系 JWT+SSE ticket + ADR-056/057/058)
+
+---
+
+## DOC-06 Task 6.2: 用户管理 + 邀请码(ADR-059)
+
+## ADR-059: Admin 路由器级 require_admin 守卫 + 邀请码 PRISM- 格式(DOC-06 Task 6.2)
+- **来源**: PRD v4 DOC-06 Task 6.2 Part A §验收标准; Part B §4 admin.py
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/schemas/invite.py` — CreateInviteCodeRequest(max_uses≥1校验) + InviteCodeResponse(from_orm_model 计算 is_valid)
+  - `backend/app/schemas/user.py` — UserListResponse + UpdateUserRoleRequest(Literal["admin","user"])
+  - `backend/app/services/invite_service.py` — InviteService: generate_code(PRISM-前缀+8位大写字母数字,secrets.choice) / create(冲突去重) / validate(存在+未过期+未用完) / consume(used_count+=1) / list_all / revoke(max_uses=used_count)
+  - `backend/app/api/v1/admin.py` — 7 端点: GET/PATCH /admin/users; POST/GET/DELETE /admin/invite-codes; GET /admin/usage; GET /admin/audit-logs; router-level dependencies=[Depends(require_admin)]
+  - `backend/app/api/v1/__init__.py` — 注册 admin_router
+- **实施 commit**: e47c31d
+- **偏离点**:
+  1. ADR 编号从 Task 6.2 起用 ADR-059(ADR-056/057/058 已被 Task 6.1 占用)
+  2. GET /admin/users 无分页(Phase 1 自托管用户数极小，PRD 未强制分页)
+  3. GET /admin/usage daily_trend 使用 func.date() 聚合(PostgreSQL 兼容)；per_provider 分组含 provider_id=None(无 provider 的 run)
+  4. InviteService.revoke() 将 max_uses 设为 used_count 而非物理删除，保持审计可见性
+  5. 自我角色修改防护：PATCH /admin/users/{user_id} 若 user_id == current_user.id 返回 400
+- **验证结果**:
+  - py_compile 4 文件全 PASS
+  - CreateInviteCodeRequest 默认值/自定义/max_uses=0 拒绝 PASS
+  - UpdateUserRoleRequest 合法值/非法 role 拒绝 PASS
+  - generate_code() 100 样本格式验证(PRISM-前缀+8位大写字母数字,总长14) PASS
+  - InviteCodeResponse.from_orm_model is_valid 计算(未用完/已过期/已用完) 3 场景 PASS
+  - revoke() 逻辑(max_uses=used_count → is_valid=False) PASS
+  - admin router 7 条路由全部注册(GET/PATCH users; POST/GET/DELETE invite-codes; GET usage/audit-logs) PASS
+  - router-level require_admin dependency 存在 PASS
+- **下游影响**:
+  - DOC-09 Task 9.3 Admin Observability 面板复用 GET /admin/audit-logs 端点
+  - DOC-06 完整收官(Task 6.1 + Task 6.2 均完成)；DOC-07 可依赖完整 Auth+User+Admin 链路
+
+> **最后更新**: 2026-04-19(DOC-06 Task 6.2 — 用户管理 + 邀请码 + ADR-059；DOC-06 完整收官)
