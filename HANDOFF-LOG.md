@@ -35,6 +35,42 @@
 
 ---
 
+## 2026-04-19 -- DOC-08 Task 8.2 COMPLETED (FeishuAdapter + WeComAdapter + TelegramAdapter)
+
+### 本次 session 做了什么
+- 新建 backend/app/services/im_feishu.py — FeishuAdapter: Webhook模式接收 + HMAC-SHA256签名验证(X-Lark-Signature) + AES-CBC-256解密(pycryptodome) + asyncio.Lock保护的tenant_access_token刷新 + handle_webhook()/verify_signature()/decrypt_message() + graceful skip(未配置时)
+- 新建 backend/app/services/im_wecom.py — WeComAdapter: SHA1 msg_signature验证 + AES-CBC-256 XML解密(encoding_aes_key+padding) + GET URL验证(verify_url) + XML解析(_xml_text helper) + asyncio.Lock access_token刷新 + REST发送(touser/toparty/toall判断)
+- 新建 backend/app/services/im_telegram.py — TelegramAdapter: Long Polling asyncio.Task(_polling_loop) + getUpdates offset追踪 + sendMessage + 优雅停止(cancel+5s等待) + graceful skip(未配置时)
+- 修改 backend/app/api/v1/im.py — POST /webhook/feishu(body_bytes读取+签名验证+分发); GET /webhook/wecom(URL验证+PlainTextResponse); POST /webhook/wecom(msg_signature验证+PlainTextResponse); 适配器从app.state.im_gateway懒获取(_get_feishu_adapter/_get_wecom_adapter)
+- 修改 backend/requirements.txt — 追加 pycryptodome>=3.20.0(AES-CBC-256解密必需)
+- ADR-072(飞书签名+token刷新) / ADR-073(企微SHA1+AES解密) 落地
+
+### 验证结果
+- py_compile 4文件: PASS
+- 三适配器实现 IMAdapter 接口: PASS
+- channel_name + set_message_handler注入: PASS
+- 飞书签名验证(合法/非法/无token): PASS
+- 企微签名验证(合法/非法/无token): PASS
+- 三平台消息截断(feishu=4000/wecom=2048/tg=4096): PASS
+- 飞书 URL 验证 challenge 响应: PASS
+- graceful skip(未配置时 start() 不抛异常): PASS
+- stop() 幂等: PASS
+- IMGateway.register_adapter + get_adapter: PASS — 共 10 项全 PASS
+
+### 下一个 Task 需要注意
+- Task 8.3(用户绑定)已在 Task 8.1 的 api/v1/im.py 中实现了大部分逻辑(generate_pairing_code/list_bindings/unbind)；Task 8.3 主要补充 IMBindingService 服务层并重构路由
+- 飞书适配器目前使用 Webhook 模式（非 WebSocket SDK），符合 PRD "最常见方案"；若需 WebSocket 模式，在 im_channel_configs.config 中增加 mode 字段即可扩展
+- pycryptodome 已在 requirements.txt 中；若 Docker 镜像未重建则需 pip install pycryptodome
+
+### 遗留风险 / 未决事项
+- 飞书 WebSocket 长连接模式（官方 lark-oapi SDK）暂未实现，当前 Webhook 模式已足够生产使用
+- 企微群聊 platform_chat_id 约定（"party:" 前缀）应在 Task 8.3 绑定流程中明确文档化
+
+### Commit
+- `7f85b76` — `feat(v4): DOC-08 Task 8.2 — Feishu + WeCom + Telegram IM adapters`
+
+---
+
 ## 2026-04-19 -- DOC-08 Task 8.1 COMPLETED (IMAdapter + IMGateway + Webhook幂等)
 
 ### 本次 session 做了什么

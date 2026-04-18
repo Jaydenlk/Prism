@@ -1328,4 +1328,38 @@
   2. 绑定查找增加 platform_chat_id 过滤（三元组精确匹配），v3 二元组逻辑已淘汰
 - **验证结果**: UniqueConstraint 三字段验证 PASS; 查找绑定三元组过滤逻辑 PASS; 配对码生成覆盖旧未完成绑定 PASS
 
-> **最后更新**: 2026-04-19(DOC-08 Task 8.1 — IMAdapter ABC + IMGateway统一路由 + Webhook幂等ADR-070 + im_bindings三元组ADR-071; 29/51 Task 完成)
+## ADR-072: 飞书 Webhook 签名校验 + token 自动刷新(DOC-08 Task 8.2)
+- **来源**: PRD v4 DOC-08 Task 8.2 Part A（飞书 Webhook 签名/加密）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/im_feishu.py` — FeishuAdapter
+    - `verify_signature()`: HMAC-SHA256(timestamp+nonce+verify_token+body) → X-Lark-Signature
+    - `decrypt_message()`: AES-CBC-256 解密（pycryptodome），key=SHA256(encrypt_key)
+    - `_ensure_token()`: asyncio.Lock 保护，过期前 60s 刷新 tenant_access_token
+    - `handle_webhook()`: URL验证→签名验证→加密解密→事件分发
+    - `_handle_message_event()`: 解析 im.message.receive_v1 事件
+  - `backend/app/api/v1/im.py` — POST /webhook/feishu: 读 body_bytes → X-Lark-Signature 验证 → 分发到 FeishuAdapter
+- **实施 commit**: 7f85b76
+- **偏离点**:
+  1. 飞书 Webhook 模式（无 WebSocket 长连接），符合 PRD "Webhook 回调模式（最常见）" 说明
+  2. pycryptodome 已追加到 requirements.txt
+  3. verify_token 未配置时跳过签名校验（适合内网部署场景）
+- **验证结果**: HMAC-SHA256 签名校验 PASS（合法/非法签名两种场景）; URL 验证 challenge 响应 PASS; graceful skip PASS
+
+## ADR-073: 企微 msg_signature SHA1 + AES-CBC-256 XML 解密(DOC-08 Task 8.2)
+- **来源**: PRD v4 DOC-08 Task 8.2 Part A（企业微信 Webhook 验证/解密）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/im_wecom.py` — WeComAdapter
+    - `verify_signature()`: SHA1(sort([token, timestamp, nonce, encrypt])) == msg_signature
+    - `verify_url()`: URL验证(GET请求) — 验签 → AES解密 echostr → 返回明文
+    - `_decrypt_aes()`: AES-CBC-256 解密（pycryptodome），key=Base64Decode(encoding_aes_key+"="), IV=key[:16]
+    - `handle_webhook()`: 解析外层XML → 提取<Encrypt> → 验签 → 解密 → 内层XML → 分发
+  - `backend/app/api/v1/im.py` — GET /webhook/wecom（URL验证）+ POST /webhook/wecom（消息回调）
+- **实施 commit**: 7f85b76
+- **偏离点**:
+  1. 企微发送目标：platform_chat_id 以 "party:" 前缀区分 toparty；其余均为 touser
+  2. token 未配置时跳过签名校验（适合内网部署场景）
+- **验证结果**: SHA1 签名校验 PASS（合法/非法两种场景）; URL验证流程 PASS; 消息截断至 2048 字符 PASS
+
+> **最后更新**: 2026-04-19(DOC-08 Task 8.2 — FeishuAdapter+WeComAdapter+TelegramAdapter+ADR-072/073; 30/51 Task 完成)
