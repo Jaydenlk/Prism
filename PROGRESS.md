@@ -89,7 +89,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-08 Task 8.1: IMAdapter + 消息路由 + Webhook 幂等 | pending | — | — | — | — |
+| DOC-08 Task 8.1: IMAdapter + 消息路由 + Webhook 幂等 | completed | 2026-04-19 | 2026-04-19 | f9d8e3f | 5新文件+2修改: im_adapter.py(IMAdapter ABC 4方法+IMIncomingMessage msg_id字段ADR-070); im_dedup.py(IMDedupService DB方案+IMDedupRedisService备选 ADR-070); im_gateway.py(IMGateway统一路由 dedup→pairing→binding→session→TaskService同链路); schemas/im.py(5 schema); api/v1/im.py(7路由 channel/webhook/bindings); metrics.py(+2 IM指标 ADR-070 B5-I); api/v1/__init__注册im_router; 17项验证全PASS; ADR-070/071落地 |
 | DOC-08 Task 8.2: 飞书 + 企微 + Telegram 适配器 | pending | — | — | — | — |
 | DOC-08 Task 8.3: 用户绑定(三元组) | pending | — | — | — | — |
 
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 28
+- **已完成**: 29
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 23
+- **pending**: 22
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-07 Task 7.4 完成: subprocess scheduler ADR-066 + coordinator_recovery ADR-067 + alert_dispatcher severity分档; DOC-07 完整收官 4/4；28/51 Task 完成）
-> **下一个动作**: DOC-08 Task 8.1 — IMAdapter + 消息路由 + Webhook 幂等
+> **最后更新**: 2026-04-19（DOC-08 Task 8.1 完成: IMAdapter ABC + IMGateway统一路由 + Webhook幂等ADR-070 + im_bindings三元组ADR-071; 29/51 Task 完成）
+> **下一个动作**: DOC-08 Task 8.2 — 飞书 + 企微 + Telegram 适配器

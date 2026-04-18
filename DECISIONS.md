@@ -1299,4 +1299,33 @@
 - **验证结果**: 404(run not found)/409(wrong status)/409(not heartbeat_stale) 三路校验 PASS；新 Run 创建 + plan.run_id 更新 + start_run(resume_from_step) 链路验证 PASS
 - **下游影响**: executor/__main__.py 需解析 --resume-from-step 并调用 Coordinator.resume_from_checkpoint(DOC-04 Task 4.3 已实现)
 
-> **最后更新**: 2026-04-19(DOC-07 Task 7.4 — subprocess scheduler ADR-066 + coordinator_recovery ADR-067 + alert_dispatcher; DOC-07 完整收官 4/4)
+## ADR-070: IM Webhook 幂等必做(DOC-08 Task 8.1)
+- **来源**: PRD v4 DOC-08 Task 8.1 Part A ADR-070; Batch 3 B3-5
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/im_dedup.py` — IMDedupService(DB主方案) + IMDedupRedisService(备选)
+  - `backend/app/services/im_gateway.py` — _handle_message() 入口第一步调用 dedup.is_duplicate()
+  - `backend/app/models/im_dedup.py` — ImMessageDedup ORM（已在 DOC-01 Task 2.1 建表）
+  - `backend/app/observability/metrics.py` — +prism_im_webhook_duplicates_total{channel}
+- **实施 commit**: f9d8e3f
+- **偏离点**:
+  1. DB 方案（IMDedupService）作为 Phase 1 首选（便于审计），Redis 方案（IMDedupRedisService）预留备选类
+  2. dedup 字段使用模型字段名 platform_message_id（而非 PRD 伪代码 msg_id）与已建 ORM 对齐
+  3. 入口消息 ID 从 IMIncomingMessage.msg_id 专属字段获取（而非 raw dict 查找），适配器负责提取
+- **验证结果**: im_message_dedup UniqueConstraint(channel, platform_message_id) PASS; is_duplicate()/cleanup_expired()/update_session_id() 方法 PASS; Redis 备选方案 SETNX 逻辑 PASS; metrics 注册 PASS
+- **下游影响**: Task 8.2 各适配器须在 IMIncomingMessage.msg_id 字段设置平台原生消息 ID
+
+## ADR-071: im_bindings 三元组唯一约束支持多群聊(DOC-08 Task 8.1)
+- **来源**: PRD v4 DOC-08 Task 8.3 Part A ADR-071; Batch 3 §B3-IV
+- **实施状态**: ✅ 2026-04-19（模型在 DOC-01 Task 2.1 已建，本 Task 验证并落地使用）
+- **落地位置**:
+  - `backend/app/models/im.py` — ImBinding UniqueConstraint(channel, platform_user_id, platform_chat_id)
+  - `backend/app/services/im_gateway.py` — 查找绑定时三元组过滤
+  - `backend/app/api/v1/im.py` — POST /im/bindings/pair 生成配对码
+- **实施 commit**: f9d8e3f
+- **偏离点**:
+  1. 单聊场景 platform_chat_id 默认值为 '' (空字符串)，允许同用户同平台多群聊各有独立绑定
+  2. 绑定查找增加 platform_chat_id 过滤（三元组精确匹配），v3 二元组逻辑已淘汰
+- **验证结果**: UniqueConstraint 三字段验证 PASS; 查找绑定三元组过滤逻辑 PASS; 配对码生成覆盖旧未完成绑定 PASS
+
+> **最后更新**: 2026-04-19(DOC-08 Task 8.1 — IMAdapter ABC + IMGateway统一路由 + Webhook幂等ADR-070 + im_bindings三元组ADR-071; 29/51 Task 完成)

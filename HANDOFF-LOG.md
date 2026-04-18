@@ -35,6 +35,52 @@
 
 ---
 
+## 2026-04-19 -- DOC-08 Task 8.1 COMPLETED (IMAdapter + IMGateway + Webhook幂等)
+
+### 本次 session 做了什么
+- 新建 backend/app/services/im_adapter.py — IMAdapter ABC 4抽象方法(channel_name/start/stop/send) + set_message_handler(); IMIncomingMessage(msg_id专属字段 ADR-070) + IMOutgoingMessage dataclasses; MessageHandler 类型别名
+- 新建 backend/app/services/im_dedup.py — IMDedupService(DB主方案ADR-070): is_duplicate() IntegrityError去重 + cleanup_expired() + update_session_id(); IMDedupRedisService(SETNX备选方案)
+- 新建 backend/app/services/im_gateway.py — IMGateway统一路由: register_adapter()注入_handle_message; _handle_message: ADR-070幂等→pairing code识别→binding三元组查找→find_or_create_session→TaskService.submit()(同Web链路)→_start_run; send_run_result()截断(feishu=4000/wecom=2048/tg=4096); start_all()从DB读enabled状态; _send_binding_guide()未绑定引导; _handle_pairing()配对码完成绑定
+- 新建 backend/app/schemas/im.py — 5 schema: IMChannelConfigResponse/Update + IMBindingResponse + PairingCodeResponse + IMWebhookEvent
+- 新建 backend/app/api/v1/im.py — 7路由: GET/PATCH /im/channels(admin+脱敏) + POST /webhook/feishu+wecom(public skeleton) + GET /im/bindings + POST /im/bindings/pair(6位码碰撞重试) + DELETE /im/bindings/{id}
+- 修改 backend/app/observability/metrics.py — 新增 prism_im_webhook_duplicates_total{channel} + prism_im_bindings_active (ADR-070 B5-I)
+- 修改 backend/app/api/v1/__init__.py — 注册 im_router
+
+### 验证结果
+- py_compile 7文件: PASS
+- IMAdapter是抽象基类(无法直接实例化): PASS
+- MockAdapter实现IMAdapter接口: PASS
+- IMGateway.register_adapter + handler注入: PASS
+- ADR-071 im_bindings三元组唯一约束: PASS
+- ADR-070 im_message_dedup两列唯一约束: PASS
+- IMDedupService + IMDedupRedisService方法: PASS
+- Prometheus 3个IM指标注册: PASS
+- IM router 7条路由: PASS
+- Platform message length limits: PASS
+- 配对码检测逻辑(/pair前缀+6位数字): PASS
+- im_router importable: PASS
+- 合计 17项验证全 PASS
+
+### 下一个 Task 需要注意
+- DOC-08 Task 8.2: FeishuAdapter/WeComAdapter/TelegramAdapter 分别实现 IMAdapter ABC
+  - 必须在 IMIncomingMessage.msg_id 字段设置平台原生消息 ID（ADR-070 去重依赖此字段）
+  - 飞书: /im/webhook/feishu 端点已占位，Task 8.2 在此解析 X-Lark-Signature + 事件
+  - 企微: /im/webhook/wecom 端点已占位，支持 GET URL验证 + POST 消息
+  - Telegram: Long Polling 后台任务，不走 Webhook
+  - 三个适配器均注入 IMGateway（lifespan 初始化时 register_adapter）
+- IMGateway._start_run() 使用懒导入 app.main.app 获取 process_manager；若 Docker 部署需确认循环导入无影响
+- api/v1/im.py 的 POST /im/bindings/pair 中配对码生成逻辑是 Task 8.1 内联实现，Task 8.3 可提取到 IMBindingService 类并重构此路由
+
+### 遗留风险 / 未决事项
+- IMGateway._start_run() 通过 `from app.main import app` 懒导入获取 process_manager，测试环境需 mock
+- Task 8.2 企微适配器需要 XML 解密（需要 pycryptodome 或类似库，requirements.txt 待更新）
+- IMGateway.start_all() 从 DB 查 im_channel_configs，若 DB 尚未初始化会静默跳过（非错误）
+
+### Commit
+- `f9d8e3f` — `feat(v4): IMAdapter abstraction + IMGateway routing + Webhook idempotency (ADR-070/071) — DOC-08 Task 8.1`
+
+---
+
 ## 2026-04-19 -- DOC-07 Task 7.4 COMPLETED + DOC-07 完整收官 4/4 (subprocess 调度 + coordinator_recovery + alert_dispatcher)
 
 ### 本次 session 做了什么
