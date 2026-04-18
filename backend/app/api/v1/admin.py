@@ -1,20 +1,28 @@
 """
-Prism v2 — Admin API Endpoints (DOC-06 Task 6.2)
+Prism v2 — Admin API Endpoints (DOC-06 Task 6.2 + DOC-09 Task 9.3)
 
-All routes require the 'admin' role (via require_admin dependency).
+All routes require the 'admin' role (via require_admin dependency at router
+level — ADR-059 / ADR-083).
 
 Routes (all under /api/v1):
-  GET    /admin/users              — paginated user list
-  PATCH  /admin/users/{user_id}    — update user role (cannot demote self)
-  POST   /admin/invite-codes       — generate a new invite code
-  GET    /admin/invite-codes       — list all invite codes
-  DELETE /admin/invite-codes/{id}  — revoke an invite code
-  GET    /admin/usage              — global usage statistics
-  GET    /admin/audit-logs         — paginated audit log query
+  GET    /admin/users                    — paginated user list with search
+  PATCH  /admin/users/{user_id}/role     — change user role (ADR-083 last-admin guard)
+  DELETE /admin/users/{user_id}          — disable user (ADR-083 no-self guard)
+  POST   /admin/invite-codes             — generate a new invite code
+  GET    /admin/invite-codes             — list all invite codes
+  DELETE /admin/invite-codes/{id}        — revoke an invite code
+  GET    /admin/usage                    — global usage statistics (legacy)
+  GET    /admin/audit-logs               — paginated audit log query (ADR-084)
+  GET    /admin/audit-logs/export        — export audit logs (CSV)
+  GET    /admin/stats/dashboard          — system stats dashboard (ADR-085)
 
-ADR-059: Admin endpoints are guarded at router level using FastAPI
-         router-level dependencies so every route inherits require_admin
-         without repeating the dependency in each function signature.
+ADR-083: Admin permission boundaries
+  1. Cannot demote the last admin (409)
+  2. Cannot disable yourself (409)
+
+ADR-084: audit-logs action param supports prefix matching (harness. etc.)
+
+ADR-085: stats/dashboard returns SystemStatsResponse via AdminStatsService
 """
 from __future__ import annotations
 
@@ -22,18 +30,22 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_admin
+from app.core.dependencies import get_current_user, get_redis, get_settings_dep, require_admin
 from app.models.audit import AuditLog
 from app.models.run import Run
 from app.models.user import User, InviteCode
+from app.schemas.admin import SystemStatsResponse
+from app.schemas.audit import AuditLogQuery, AuditLogResponse
 from app.schemas.common import ApiResponse, PagedResponse
 from app.schemas.invite import CreateInviteCodeRequest, InviteCodeResponse
 from app.schemas.user import UpdateUserRoleRequest, UserListResponse
+from app.services.admin_stats_service import AdminStatsService
+from app.services.audit_service import AuditService
 from app.services.invite_service import InviteService
 
 logger = logging.getLogger(__name__)
@@ -63,46 +75,71 @@ def _user_to_response(user: User) -> UserListResponse:
 
 
 # ---------------------------------------------------------------------------
-# GET /admin/users
+# GET /admin/users  (v4: pagination + search)
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users", response_model=ApiResponse[list[UserListResponse]])
+@router.get("/users", response_model=ApiResponse[PagedResponse[UserListResponse]])
 def list_users(
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[list[UserListResponse]]:
-    """Return all users ordered by creation date (newest first).
+    page: int = Query(default=1, ge=1, description="1-based page number"),
+    page_size: int = Query(default=50, ge=1, le=200, description="Max 200 per page"),
+    search: Optional[str] = Query(
+        default=None,
+        description="Partial match on email or username (case-insensitive)",
+    ),
+) -> ApiResponse[PagedResponse[UserListResponse]]:
+    """Return paginated users, optionally filtered by email/username search.
 
-    Admin-only. Returns full user list without pagination for Phase 1
-    (user counts are expected to be small in self-hosted deployments).
+    Admin-only.
     """
-    users = db.query(User).order_by(User.created_at.desc()).all()
-    return ApiResponse(data=[_user_to_response(u) for u in users])
+    q = db.query(User)
+    if search:
+        q = q.filter(
+            or_(
+                User.email.ilike(f"%{search}%"),
+                User.username.ilike(f"%{search}%"),
+            )
+        )
+
+    total: int = q.count()
+    rows = (
+        q.order_by(User.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return ApiResponse(
+        data=PagedResponse.from_query(
+            items=[_user_to_response(u) for u in rows],
+            total=total,
+            page=page,
+            per_page=page_size,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
-# PATCH /admin/users/{user_id}
+# PATCH /admin/users/{user_id}/role  (v4: last-admin guard ADR-083)
 # ---------------------------------------------------------------------------
 
 
 @router.patch(
-    "/users/{user_id}",
+    "/users/{user_id}/role",
     response_model=ApiResponse[UserListResponse],
 )
-def update_user_role(
+def change_user_role(
     user_id: str,
     data: UpdateUserRoleRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[UserListResponse]:
-    """Update a user's role (admin ↔ user).
+    """Change a user's role.
 
-    Self-demotion is blocked: an admin cannot change their own role to
-    prevent accidentally locking out all admins.
-
-    Error codes:
-      - 400: attempting to modify own role
-      - 404: user not found
+    ADR-083 guards:
+    - Cannot modify own role (400)
+    - Cannot demote the last remaining active admin (409)
     """
     if user_id == str(current_user.id):
         raise HTTPException(
@@ -116,6 +153,19 @@ def update_user_role(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+
+    # ADR-083: last-admin guard
+    if target.role == "admin" and data.role != "admin":
+        admin_count = (
+            db.query(User)
+            .filter(User.role == "admin", User.is_active.is_(True))
+            .count()
+        )
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot demote the last admin",
+            )
 
     old_role = target.role
     target.role = data.role
@@ -132,6 +182,68 @@ def update_user_role(
     )
 
     return ApiResponse(data=_user_to_response(target))
+
+
+# ---------------------------------------------------------------------------
+# Legacy PATCH /admin/users/{user_id} (kept for backward-compat — Task 6.2)
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/users/{user_id}",
+    response_model=ApiResponse[UserListResponse],
+    deprecated=True,
+    summary="[Deprecated] Use PATCH /admin/users/{user_id}/role instead",
+)
+def update_user_role(
+    user_id: str,
+    data: UpdateUserRoleRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[UserListResponse]:
+    """Kept for backward-compatibility.  Delegates to change_user_role logic."""
+    return change_user_role(user_id, data, current_user, db)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /admin/users/{user_id}  (v4: soft disable + no-self guard ADR-083)
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def disable_user(
+    user_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    """Soft-disable a user (set is_active = False).
+
+    ADR-083: cannot disable yourself (409).
+    Raises 404 if user not found.
+    """
+    if str(current_user.id) == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot disable yourself",
+        )
+
+    target = db.get(User, user_id)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    target.is_active = False  # type: ignore[attr-defined]
+    db.commit()
+
+    logger.info(
+        "admin.user.disabled",
+        extra={
+            "admin_id": str(current_user.id),
+            "target_user_id": user_id,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +329,7 @@ def revoke_invite_code(
 
 
 # ---------------------------------------------------------------------------
-# GET /admin/usage
+# GET /admin/usage  (legacy global usage stats)
 # ---------------------------------------------------------------------------
 
 
@@ -298,11 +410,11 @@ def get_usage(
 
 
 # ---------------------------------------------------------------------------
-# GET /admin/audit-logs
+# GET /admin/audit-logs  (v4: severity + time range filters, ADR-084)
 # ---------------------------------------------------------------------------
 
 
-@router.get("/audit-logs", response_model=ApiResponse[PagedResponse[dict]])
+@router.get("/audit-logs", response_model=ApiResponse[PagedResponse[AuditLogResponse]])
 def get_audit_logs(
     db: Annotated[Session, Depends(get_db)],
     action: Optional[str] = Query(
@@ -310,39 +422,51 @@ def get_audit_logs(
         description="Prefix filter, e.g. 'harness.' to get all harness events",
     ),
     user_id: Optional[str] = Query(default=None, description="Filter by user_id"),
+    severity: Optional[str] = Query(
+        default=None, description="Filter by severity (info/warning/error/critical)"
+    ),
+    start_time: Optional[datetime] = Query(
+        default=None, description="Lower bound on created_at"
+    ),
+    end_time: Optional[datetime] = Query(
+        default=None, description="Upper bound on created_at"
+    ),
     page: int = Query(default=1, ge=1),
-    per_page: int = Query(default=50, ge=1, le=200),
-) -> ApiResponse[PagedResponse[dict]]:
-    """Return paginated audit logs with optional filters.
+    page_size: int = Query(default=50, ge=1, le=200),
+) -> ApiResponse[PagedResponse[AuditLogResponse]]:
+    """Return paginated audit logs with optional filters (ADR-084).
 
     Supports:
       - action prefix filter (LIKE 'harness.%')
       - user_id exact filter
-      - page / per_page pagination
+      - severity filter (against details->>'severity')
+      - start_time / end_time range filter
+      - page / page_size pagination
     """
-    query = db.query(AuditLog).order_by(AuditLog.created_at.desc())
-
-    if action:
-        query = query.filter(AuditLog.action.like(f"{action}%"))
-
-    if user_id:
-        query = query.filter(AuditLog.user_id == user_id)
-
-    total: int = query.count()
-    offset = (page - 1) * per_page
-    rows = query.offset(offset).limit(per_page).all()
+    q = AuditLogQuery(
+        action=action,
+        user_id=user_id,
+        severity=severity,
+        start_time=start_time,
+        end_time=end_time,
+        page=page,
+        page_size=page_size,
+    )
+    svc = AuditService(db)
+    rows, total = svc.query(q)
 
     items = [
-        {
-            "id": str(log.id),
-            "user_id": str(log.user_id) if log.user_id else None,
-            "action": log.action,
-            "resource_type": log.resource_type,
-            "resource_id": str(log.resource_id) if log.resource_id else None,
-            "details": log.details,
-            "ip_address": log.ip_address,
-            "created_at": log.created_at.isoformat(),
-        }
+        AuditLogResponse(
+            id=str(log.id),
+            user_id=str(log.user_id) if log.user_id else None,
+            action=log.action,
+            resource_type=log.resource_type,
+            resource_id=str(log.resource_id) if log.resource_id else None,
+            severity=(log.details or {}).get("severity", "info"),
+            details=log.details or {},
+            ip_address=log.ip_address,
+            created_at=log.created_at,
+        )
         for log in rows
     ]
 
@@ -350,7 +474,79 @@ def get_audit_logs(
         data=PagedResponse.from_query(
             items=items,
             total=total,
-            page=page,
-            per_page=per_page,
+            page=q.page,
+            per_page=q.page_size,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/audit-logs/export  (CSV only in Phase 1)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/audit-logs/export")
+def export_audit_logs(
+    db: Annotated[Session, Depends(get_db)],
+    fmt: str = Query(
+        default="csv",
+        alias="format",
+        description="Export format: 'csv' (only csv supported in Phase 1)",
+    ),
+    action: Optional[str] = Query(default=None),
+    user_id: Optional[str] = Query(default=None),
+    severity: Optional[str] = Query(default=None),
+    start_time: Optional[datetime] = Query(default=None),
+    end_time: Optional[datetime] = Query(default=None),
+) -> Response:
+    """Export audit logs as CSV (max 10 000 rows).
+
+    Raises 400 if result set exceeds 10 000 rows — narrow the filter.
+    """
+    if fmt != "csv":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only 'csv' format is supported in Phase 1",
+        )
+
+    q = AuditLogQuery(
+        action=action,
+        user_id=user_id,
+        severity=severity,
+        start_time=start_time,
+        end_time=end_time,
+        page=1,
+        page_size=200,  # page_size used for count only; export uses its own limit
+    )
+    svc = AuditService(db)
+    content = svc.export_csv(q)
+
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="audit_logs.csv"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/stats/dashboard  (ADR-085)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/stats/dashboard", response_model=SystemStatsResponse)
+async def get_dashboard(
+    db: Annotated[Session, Depends(get_db)],
+    redis_client=Depends(get_redis),
+    settings=Depends(get_settings_dep),
+) -> SystemStatsResponse:
+    """Return system-wide statistics for the admin dashboard (ADR-085).
+
+    Includes:
+      - 24h / 7d runs and cost
+      - estimated cache savings (7d)
+      - harness event distribution (24h)
+      - active session / user counts
+      - component health (Redis, PostgreSQL, Providers)
+    """
+    svc = AdminStatsService(db, redis_client, settings)
+    return await svc.get_dashboard()

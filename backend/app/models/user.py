@@ -47,6 +47,10 @@ class User(Base, TimestampMixin):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # DOC-09 Task 9.3: soft-disable flag (ADR-083)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
     # Relationships (back-populated in child models)
     sessions: Mapped[list["Session"]] = relationship(
