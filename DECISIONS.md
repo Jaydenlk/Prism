@@ -1033,3 +1033,52 @@
 - **下游影响**: DOC-07 / DOC-09 Backend 端点写入 user_memories 表；PromptAssembler 后续读取
 
 > **最后更新**: 2026-04-18(DOC-03 Task 3.4 — Feedback Capture + HarnessRuntime + ADR-029/030)
+
+---
+
+## DOC-06 Task 6.1: 认证体系(三密钥 + SSE ticket)(ADR-056 / ADR-057 / ADR-058)
+
+## ADR-056: 三密钥独立 + 启动校验(DOC-06 Task 6.1 — 编号平移自 PRD ADR-050)
+- **来源**: PRD v4 DOC-06 Task 6.1 Part A ADR-050; CLAUDE.md 六原则 #5
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/core/security.py` — `validate_secrets(jwt_secret, encryption_key, callback_secret)` + AES-256-GCM encrypt/decrypt_value (均已在 Task 2.1 实施,本 Task 复用)
+  - `backend/app/main.py` — lifespan 首步 validate_secrets() fast fail (Task 2.1 已就绪,本 Task 在步骤 5 追加 ensure_admin 调用)
+  - `backend/app/core/config.py` — JWT_SECRET / ENCRYPTION_KEY / CALLBACK_SECRET 三个必填字段 + SSE_TICKET_TTL_SECONDS=60 (Task 2.1 已就绪)
+  - `.env.example` — 三密钥独立注释(Task 2.1 已就绪)
+- **实施 commit**: 1526438
+- **偏离点**: ADR 原编号 ADR-050 已被 DOC-05 Task 5.4(PluginHost)占用,平移到 ADR-056。核心实现已在 Task 2.1 完成,本 Task 无需重复实现,直接复用。
+- **验证结果**: validate_secrets 四场景(短密钥/两两碰撞/三者碰撞/合法)全 PASS
+- **下游影响**: DOC-07 Task 7.3 SSE Manager 使用 SSETicketService.verify_and_consume()
+
+## ADR-057: SSE ticket 替代 URL query JWT(DOC-06 Task 6.1 — 编号平移自 PRD ADR-051)
+- **来源**: PRD v4 DOC-06 Task 6.1 Part A ADR-051; CLAUDE.md 陷阱 #4
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/services/sse_ticket_service.py` — SSETicketService: generate_ticket(SETEX sse_ticket:{uuid} 60s) / verify_and_consume(GETDEL 原子消费)
+  - `backend/app/api/v1/auth.py` — POST /auth/sse-ticket 端点: 校验 session 归属 → SSETicketService.generate_ticket()
+- **实施 commit**: 1526438
+- **偏离点**: ADR 原编号 ADR-051 已被 DOC-05 Task 5.5(Skills Registry)占用,平移到 ADR-057。SSE ticket 端点在 Redis 未初始化时返回 503(DOC-07 Task 7.3 完成后可用)。
+- **验证结果**:
+  - generate_ticket 返回 {ticket(uuid4), expires_at(ISO-8601)} PASS
+  - verify_and_consume 正常消费返回 user_id PASS
+  - 重放攻击(GETDEL 后再次 verify) → 401 PASS
+  - session_id 不匹配 → 403 PASS
+  - Redis key 格式 sse_ticket:{ticket} + SETEX 60s PASS
+- **下游影响**: DOC-07 Task 7.3 SSE Manager 的 stream endpoint 使用 verify_and_consume() 原子消费
+
+## ADR-058: Refresh token HttpOnly cookie — 无 DB 存储(DOC-06 Task 6.1 — 编号平移自 PRD ADR-052)
+- **来源**: PRD v4 DOC-06 Task 6.1 Part A ADR-052
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/api/v1/auth.py` — _set_refresh_cookie(): httponly=True, secure=True, samesite="lax", path="/api/v1/auth", max_age=7*24*3600; POST /auth/login + POST /auth/register 均调用; POST /auth/logout delete_cookie
+  - `backend/app/services/auth_service.py` — AuthService.refresh() 验证 refresh JWT type=="refresh" → 签发新 access token(无 DB 记录)
+- **实施 commit**: 1526438
+- **偏离点**: ADR 原编号 ADR-052 已被 DOC-05 Task 5.6(Agent Tool 搜索权限)占用,平移到 ADR-058。Phase 1 不实现 token blacklist(PRD 明确 Phase 1 不需要)。
+- **验证结果**:
+  - refresh cookie 属性: httponly=True, secure=True, samesite=lax, path=/api/v1/auth PASS
+  - AuthService.refresh() 拒绝 access token 类型的 refresh 请求 → 401 PASS
+  - get_current_user 拒绝 refresh token 作为 Bearer → 401 PASS
+- **下游影响**: 前端 useSSE hook(DOC-10 Task 10.2)的 credential=include fetch 选项依赖此 cookie
+
+> **最后更新**: 2026-04-19(DOC-06 Task 6.1 — 认证体系 JWT+SSE ticket + ADR-056/057/058)

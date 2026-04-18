@@ -73,7 +73,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-06 Task 6.1: 认证体系(三密钥 + SSE ticket) | pending | — | — | — | — |
+| DOC-06 Task 6.1: 认证体系(三密钥 + SSE ticket) | completed | 2026-04-19 | 2026-04-19 | 1526438 | 5新文件+3修改: schemas/auth.py(6 schema); services/auth_service.py(AuthService 4方法+AuditLog); services/user_service.py(3查询+update); services/sse_ticket_service.py(SETEX/GETDEL ADR-057); api/v1/auth.py(6路由 ADR-058 HttpOnly cookie); dependencies.py 追加 type==access 校验; main.py 追加 ensure_admin; api/v1/__init__ 挂载 auth_router; ADR-056/057/058 落地; 全部15项验证PASS |
 | DOC-06 Task 6.2: 用户管理 + 邀请码 | pending | — | — | — | — |
 
 ### DOC-07: Session-Run-Task(4 Task)
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 22
+- **已完成**: 23
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 29
+- **pending**: 28
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-05 Task 5.7 完成: CC 兼容层 + ConversionReport + ADR-054/055；DOC-05 全部 7/7 Task 完整收官）
-> **下一个动作**: DOC-06 Task 6.1 — 认证体系（三密钥 + SSE ticket），ADR 须从 ADR-056 起编号
+> **最后更新**: 2026-04-19（DOC-06 Task 6.1 完成: 认证体系 JWT+SSE ticket + ADR-056/057/058；23/51 Task 完成）
+> **下一个动作**: DOC-06 Task 6.2 — 用户管理 + 邀请码管理 + Admin API

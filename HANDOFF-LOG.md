@@ -35,6 +35,55 @@
 
 ---
 
+## 2026-04-19 -- DOC-06 Task 6.1 completed (认证体系 JWT+SSE ticket + ADR-056/057/058)
+
+### 本次 session 做了什么
+- 新建 backend/app/schemas/auth.py — RegisterRequest(邮箱/用户名/密码/邀请码校验) + LoginRequest + SSETicketRequest + TokenResponse + RefreshResponse + UserResponse(from_attributes=True)
+- 新建 backend/app/services/user_service.py — UserService: get_by_id / get_by_email / get_by_username / update(**kwargs)
+- 新建 backend/app/services/auth_service.py — AuthService: register(邀请码校验 → 创建用户 → 消耗邀请码 → AuditLog + token) / login(verify_password → last_login_at → AuditLog + token) / refresh(decode_token type==refresh → 新 access token) / ensure_admin(幂等 admin 创建); _write_audit 内部辅助
+- 新建 backend/app/services/sse_ticket_service.py — SSETicketService: generate_ticket(SETEX sse_ticket:{uuid4} 60s {user_id,session_id}) / verify_and_consume(GETDEL 原子 → 401 on expired / 403 on session_id mismatch) — ADR-057
+- 新建 backend/app/api/v1/auth.py — 6 路由: POST /auth/register(201) / POST /auth/login / POST /auth/refresh(cookie) / POST /auth/logout(delete cookie) / GET /auth/me / POST /auth/sse-ticket(ADR-051/057); _set_refresh_cookie(httponly=True secure=True samesite=lax path=/api/v1/auth ADR-058)
+- 修改 backend/app/api/v1/__init__.py — include auth_router, docstring 追加 auth 路由描述
+- 修改 backend/app/core/dependencies.py — get_current_user 追加 type=="access" 校验(拒绝 refresh token 作 Bearer)
+- 修改 backend/app/main.py — lifespan 步骤 5: ensure_admin() + db.commit()
+- ADR-056/057/058 落地 DECISIONS.md; PROGRESS.md 更新(Task 6.1 completed, 23/51)
+
+### 验证结果
+- Part B 验证步骤(全 15 项 PASS):
+  - py_compile × 5 文件(auth.py schemas / auth_service.py / user_service.py / sse_ticket_service.py / api/v1/auth.py) PASS
+  - validate_secrets 四场景(短密钥/碰撞/三者合法) PASS
+  - AES-256-GCM roundtrip + 错误 key 拒绝 + nonce 随机性 PASS
+  - JWT create_access_token/create_refresh_token/decode_token roundtrip PASS
+  - RegisterRequest 校验(3 errors for bad email/短用户名/短密码) PASS
+  - SSETicketService generate_ticket(uuid4 ticket + expires_at ISO-8601) PASS
+  - SSETicketService verify_and_consume 正常/重放 401/session 不匹配 403 PASS
+  - UserService 4 方法 + update(self, user_id, **kwargs) 签名 PASS
+  - 6 路由声明(register/login/refresh/logout/me/sse-ticket) PASS
+  - api_v1_router 挂载 /api/v1/auth/* 全路由 PASS
+  - get_current_user 拒绝 refresh token → 401 PASS
+  - refresh cookie: httponly=True, secure=True, samesite=lax PASS
+  - SSE ticket Redis key 前缀 sse_ticket: + setex + getdel PASS
+  - AuthService.refresh() 拒绝 access token 类型 → 401 PASS
+  - ensure_admin 源码 role=admin + 幂等检查 + 4 方法完整 PASS
+- 质量门 10 项: PASS
+
+### 下一个 Task 需要注意
+- DOC-06 Task 6.2 继续实现: schemas/invite.py + schemas/user.py + services/invite_service.py + api/v1/admin.py(7 Admin 端点)
+- InviteCode.created_by 在 ORM 层无 FK(模型注释"No ON DELETE CASCADE 意图"),admin.py 需注意直接 sql query,不依赖 relationship
+- SSE ticket 的 verify_and_consume() 由 DOC-07 Task 7.3 SSE Manager 调用(stream endpoint 收到 ?ticket= 时原子消费)
+- ensure_admin() 已在 main.py lifespan 步骤 5 调用;DOC-07 不需要再次添加
+- get_redis() 目前返回 NotImplementedError;SSE ticket 端点在 Redis 未初始化时返回 503(预期行为)
+
+### 遗留风险 / 未决事项
+- SSE ticket 端点依赖 Redis;在 DOC-07 Task 7.3 完成 get_redis() 实现前,该端点返回 503
+- Phase 1 不实现 refresh token blacklist;登出后 access token 在 15min 内仍有效(PRD 明确接受)
+- InviteCode ORM relationship User.invite_codes 因 FK 缺失无法在内存 SQLAlchemy 图中 traverse(仅影响测试 mock;生产 DB 层 FK 由 Alembic migration 保证)
+
+### Commit
+- `1526438` — `feat(v4): Auth system (JWT login/register/refresh + SSE ticket) — DOC-06 Task 6.1`
+
+---
+
 ## 2026-04-19 -- DOC-05 Task 5.7 completed + DOC-05 DONE checkpoint (CC 兼容层 + ADR-054/055)
 
 ### 本次 session 做了什么
