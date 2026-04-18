@@ -33,6 +33,47 @@
 
 ## 日志记录(最新在顶)
 
+## 2026-04-18 22:30 — DOC-02 Task 2.1 completed(18 表 ORM + Alembic 迁移)
+
+### 本次 session 做了什么
+- 创建 `backend/app/core/database.py`: SQLAlchemy engine + SessionLocal + get_db() dependency
+- 创建 `backend/app/core/dependencies.py`: get_db / get_redis(NotImplementedError) / get_current_user / require_admin
+- 创建 `backend/app/schemas/common.py`: ApiResponse[T] / ErrorDetail / ErrorResponse / PagedResponse[T] (Pydantic v2)
+- 创建 18 个 ORM 模型文件(13 基础 + 5 v4 新增): user, invite_codes, sessions, session_queue_items, runs, messages, tool_executions, providers, mcp_servers, user_mcp_installs, im_bindings, im_channel_configs, audit_logs, skill_installs, coordinator_plans, permission_requests, im_message_dedup, user_memories
+- 创建 `backend/app/models/__init__.py` 聚合导入所有 18 张表
+- 创建 `backend/alembic.ini` + `backend/alembic/env.py` + `backend/alembic/versions/001_initial_tables.py` 手写迁移(331 行 DDL)
+- 提交 blocker.md: PRD 标题"19 张表"但 §4.2 实际定义 18 张,以 DOC-01 §4.2 为真相源实施 18 张
+
+### 验证结果
+- `from app.models import *`: 18 张表全部导入,0 错误 — PASS
+- `alembic upgrade head --sql` DDL 静态检查: 所有关键约束存在 — PASS
+  - providers CHECK (scope/user_id 互斥)
+  - im_bindings UNIQUE (channel, platform_user_id, platform_chat_id) 三元组
+  - runs: cache_hit_tokens / cache_creation_tokens / harness_summary 字段
+  - messages: is_skill_context / skill_name 字段
+  - tool_executions: permission_decision / hook_modified 字段
+- 所有 Python 文件语法检查: py_compile PASS
+- 注: 未实测 DB (docker 未启动),仅 DDL 静态检查
+
+### 下一个 Task 需要注意 — DOC-02 Task 2.2 (双协议 Driver)
+- **ADR-关键注意点**:
+  1. `sessions.blocking_run_id` 是 SET NULL FK,子进程完成时必须清空此字段
+  2. `messages.sequence_no` 严禁 max+1(ADR-060),DOC-07 Task 7.2 实现 per-session 序列或 advisory_xact_lock
+  3. `providers` 表 `api_key_encrypted` 字段要求 AES-256-GCM(使用 `ENCRYPTION_KEY`),Task 2.3 实现时直接调用 `app.core.security.encrypt_value()`
+  4. `providers.config` JSONB 必须包含 `capabilities` 子对象,这是应用层校验(非 DB CHECK),Task 2.3 需要在 service 层做
+  5. Task 2.2 的 PrismMessage 对应 `messages.content` JSONB — role 只有 'user'/'assistant' 两种(DOC-01 v4 §5),tool_result 作为 user message 的 content block 存储
+  6. `get_redis()` 在 dependencies.py 返回 NotImplementedError,DOC-03 Task 3.1 需要填充真实实现
+
+### 遗留风险 / 未决事项
+- PRD "19 张表"计数与实际 §4.2 定义 18 张的矛盾:已记录 blocker.md,待人工确认是否有漏掉的第 19 张表
+- `ddl_static_check.sql` 已提交到仓库可供审查;删除或保留由下一个 session 决定
+- Docker 实测未进行(需 .env 实体文件 + docker compose up)
+
+### Commit
+- `1e8ac83` — `feat: 18-table ORM + alembic initial migration (DOC-02 Task 2.1 complete)`
+
+---
+
 ## 2026-04-18 20:10 — DOC-02 Task 2.1 in_progress(骨架 + 最小 FastAPI)
 
 ### 本次 session 做了什么

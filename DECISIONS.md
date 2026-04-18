@@ -70,7 +70,7 @@
   - `backend/alembic.ini` — Alembic config
   - `backend/alembic/env.py` — env.py reading Base.metadata
   - `backend/alembic/versions/001_initial_tables.py` — hand-written migration (18 tables + all indexes + constraints)
-- **实施 commit**: TBD
+- **实施 commit**: 1e8ac83
 - **偏离点**:
   1. PRD heading says "19 张表" but §4.2 defines only 18 unique tables (13 base + 5 v4-new). See `blocker.md` for full analysis. Implemented exactly what §4.2 defines (18 tables).
   2. `uuid7` pip package installs as Python module `uuid_extensions` (not `uuid7`). Used `from uuid_extensions import uuid7` in base.py. requirements.txt retains `uuid7>=0.1.0` (correct pip name).
@@ -90,7 +90,7 @@
 - **来源**: DOC-01 v4 §5 PrismMessage 结构; 任务指令明确要求
 - **实施状态**: ✅ 2026-04-18
 - **落地位置**: `backend/app/models/message.py` — `is_skill_context: Mapped[bool]` + `skill_name: Mapped[str | None]`
-- **实施 commit**: TBD
+- **实施 commit**: 1e8ac83
 - **偏离点**: 无。字段按 DOC-01 v4 §5 定义精确添加,与 PrismMessage dataclass 字段对齐。
 - **验证结果**: DDL 包含 `is_skill_context BOOLEAN DEFAULT 'false' NOT NULL, skill_name VARCHAR(200)`
 - **下游影响**: DOC-03 Task 3.5 Compaction Engine 使用 `is_skill_context` 优先保留 Skill 注入的上下文消息

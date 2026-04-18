@@ -23,7 +23,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | completed | 2026-04-18 | 2026-04-18 | TBD | Phase 1: 骨架 commit 5c689df; Phase 2: 18 表 ORM + alembic migration — DDL 静态验证 PASS |
+| DOC-02 Task 2.1: 项目骨架 + 最小 FastAPI | completed | 2026-04-18 | 2026-04-18 | 1e8ac83 | Phase 1: 5c689df 骨架; Phase 2: 1e8ac83 18 表 ORM + alembic migration — DDL 静态验证 PASS |
 
 ---
 
