@@ -36,7 +36,7 @@
 
 | Task | Status | Started | Completed | Commit | Session Notes |
 |---|---|---|---|---|---|
-| DOC-03 Task 3.1: TAOR 主循环 + ToolExecutionPipeline | pending | — | — | — | — |
+| DOC-03 Task 3.1: TAOR 主循环 + ToolExecutionPipeline | completed | 2026-04-18 | 2026-04-18 | TBD | executor/tools/{base,registry,pipeline,builtin}; executor/callbacks/backend_callback; executor/engine/{query_engine,token_estimator_adapter}; executor/observability/metrics; executor/__main__ — 全部 10 项验证 PASS; ADR-020/021/022/023/024 落地 |
 | DOC-03 Task 3.2: Middleware Pipeline(4 钩点) | pending | — | — | — | — |
 | DOC-03 Task 3.3: Hook System + Permission Engine | pending | — | — | — | — |
 | DOC-03 Task 3.4: Guardrails + Feedback Loop | pending | — | — | — | — |
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 4(DOC-02 Task 2.1, DOC-02 Task 2.2, DOC-02 Task 2.3, DOC-02 Task 2.4)
+- **已完成**: 5(DOC-02 Task 2.1, DOC-02 Task 2.2, DOC-02 Task 2.3, DOC-02 Task 2.4, DOC-03 Task 3.1)
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 47
+- **pending**: 46
 
 ---
 
-> **最后更新**: 2026-04-18(DOC-02 Task 2.4 完成: Prompt 动态装配引擎; **DOC-02 完整收官**)
-> **下一个动作**: DOC-03 Task 3.1 — TAOR 主循环 + ToolExecutionPipeline
+> **最后更新**: 2026-04-18(DOC-03 Task 3.1 完成: TAOR 主循环 + ToolExecutionPipeline + 双通道回调 + 心跳)
+> **下一个动作**: DOC-03 Task 3.2 — Middleware Pipeline (4 钩点)

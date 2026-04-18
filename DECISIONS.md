@@ -253,10 +253,64 @@
 
 ---
 
-## Phase 1: Agent 核心(待实施)
+## Phase 1: Agent 核心(DOC-03 Task 3.1 落地)
 
-> Phase 1 的 ADR 在对应 Task 实施时按模板追加到此处。
-> 首个待实施: ADR-020(Harness 单实例,见 DOC-03 Task 3.1)
+## ADR-020: Harness 单实例 — Backend 不持有 Harness 对象(DOC-03 Task 3.1)
+- **来源**: PRD v4 DOC-03 Task 3.1 Part A §设计决策; Batch 2 §A3-1, Master M1
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/engine/query_engine.py` — QueryEngine 只在 executor 子进程内实例化
+  - `executor/__main__.py` — 主入口，Backend 通过 subprocess 启动（不 import Harness）
+  - `executor/` 全目录 — 无任何 `from backend.app.*` import（Grep 验证 PASS）
+- **实施 commit**: TBD
+- **偏离点**: 无。进程边界严格执行：executor 侧不 import backend.app.*；backend 侧不持有 Harness 实例。
+- **验证结果**: Grep 无 `from backend.app` in executor/ PASS
+- **下游影响**: DOC-07 Task 7.4 子进程调度需通过命令行参数（--run-id / --callback-url 等）注入配置，不能共享 Python 对象
+
+## ADR-021: 工具并行 gather(DOC-03 Task 3.1)
+- **来源**: PRD v4 DOC-03 Task 3.1 Part A; PDF 补丁, Batch 2 §A3-1
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/engine/query_engine.py` — `_execute_tools()`: `asyncio.gather(*tool_coros, return_exceptions=True)`
+  - `executor/engine/query_engine.py` — `_execute_single_tool()`: 单工具执行，Pipeline 透传 run_context
+- **实施 commit**: TBD
+- **偏离点**: Phase 1 保守实现"全部并行"（无依赖声明检测）。DOC-04 Coordinator 模式下可精细化 `{{tool_result:X}}` 占位符依赖分析。结果按 block 顺序收集为单条 user message（canonical Anthropic 语义）。
+- **验证结果**: 3×5s 工具并行总耗时 5.02s < 7s 断言 PASS
+- **下游影响**: DOC-04 Task 4.3 Coordinator 实现细粒度依赖分析；Task 3.3 Hook/Permission 通过 run_context 参数接入
+
+## ADR-022: Redis 直通 — text_delta/tool_use_delta 走 Redis PUBLISH(DOC-03 Task 3.1)
+- **来源**: PRD v4 DOC-03 Task 3.1 Part A; Master M2, Batch 1 §3.3 D3; CLAUDE.md 陷阱 #1
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/callbacks/backend_callback.py` — `text_delta()` / `tool_use_delta()` 走 `redis.publish("run:{run_id}:stream", ...)`
+  - `executor/engine/query_engine.py` — `_ADAPTERS_WITH_PASSTHROUGH` frozenset 判断；Driver 已做直通则 no-op（不 double-publish）
+- **实施 commit**: TBD
+- **偏离点**: ProviderCapabilities 未添加 `redis_passthrough` 字段（避免改 Task 2.2 产物）。改为 QueryEngine 内 `_ADAPTERS_WITH_PASSTHROUGH = frozenset(["AnthropicDriver", "OpenAIDriver"])` 判断，通过 `type(self._adapter).__name__` 比较。语义等价，未来第三方 Adapter 只需从 frozenset 移除。
+- **验证结果**: Redis PUBLISH mock 测试 PASS（channel=`run:test-run:stream`, payload type=text_delta）
+- **下游影响**: DOC-07 Task 7.3 Backend SSE Manager 订阅 `run:{run_id}:stream` channel 并 forward 给前端
+
+## ADR-023: 心跳机制 — 子进程每 5s SETEX harness:heartbeat:*(DOC-03 Task 3.1)
+- **来源**: PRD v4 DOC-03 Task 3.1 Part A; Batch 2 §B-2, Batch 3 B3-2
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/__main__.py` — `heartbeat_writer(run_id, redis_url, stop_event)` 协程 + `asyncio.create_task()` 启动
+  - `executor/__main__.py` — HEARTBEAT_INTERVAL=5s, HEARTBEAT_TTL=60s（环境变量可覆盖）
+  - `executor/__main__.py` — finally 块 DELETE key + aclose redis（graceful stop）
+- **实施 commit**: TBD
+- **偏离点**: 无。key 命名精确 `harness:heartbeat:{run_id}`，TTL=60，值=Unix 时间戳字符串。stop_event 触发后 finally 块优雅清理。
+- **验证结果**: mock 测试 PASS（SETEX 多次调用，key/TTL 正确；stop 后 DELETE 被调用）
+- **下游影响**: DOC-07 Task 7.3 Backend HeartbeatMonitor 每 10s SCAN `harness:heartbeat:*`，超 30s 无更新标记 Run crashed
+
+## ADR-024: MAX_TURNS 按 agent_type 分档(DOC-03 Task 3.1)
+- **来源**: PRD v4 DOC-03 Task 3.1 Part A; Batch 2 §A3-1, PDF 补丁
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/__main__.py` — `MAX_TURNS_BY_AGENT_TYPE = {"chat":50,"explore":30,"build":100,"coordinator":200,"verifier":20,"plugin_builder":40}`
+  - `executor/engine/query_engine.py` — `run()` 开头 `if self._turn_count >= self._max_turns: await callback.run_error(...)`
+- **实施 commit**: TBD
+- **偏离点**: 无。6 档精确对齐 PRD。默认兜底值 50（`MAX_TURNS_BY_AGENT_TYPE.get(agent_type, 50)`）。
+- **验证结果**: len(MAX_TURNS_BY_AGENT_TYPE)==6 且 6 键全部存在 PASS；值逐一断言 PASS
+- **下游影响**: DOC-04 Task 4.1 Agent 专业化时 agent_type 路由必须使用此常量；DOC-07 Task 7.4 subprocess 启动时通过 run.agent_type 查表
 
 ---
 
@@ -278,4 +332,4 @@
 
 ---
 
-> **最后更新**: 2026-04-18(DOC-02 Task 2.1 Phase 2 — 18 表 ORM + alembic + ADR-017)
+> **最后更新**: 2026-04-18(DOC-03 Task 3.1 — TAOR 主循环 + ToolExecutionPipeline + ADR-020~024)

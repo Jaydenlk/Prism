@@ -35,7 +35,51 @@
 
 ---
 
+## 2026-04-18 — DOC-03 Task 3.1 completed（TAOR 主循环 + ToolExecutionPipeline）
+
+### 本次 session 做了什么
+- 创建 `executor/tools/{base.py, registry.py, pipeline.py}` — BaseTool/ToolResult + ToolRegistry + ToolExecutionPipeline（7 步链路 + HARNESS_INTEGRATION_POINT 注释）
+- 创建 `executor/tools/builtin/{__init__.py, echo.py}` — EchoTool + register_builtin_tools()
+- 创建 `executor/callbacks/backend_callback.py` — 双通道：Redis PUBLISH 高频直通 + HTTP 3 次指数退避重试 + DLQ
+- 创建 `executor/engine/query_engine.py` — QueryEngine（TAOR while 循环 + asyncio.gather 并行工具 + _ADAPTERS_WITH_PASSTHROUGH 判断）+ RunContext dataclass + _block_to_dict helper
+- 创建 `executor/engine/token_estimator_adapter.py` — DriverTokenEstimator 包装 ModelAdapter.count_tokens()
+- 创建 `executor/observability/{__init__.py, metrics.py}` — 6 条 executor 专属 Prometheus metric（独立 Registry）
+- 更新 `executor/__main__.py` — MAX_TURNS_BY_AGENT_TYPE 6 档 + heartbeat_writer 协程 + main() 骨架（DB 集成占位 FROM_DB:）
+- 追加 `backend/requirements.txt` — jsonschema>=4.0.0
+- 追加 `backend/app/observability/metrics.py` — prism_tool_errors_total / prism_harness_turn_total / prism_callback_dlq_total
+
+### 验证结果
+- py_compile 全部 10 文件：PASS
+- 核心 imports + MAX_TURNS 6 键断言：PASS
+- Part B 验证 #3（Pipeline 注册/执行/not found/schema校验/截断）：PASS
+- Part B 验证 #4（3×5s 并行耗时 5.02s < 7s）：PASS
+- Redis PUBLISH mock 测试（channel/payload 断言）：PASS
+- HTTP 重试 + DLQ（3×500/200/401 三场景）：PASS
+- heartbeat_writer（SETEX 多次 + DELETE on stop）：PASS
+- TAOR dry-run（mock adapter 2 轮：tool_use + end_turn，turn_count=2，Echo: world in messages）：PASS
+- Grep 无 `from backend.app` in executor/：PASS
+- MAX_TURNS 6 键 + 值：PASS
+
+### 下一个 Task 需要注意 — DOC-03 Task 3.2（Middleware Pipeline 4 钩点）
+- **HARNESS_INTEGRATION_POINT 位置**：`executor/engine/query_engine.py` 中有 4 处注释标记（pre_turn 在 while 头部，post_turn 在 continue 前）；`executor/tools/pipeline.py` 中有 PreToolUse/PostToolUse 两处；Task 3.2 需在这 4 处注入 MiddlewarePipeline 调用
+- **MiddlewarePipeline 构造时机**：在 `executor/__main__.py` 的注释段（标注 "5. Harness Runtime"）中注入，需在 QueryEngine 实例化之前构造；QueryEngine.__init__ 预留了 `# HARNESS_INTEGRATION_POINT: middleware_pipeline 在 Task 3.2 注入` 注释，届时改为真实参数
+- **run_context 透传**：QueryEngine 已将 RunContext 透传到 pipeline.execute(run_context=self._run_context)，Task 3.2 的 MiddlewareContext 应从 run_context 取 run_id/session_id/user_id 三字段（不要重新定义）
+
+### 遗留风险 / 未决事项
+- `executor/__main__.py` 的 DB 集成部分（FROM_DB: 注释段）等待 DOC-07 Task 7.4 实现；当前 main() 启动后只初始化 callback + heartbeat 后即退出，不执行 run
+- DriverTokenEstimator.estimate() 调用 adapter.count_tokens()，若底层 tokenizer 同步阻塞可能影响 async 性能；DOC-12 Task 12.1 可改为 run_in_executor 包装
+
+### Commit
+- TBD（git commit 将在本条目补充 hash）
+
+---
+
 ## 🎯 DOC-02 DONE — 2026-04-18
+
+DOC-02 全部 4 Task 已完成收官。下一步应开始 **DOC-03 Task 3.1（TAOR 主循环 + ToolExecutionPipeline）**。
+
+### DOC-03 Task 3.1 开工必读文件清单
+1. `CLAUDE.md` — 六原则 + 10 陷阱（特别注意 #1 Redis 直通 / #2 回合组 / #3 工具并行 / #8 ask BLPOP）
 
 DOC-02 全部 4 Task 已完成收官。下一步应开始 **DOC-03 Task 3.1（TAOR 主循环 + ToolExecutionPipeline）**。
 

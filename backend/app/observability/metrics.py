@@ -175,3 +175,33 @@ prism_http_request_duration_seconds = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
     registry=REGISTRY,
 )
+
+# ---------------------------------------------------------------------------
+# 11. Harness tool errors (DOC-03 Task 3.1)
+# ---------------------------------------------------------------------------
+prism_tool_errors_total = Counter(
+    "prism_tool_errors_total",
+    "Total tool execution errors, labelled by tool_name and error_type.",
+    ["tool_name", "error_type"],
+    registry=REGISTRY,
+)
+
+# ---------------------------------------------------------------------------
+# 12. Harness TAOR turn counter (DOC-03 Task 3.1)
+# ---------------------------------------------------------------------------
+prism_harness_turn_total = Counter(
+    "prism_harness_turn_total",
+    "Total TAOR loop turns executed, labelled by agent_type and stop_reason.",
+    ["agent_type", "stop_reason"],
+    registry=REGISTRY,
+)
+
+# ---------------------------------------------------------------------------
+# 13. Callback dead-letter-queue (DOC-03 Task 3.1)
+# ---------------------------------------------------------------------------
+prism_callback_dlq_total = Counter(
+    "prism_callback_dlq_total",
+    "Total callback events that failed all retries and were pushed to the dead letter queue.",
+    ["event_type"],
+    registry=REGISTRY,
+)
