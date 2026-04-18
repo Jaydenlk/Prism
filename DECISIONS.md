@@ -544,7 +544,7 @@
 - **落地位置**:
   - `executor/router.py` — TaskRouter 类 + RouteDecision dataclass（mode/agent_type/reason 3字段）+ COORDINATOR_PATTERNS（11条，中英文）+ AGENT_TYPE_PATTERNS（4种：explore/planner/verifier/plugin_builder，含中英文关键词）+ AGENT_TYPE_ALIASES（3条别名：chat→general/research→explore/build→general）
   - `executor/__main__.py` — 追加 `from executor.router import TaskRouter` import + routing stub（commented，待 DOC-07 Task 7.4 DB 集成后激活）
-- **实施 commit**: TBD
+- **实施 commit**: f0c373e
 - **偏离点**:
   - ADR 编号从 PRD 原标 037 平移到 041（见 blocker.md 编号平移链；037 已被 DOC-04 Task 4.2 占用）
   - PRD Part B 验证步骤 line 1548 断言 `r.agent_type == 'research'`（PRD 内部笔误），实际 AGENT_TYPE_PATTERNS key 为 `"explore"`（Task 4.1 canonical type），验证断言修正为 `== 'explore'`；AGENT_TYPE_ALIASES 提供 research→explore 别名映射，通过 explicit_agent_type 路径规范化

@@ -58,7 +58,7 @@
 - RouteDecision.reason 写入 audit_logs 逻辑尚未实现(DOC-07 Task 7.3/7.4 负责)
 
 ### Commit
-- TBD(git commit 下一步执行)
+- `f0c373e` — `feat(v4): TaskRouter 6 agent_type + keyword routing — DOC-04 Task 4.4`
 
 ---
 
