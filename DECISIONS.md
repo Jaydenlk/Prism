@@ -332,4 +332,33 @@
 
 ---
 
-> **最后更新**: 2026-04-18(DOC-03 Task 3.1 — TAOR 主循环 + ToolExecutionPipeline + ADR-020~024)
+---
+
+## DOC-03 Task 3.2: Middleware Pipeline 4 钩点(ADR-025)
+
+## ADR-025: Middleware 4 钩点 — 可插拔治理逻辑与 TAOR 循环分离(DOC-03 Task 3.2)
+- **来源**: PRD v4 DOC-03 Task 3.2 Part A §设计决策; PDF 补丁, Batch 2 §A3-5
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/harness/middleware/base.py` — MiddlewareContext dataclass(12 字段全部有 default，兼容短构造) + TurnContext 别名 + Middleware ABC(4 no-op 钩点方法)
+  - `executor/harness/middleware/pipeline.py` — MiddlewarePipeline.register() + run_pre_turn/run_pre_tool_use(短路) + run_post_tool_use/run_post_turn(不短路)
+  - `executor/harness/middleware/loop_detection.py` — LoopDetectionMiddleware: post_turn 检测 Redis list harness:loop:{run_id} 最近 N 轮 sha256 指纹，全同时 ctx.abort=True + callback.harness_event("loop_detected")
+  - `executor/harness/middleware/observability.py` — ObservabilityMiddleware: pre_turn 记录 monotonic 起始时间，post_turn 上报 callback.harness_event("turn_complete", {turn, duration_ms, tool_calls})
+  - `executor/harness/middleware/__init__.py` — 导出 6 个公共符号
+  - `executor/engine/query_engine.py` — RunContext 追加 agent_type 字段; QueryEngine.__init__ 新增 middleware_pipeline/agent_type 参数; run() 注入 pre_turn/post_turn 钩点; _execute_single_tool() 注入 pre_tool_use/post_tool_use 钩点
+- **实施 commit**: e174ea5
+- **偏离点**:
+  1. Part B 示例中 `ctx.metadata` 实为笔误，MiddlewareContext 字段名为 `custom_data`，以 base.py 定义为准。observability.py 使用 `ctx.custom_data.get("tool_call_count", 0)`。
+  2. pre_turn 构造 MiddlewareContext 时 system_prompt 传空字符串（system prompt 在 assembler.build() 调用后才可用），可在后续 Task 通过在 build() 后更新 ctx 优化。
+  3. LoopDetectionMiddleware 检测触发点改为 post_turn（不是 pre_tool_use），因为需要累积完整轮次数据后才能检测模式，符合 PRD Part A "在 post_turn 阶段检查" 语义。
+- **验证结果**: 全部 10 项验证 PASS
+  - py_compile 6 文件 PASS; 导入检查 PASS; TurnContext is MiddlewareContext PASS
+  - 正常 pipeline / abort 短路 PASS; pre_tool_use 短路 / post_tool_use 不短路 PASS
+  - LoopDetection mock Redis 3 轮相同触发 / 不同不触发 PASS
+  - Observability duration_ms > 0 + tool_calls 正确 PASS
+  - QueryEngine 集成 pre_turn×2 / post_turn×1 PASS; middleware=None 向后兼容 PASS
+  - _execute_single_tool abort → pipeline.execute 不调用 + ToolResultBlock(is_error=True) PASS
+  - grep no `from backend.app` in executor/harness/ PASS
+- **下游影响**: DOC-03 Task 3.3 Hook System + Permission Engine 将在 pipeline.py 的 PreToolUse/PostToolUse HARNESS_INTEGRATION_POINT（步骤 3/7）实现，与 Middleware 钩点独立；Task 3.3 的 permission ask 需用 Redis BLPOP（CLAUDE.md 陷阱 #8）
+
+> **最后更新**: 2026-04-18(DOC-03 Task 3.2 — Middleware Pipeline 4 钩点 + ADR-025)

@@ -35,6 +35,35 @@
 
 ---
 
+## 2026-04-18 — DOC-03 Task 3.2 completed（Middleware Pipeline 4 钩点）
+
+### 本次 session 做了什么
+- 创建 `executor/harness/middleware/base.py` — MiddlewareContext dataclass(12 字段全部有 default) + TurnContext 别名 + Middleware ABC(4 no-op 钩点)
+- 创建 `executor/harness/middleware/pipeline.py` — MiddlewarePipeline with run_pre_turn/run_pre_tool_use(短路) + run_post_tool_use/run_post_turn(不短路)
+- 创建 `executor/harness/middleware/loop_detection.py` — LoopDetectionMiddleware: post_turn Redis LPUSH+LTRIM+LRANGE sha256 指纹，N 连同 → abort + callback.harness_event("loop_detected")
+- 创建 `executor/harness/middleware/observability.py` — ObservabilityMiddleware: pre_turn 记时，post_turn 上报 turn_complete(turn/duration_ms/tool_calls)
+- 更新 `executor/harness/middleware/__init__.py` — 导出 6 个公共符号
+- 修改 `executor/engine/query_engine.py` — RunContext 追加 agent_type; QueryEngine 新增 middleware_pipeline 参数; run() 集成 pre_turn/post_turn; _execute_single_tool() 集成 pre_tool_use/post_tool_use
+
+### 验证结果
+- Part B 验证步骤 1-10 全部: PASS
+- py_compile 6 文件 PASS; 导入 + TurnContext is MiddlewareContext PASS; 正常/短路 pipeline PASS; 4 钩点语义 PASS; LoopDetection mock Redis PASS; Observability duration_ms PASS; QueryEngine 集成 + 向后兼容 PASS; _execute_single_tool abort PASS; 无 backend.app import PASS
+
+### 下一个 Task 需要注意 — DOC-03 Task 3.3（Hook System + Permission Engine）
+- **pipeline.py 的 2 个 HARNESS_INTEGRATION_POINT**：`executor/tools/pipeline.py` 步骤 3（PreToolUse Hook）和步骤 7（PostToolUse Hook）的注释是 Task 3.3 的锚点，不是 Middleware 的职责，Task 3.2 **未动**这两处
+- **Permission ask Redis BLPOP**：CLAUDE.md 陷阱 #8 — permission ask 必须用 Redis BLPOP 阻塞等待，不能轮询；key 格式建议 `perm_answer:{permission_request_id}`
+- **Hook 11 字段**：DOC-03 PRD 约束 Hook 事件有 11 个标准字段，Task 3.3 实施时需查 DOC-03 Part B Hook schema，不要自造字段（六原则 #1）
+- **Middleware 与 Hook 执行顺序**：pre_tool_use Middleware 在 ToolExecutionPipeline.execute() 之前（在 query_engine.py 的 _execute_single_tool 中）；Pipeline 内部的 PreToolUse Hook 在 schema 校验之后、permission 检查之前（在 pipeline.py step 3）。两者独立，互不干扰
+
+### 遗留风险 / 未决事项
+- LoopDetectionMiddleware 检测时机是 post_turn（完整轮次后），若需要 pre_tool_use 级别的实时拦截，可在 Task 3.3 或后续 Task 注册额外 pre_tool_use Middleware
+- ObservabilityMiddleware._turn_start_time 是实例变量，多轮串行无问题；若未来支持并发多轮（不在当前设计内），需改为 ctx.custom_data 存储
+
+### Commit
+- `e174ea5` — `feat(v4): Harness Middleware Pipeline with 4 hook points (DOC-03 Task 3.2)`
+
+---
+
 ## 2026-04-18 — DOC-03 Task 3.1 completed（TAOR 主循环 + ToolExecutionPipeline）
 
 ### 本次 session 做了什么
