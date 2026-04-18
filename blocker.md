@@ -69,6 +69,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **DOC-04 Task 4.4 原标 ADR-037 用 ADR-041**（PRD ADR-037 被 DOC-04 Task 4.2 Fork capability-based 工具白名单占用，Task 4.4 的 TaskRouter Phase 1 关键词路由平移至 ADR-041）。后续 DOC-04 Task 4.5 的 ADR 从 ADR-042 接续；DOC-05 后续 ADR 继续从 ADR-042 起编号（需继续平移检查）。
 
+**DOC-04 Task 4.5 原标 ADR-038 用 ADR-042**（PRD ADR-038 被 DOC-04 Task 4.2 Fork 3 硬约束占用，Task 4.5 的 PluginBuilder 需求完整度打分（7 维度加权）平移至 ADR-042）。后续 DOC-05 Task 5.1+ 的 ADR 从 ADR-043 接续（DOC-05 原定 ADR-040~050 范围已被 Task 4.3/4.5 吃掉 ADR-040/042，后续从 ADR-043 起编号）。
+
 ---
 
 ### Action required from human reviewer

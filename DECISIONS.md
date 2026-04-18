@@ -569,6 +569,41 @@
 
 ---
 
+## DOC-04 Task 4.5: PluginBuilder 完整度打分 + 动态轮数（ADR-042）
+
+## ADR-042: PluginBuilder 需求完整度打分——7 维度加权，overall ≥ 0.8 触发生成（DOC-04 Task 4.5）
+- **来源**: PRD v4 DOC-04 Task 4.5 Part A ADR-038（PRD 原标 ADR-038，因 DOC-04 Task 4.2 Fork 3 硬约束已占用 ADR-038，平移至 ADR-042）
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `executor/agents/plugin_builder_scoring.py`（新文件）— RequirementCompleteness 类（7 维度 CRITERIA dict，THRESHOLD=0.8，score() async LLM 打分，_record_completeness Prometheus，structlog 事件 agent.plugin_builder.completeness_scored）+ get_missing_dimension_question() + PluginBuilderAgent（run() 打分循环，_present_design stub，_wait_for_user_reply stub）
+  - `executor/agents/plugin_builder.py`（修改）— PLUGIN_BUILDER_AGENT 更新为 v4 AgentDefinition（max_turns=40，output_format=structured_dialogue，behavior_constraints v4 修订文本）+ PLUGIN_BUILDER 别名
+  - `executor/harness/middleware/plugin_builder_gate.py`（新文件）— PluginBuilderGate Middleware（pre_turn 阶段门控：phase 1 < 0.8 注入 constraint；phase 1 ≥ 0.8 升至 phase 2；phase 2 未 confirmed 注入约束）+ pre_tool_use（阶段 1/2 阻止写 plugin 文件）+ _is_plugin_file 检测函数 + GR_PLUGIN_CREATE_GUARD（scope="tier" 可配置降级）
+  - `executor/router.py`（修改）— PLUGIN_BUILDER_PATTERNS（4 条中英文正则）+ route() 步骤 3a 正则优先于关键词表 + AGENT_TYPE_PATTERNS["plugin_builder"] 扩充 14 项关键词
+  - `executor/harness/middleware/__init__.py`（修改）— 导出 PluginBuilderGate / GR_PLUGIN_CREATE_GUARD
+- **实施 commit**: 0a43a39
+- **偏离点**:
+  1. ADR 编号从 PRD 原标 038 平移到 042（见 blocker.md 编号平移链）
+  2. PluginBuilderAgent._wait_for_user_reply() 为 stub（NotImplementedError），实际 SSE 回复等待依赖 DOC-07 Task 7.3 的 callback/BLPOP 机制；_present_design() 返回 stub dict
+  3. Prometheus histogram 采用 lazy init + 降级安全（导入失败不影响主路径）
+  4. GR_PLUGIN_CREATE_GUARD 在 plugin_builder_gate.py 中声明但不自动注入 GuardrailsEngine；注入时机为 DOC-05 Task 5.3 Hook 治理或 Harness Runtime 初始化时（TODO stub）
+- **验证结果**: 全部验证 PASS
+  - py_compile 3 文件 PASS
+  - 高分 scores overall=0.85 ≥ 0.8 PASS；低分 overall=0.30 < 0.8 PASS
+  - CRITERIA 权重之和=1.00 PASS；THRESHOLD=0.8 PASS
+  - 中文路由"帮我创建一个金融分析插件" → plugin_builder PASS
+  - 英文路由"please create a new plugin for X" → plugin_builder PASS
+  - PluginBuilderGate phase 1 低分注入 constraint PASS；高分升至 phase 2 PASS
+  - Phase 2 未确认注入约束 PASS；非 plugin_builder Agent no-op PASS
+  - _is_plugin_file 检测 plugin.yaml/SKILL.md/hooks/ PASS
+  - GR_PLUGIN_CREATE_GUARD block 非 plugin_builder / allow plugin_builder PASS
+  - grep `from backend.app` in 3 新增文件: 0 命中 PASS
+- **下游影响**:
+  - DOC-05 Task 5.3：Hook 治理时注入 GR_PLUGIN_CREATE_GUARD 到 GuardrailsEngine
+  - DOC-07 Task 7.3：实现 _wait_for_user_reply() 的 SSE/BLPOP 机制（激活 PluginBuilderAgent.run()）
+  - DOC-12 Task 12.4：prism_plugin_builder_completeness_histogram Prometheus 指标接入 Grafana
+
+---
+
 ## Phase 2: Backend 模块(待实施)
 
 > (占位)

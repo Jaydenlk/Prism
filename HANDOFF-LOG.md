@@ -35,6 +35,35 @@
 
 ---
 
+## 2026-04-19 -- DOC-04 Task 4.5 completed (PluginBuilder 完整度打分 + 动态轮数)
+
+### 本次 session 做了什么
+- 新建 executor/agents/plugin_builder_scoring.py — RequirementCompleteness 类（CRITERIA 7维度加权，THRESHOLD=0.8，score() async LLM打分+structlog事件+Prometheus histogram lazy init）+ get_missing_dimension_question()（weighted_gap找最缺维度）+ PluginBuilderAgent（run() 打分循环，_present_design stub，_wait_for_user_reply NotImplementedError stub）
+- 修改 executor/agents/plugin_builder.py — v4 AgentDefinition（max_turns=40，allowed_tools 7项精确列表，output_format=structured_dialogue，behavior_constraints v4 修订文本）+ PLUGIN_BUILDER 向后兼容别名
+- 新建 executor/harness/middleware/plugin_builder_gate.py — PluginBuilderGate Middleware（pre_turn 4阶段门控：phase 1低分注入constraint，phase 1达阈升phase 2，phase 2未确认注入约束）+ pre_tool_use 阻止阶段 1/2 写 plugin 文件 + _is_plugin_file() + GR_PLUGIN_CREATE_GUARD（scope="tier"可配置降级）
+- 修改 executor/router.py — PLUGIN_BUILDER_PATTERNS 4条中英文正则 + route()步骤3a优先正则 + AGENT_TYPE_PATTERNS["plugin_builder"]扩充14项关键词
+- 修改 executor/harness/middleware/__init__.py — 导出 PluginBuilderGate / GR_PLUGIN_CREATE_GUARD
+- ADR-042 落地 DECISIONS.md（PRD原标ADR-038平移；DOC-04 Task 4.2已用ADR-038）
+- blocker.md 末尾追加 Task 4.5 ADR编号平移链记录
+
+### 验证结果
+- Part B 验证步骤：PASS（py_compile 3文件；高分overall=0.85≥0.8；低分overall=0.30<0.8；权重和=1.00；THRESHOLD=0.8；中英文路由各PASS；PluginBuilderGate 4场景；_is_plugin_file；GR_PLUGIN_CREATE_GUARD block/allow）
+- 质量门：PASS — 0 `from backend.app` import；无 TODO 占位（stub 均有 NotImplementedError 或 # TODO 说明）；进程边界严格
+
+### 下一个 Task 需要注意 — DOC-05 Task 5.1 (Skill 三级加载)
+- ADR-043 是下一个可用编号（DOC-05 Task 5.1 的 ADR 从 043 起编号）
+- GR_PLUGIN_CREATE_GUARD 已声明但未注入 GuardrailsEngine，DOC-05 Task 5.3 Hook 治理负责注入（或 Harness Runtime 初始化时注入）
+- PluginBuilderAgent._wait_for_user_reply() stub，DOC-07 Task 7.3 实现 SSE/BLPOP 后激活
+
+### 遗留风险 / 未决事项
+- PluginBuilderAgent.run() 的 _wait_for_user_reply() 为 NotImplementedError stub，不影响编译和 Middleware 路径，待 DOC-07 Task 7.3 实现
+- GR_PLUGIN_CREATE_GUARD 注入时机未定（DOC-05 Task 5.3 或 Harness Runtime），需后续 Task 追加
+
+### Commit
+- `0a43a39` — `feat(v4): PluginBuilder 完整度打分 + 动态轮数 — DOC-04 Task 4.5`
+
+---
+
 ## 2026-04-19 -- DOC-04 Task 4.4 completed (TaskRouter 6 agent_type + keyword routing)
 
 ### 本次 session 做了什么

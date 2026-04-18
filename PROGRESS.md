@@ -51,7 +51,7 @@
 | DOC-04 Task 4.2: Fork + Context Isolation(capability) | completed | 2026-04-19 | 2026-04-19 | a61991d | 5新文件+4修改: fork_briefing.py(ForkBriefing 6字段+to_prompt()+FORK_HARD_CONSTRAINTS); fork_result.py(ForkResult 9字段); fork_manager.py(ForkManager+ForkDepthExceeded, depth检查/capability过滤/_create_child_assembler/_extract_synthesis); fork.py(ForkTool capability=["fork_agent"]); coordinator/__init__.py 导出5符号; AgentDefinition追加allowed_capabilities字段; BaseTool追加capabilities class-level; ToolRegistry追加list_all(); PromptAssembler追加_extra_dynamic_tail+_build_dynamic末尾注入; builtin/__init__追加fork_manager参数; 全部15项验证PASS |
 | DOC-04 Task 4.3: Coordinator + Plan checkpoint | completed | 2026-04-19 | 2026-04-19 | c0f394d | 3新文件+1修改: executor/coordinator/plan.py (Plan/PlanStep dataclass + parse_from_text 两级解析 JSON/markdown + fallback + serialize/deserialize); executor/engine/synthesizer.py (Synthesizer 模板合成); executor/coordinator/coordinator.py (Coordinator.execute + resume_from_checkpoint + _plan + _build_step_context, 4 次 coordinator_plan_update checkpoint); __init__ 导出5新符号; 全部6项验证 PASS (Plan构造/Synthesizer/JSON解析/markdown解析/fallback/serialize roundtrip + 3个 execute 路径测试) |
 | DOC-04 Task 4.4: TaskRouter(6 agent_type) | completed | 2026-04-19 | 2026-04-19 | f0c373e | executor/router.py (TaskRouter + RouteDecision + COORDINATOR_PATTERNS + AGENT_TYPE_PATTERNS + AGENT_TYPE_ALIASES); __main__.py 追加 TaskRouter import+routing stub; ADR-041 落地; 全部8项验证 PASS |
-| DOC-04 Task 4.5: PluginBuilder(完整度打分) | pending | — | — | — | — |
+| DOC-04 Task 4.5: PluginBuilder(完整度打分) | completed | 2026-04-19 | 2026-04-19 | 0a43a39 | 3新文件+2修改: plugin_builder_scoring.py(RequirementCompleteness 7维度加权+PluginBuilderAgent); plugin_builder.py(v4 AgentDefinition, max_turns=40, output_format=structured_dialogue, PLUGIN_BUILDER别名); plugin_builder_gate.py(PluginBuilderGate pre_turn/pre_tool_use + GR_PLUGIN_CREATE_GUARD scope=tier); router.py(PLUGIN_BUILDER_PATTERNS 4条中英文正则 + route步骤3a); middleware/__init__.py 追加导出; ADR-042 落地; 全部验证 PASS |
 
 ### DOC-05: Plugin Ecosystem(7 Task)
 
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 14
+- **已完成**: 15
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 37
+- **pending**: 36
 
 ---
 
-> **最后更新**: 2026-04-19(DOC-04 Task 4.4 完成: TaskRouter 6 agent_type + keyword routing + ADR-041)
-> **下一个动作**: DOC-04 Task 4.5 — PluginBuilder(完整度打分)
+> **最后更新**: 2026-04-19(DOC-04 Task 4.5 完成: PluginBuilder 完整度打分 + 动态轮数 + ADR-042)
+> **下一个动作**: DOC-05 Task 5.1 — Skill 三级加载
