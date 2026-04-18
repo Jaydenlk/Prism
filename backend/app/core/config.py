@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     MAX_TURNS_PER_RUN: int = 50          # Harness turn-count cap
     LOOP_DETECTION_WINDOW: int = 5       # Harness loop-detection look-back
 
+    # --- Permission Ask / Hook timeouts (Task 3.3, ADR-028) ---------------
+    PERMISSION_ASK_TIMEOUT_SECONDS: int = 300  # fail-safe deny 超时
+    HOOK_TIMEOUT_SECONDS: int = 10             # 单个 Hook handler 超时
+    RATE_LIMIT_WINDOW_SECONDS: int = 60        # 速率限制窗口
+    RATE_LIMIT_DEFAULT: int = 30               # 默认速率上限（次/窗口）
+
     # --- Circuit Breaker (Provider failover) ------------------------------
     CIRCUIT_BREAKER_THRESHOLD: int = 3
     CIRCUIT_BREAKER_RECOVERY_SECONDS: int = 300

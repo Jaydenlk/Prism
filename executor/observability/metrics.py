@@ -83,3 +83,33 @@ prism_callback_dlq_total = Counter(
     ["event_type"],
     registry=EXECUTOR_REGISTRY,
 )
+
+# ---------------------------------------------------------------------------
+# 7. Permission ask 决策统计（Task 3.3，ADR-028）
+# ---------------------------------------------------------------------------
+prism_permission_ask_total = Counter(
+    "prism_permission_ask_total",
+    "Total permission ask decisions returned by the ask protocol, labelled by decision.",
+    ["decision"],
+    registry=EXECUTOR_REGISTRY,
+)
+
+# ---------------------------------------------------------------------------
+# 8. Hook 触发统计（Task 3.3，ADR-026）
+# ---------------------------------------------------------------------------
+prism_hook_fired_total = Counter(
+    "prism_hook_fired_total",
+    "Total hooks fired by HookSystem, labelled by event_type and handler_type.",
+    ["event_type", "handler_type"],
+    registry=EXECUTOR_REGISTRY,
+)
+
+# ---------------------------------------------------------------------------
+# 9. Guardrail 拦截统计（Task 3.3）
+# ---------------------------------------------------------------------------
+prism_guardrail_deny_total = Counter(
+    "prism_guardrail_deny_total",
+    "Total guardrail denials, labelled by rule_id.",
+    ["rule_id"],
+    registry=EXECUTOR_REGISTRY,
+)
