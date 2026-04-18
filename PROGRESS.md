@@ -135,7 +135,7 @@
 |---|---|---|---|---|---|
 | DOC-12 Task 12.1: TokenEstimator + ResourceMonitor(百分比) | completed | 2026-04-19 | 2026-04-19 | (见 feat commit) | 3新文件+1修改: token_estimator.py(TokenEstimator ABC+AnthropicTokenCounter+TiktokenEstimator+CalibratingCharCountEstimator+create_estimator ADR-110); resource_monitor.py(百分比阈值70%/85% ADR-111); route_analytics.py(RouteAnalytics 2方法); engine/__init__追加4导出; 8项验证全PASS |
 | DOC-12 Task 12.2: Harness Analytics + Entropy(8 信号) | completed | 2026-04-19 | 2026-04-19 | 67d17a7 | 2新文件+1修改: harness_analytics.py(HarnessAnalytics aggregate+offset_days P0+cache_stats+compute_signal_p90); entropy_detector.py(EntropyDetector 8信号+ThresholdCalibrator ADR-112/113); harness.py(3新端点); 10项验证全PASS |
-| DOC-12 Task 12.3: /health 3 子端点 + Docker 资源限制 | pending | — | — | — | — |
+| DOC-12 Task 12.3: /health 3 子端点 + Docker 资源限制 | completed | 2026-04-19 | 2026-04-19 | 526af9c | 2新文件+3修改: health.py(3子端点 live/ready/detailed ADR-114); docker-compose.yml(4服务limits+reservations+healthcheck ADR-115); nginx/nginx.conf(SSE透传 X-Accel-Buffering+3600s+chunked off); api/v1/__init__+main.py更新; 8项验证全PASS |
 | DOC-12 Task 12.4: Prometheus Metrics(60+) + 4 Grafana Dashboard | pending | — | — | — | — |
 | DOC-12 Task 12.5: OTel Tracing(跨进程 W3C) | pending | — | — | — | — |
 | DOC-12 Task 12.6: 结构化日志(structlog + contextvars) | pending | — | — | — | — |
@@ -147,12 +147,12 @@
 ## 统计
 
 - **总 Task 数**: 51
-- **已完成**: 36
+- **已完成**: 37
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 16
+- **pending**: 15
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-12 Task 12.2 完成: Harness Analytics + Entropy Detection ADR-112/113; 36/51 Task 完成）
-> **下一个动作**: DOC-12 Task 12.3 — /health 3 子端点 + Docker 资源限制
+> **最后更新**: 2026-04-19（DOC-12 Task 12.3 完成: /health 3子端点 + Docker资源限制 ADR-114/115; 37/51 Task 完成）
+> **下一个动作**: DOC-12 Task 12.4 — Prometheus Metrics(60+) + 4 Grafana Dashboard

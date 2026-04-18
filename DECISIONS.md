@@ -1539,4 +1539,35 @@
 - **验证结果**: ThresholdCalibrator EMA 公式验证 PASS (0.7*0.3 + 0.3*0.05 = 0.225)
 - **下游影响**: POST /harness/threshold-calibrate 供 Admin 每周手动触发（Phase 1 半自动）
 
-> **最后更新**: 2026-04-19(DOC-12 Task 12.2 — Harness Analytics + Entropy Detection ADR-112/113; 36/51 Task 完成)
+## ADR-114: /health 拆分为 3 个子端点(DOC-12 Task 12.3)
+- **来源**: PRD v4 DOC-12 Task 12.3 Part A; Batch 5 §A12-6
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/api/v1/health.py` — 3 K8s probe 子端点全部实现:
+      GET /health/live — liveness (不检查任何依赖, 仅返回 {"status":"ok"})
+      GET /health/ready — readiness (DB + Redis 连通性检查; 任何失败返回 503)
+      GET /health/detailed — admin only (ResourceMonitor ADR-111 + subprocess 数 + provider 熔断状态 + uptime)
+  - `backend/app/api/v1/__init__.py` — 注册 health_router 至 api_v1_router
+  - `backend/app/main.py` — 移除内联 health stub; 添加顶层 /health/live+/health/ready 别名(供 Docker/K8s 无 /api/v1 前缀探针使用)
+- **实施 commit**: 526af9c
+- **偏离点**: 无。3 端点严格独立（不合并）；/health/live 不触碰 DB/Redis；/health/detailed 使用 Depends(require_admin) 强制鉴权
+- **验证结果**: py_compile PASS; AST 3端点存在 PASS; health_live无依赖检查 PASS; health_ready 503逻辑 PASS; health_detailed admin+ResourceMonitor+uptime PASS; 共8项验证全 PASS
+- **下游影响**: docker-compose.yml healthcheck 使用 /health/live (ADR-115); DOC-12 Task 12.4 /metrics 端点复用同一路由模式
+
+## ADR-115: Docker Compose 全部服务资源限制(DOC-12 Task 12.3)
+- **来源**: PRD v4 DOC-12 Task 12.3 Part A; Batch 5 §A12-7
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `docker-compose.yml` — 4 服务全部显式声明 deploy.resources.limits + reservations + healthcheck:
+      backend: limits 1.5 CPU / 1200M; reservations 0.5 CPU / 400M; healthcheck → /health/live
+      postgres: limits 0.5 CPU / 500M; reservations 0.2 CPU / 200M; healthcheck → pg_isready
+      redis: limits 0.3 CPU / 200M; reservations 0.1 CPU / 80M; healthcheck → redis-cli ping
+      nginx: limits 0.3 CPU / 150M; reservations 0.1 CPU / 50M; healthcheck → /healthz
+  - `nginx/nginx.conf` — SSE 透传 (X-Accel-Buffering: no + proxy_read_timeout 3600s + chunked_transfer_encoding off);
+      /healthz nginx-native 端点; 安全头 (X-Content-Type-Options / X-Frame-Options / X-XSS-Protection)
+- **实施 commit**: 526af9c
+- **偏离点**: 无。严格按 PRD limits 数值; nginx healthcheck 使用 nginx-native /healthz（避免 backend 冷启动期间依赖问题）
+- **验证结果**: docker-compose.yml 4服务 limits/reservations/healthcheck 关键词全部出现 ≥4 次 PASS; nginx.conf SSE 4项关键字检查 PASS; 共8项验证全 PASS
+- **下游影响**: DOC-12 Task 12.4 docker-compose.monitoring.yml 可直接 extends 此 docker-compose.yml 结构
+
+> **最后更新**: 2026-04-19(DOC-12 Task 12.3 — /health 3子端点 + Docker资源限制 ADR-114/115; 37/51 Task 完成)

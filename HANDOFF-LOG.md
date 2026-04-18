@@ -35,6 +35,45 @@
 
 ---
 
+## 2026-04-19 -- DOC-12 Task 12.3 COMPLETED
+
+### 本次 session 做了什么
+- 新建 backend/app/api/v1/health.py — 3 K8s probe 子端点(ADR-114): GET /health/live(无依赖检查, {"status":"ok"}); GET /health/ready(DB+Redis连通性, 503 on failure); GET /health/detailed(admin only, Depends(require_admin), ResourceMonitor.check_health()+子进程数+provider熔断+uptime)
+- 修改 backend/app/api/v1/__init__.py — 注册 health_router 为 api_v1_router 第一个子路由
+- 修改 backend/app/main.py — 移除旧内联 health stub(含 TODO-DOC12 占位符); 添加顶层 /health/live+/health/ready 别名(供 Docker healthcheck 使用, 无 /api/v1 前缀)
+- 新建 docker-compose.yml(生产版) — 4服务全部 deploy.resources limits+reservations+healthcheck(ADR-115): backend(1.5C/1200M)→/health/live; postgres(0.5C/500M)→pg_isready; redis(0.3C/200M)→redis-cli ping; nginx(0.3C/150M)→/healthz
+- 新建 nginx/nginx.conf — SSE 透传(/api/v1/sessions/*/stream 专用 location, X-Accel-Buffering:no+proxy_read_timeout 3600s+chunked_transfer_encoding off); /healthz nginx-native端点; 安全头
+
+### 验证结果
+- py_compile health.py: PASS
+- py_compile api/v1/__init__.py: PASS
+- py_compile main.py: PASS
+- AST check health.py 3端点(health_live/ready/detailed AsyncFunctionDef): PASS
+- health_live 无依赖检查(不含_check_database/_check_redis): PASS
+- health_ready DB+Redis+503逻辑: PASS
+- health_detailed admin+ResourceMonitor+uptime: PASS
+- docker-compose.yml 4服务 limits/reservations/healthcheck ≥4次: PASS
+- nginx.conf SSE 4项关键字(X-Accel-Buffering/proxy_read_timeout 3600s/chunked_transfer_encoding off/proxy_buffering): PASS
+- main.py stubs清理(TODO-DOC12已移除): PASS
+- 共8项关键验证全 PASS
+
+### 下一个 Task 需要注意
+- DOC-12 Task 12.4: Prometheus Metrics(60+) + 4 Grafana Dashboard
+  - backend/app/observability/metrics.py 已存在(Task 12.1 前置 import 创建); 需扩展到 60+ 指标按 10 维度
+  - 新增 monitoring/ 目录: docker-compose.monitoring.yml + prometheus/prometheus.yml + grafana/provisioning + 4个 dashboard JSON
+  - /metrics 端点在 main.py 已有骨架, 需完善 admin auth(require_admin)
+  - docker-compose.yml (本 Task 产物) 是 Task 12.4 monitoring 栈的 extends 基础
+- /health/detailed 中 ResourceMonitor 是同步实例化(每次请求 new ResourceMonitor()), 不共享; Phase 2 可改为 lifespan 单例
+
+### 遗留风险 / 未决事项
+- health_detailed 中 _check_database() 在每次请求都创建新 SQLAlchemy engine; 生产高频调用时应加 caching 或复用 get_db() 依赖; Phase 1 调用频率低可接受
+- docker-compose.yml 的 deploy.resources 仅在 Swarm mode 生效; 单机 docker compose 需配合 --compatibility 标志或改用 mem_limit/cpus 顶层字段; Phase 1 文档中已注明
+
+### Commit
+- `526af9c` — `feat(v4): DOC-12 Task 12.3 — /health 3 sub-endpoints + Docker resource limits (ADR-114/ADR-115)`
+
+---
+
 ## 2026-04-19 -- DOC-12 Task 12.2 COMPLETED
 
 ### 本次 session 做了什么
