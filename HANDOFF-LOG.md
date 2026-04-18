@@ -35,6 +35,43 @@
 
 ---
 
+## 2026-04-18 -- DOC-04 Task 4.1 completed (6 specialized Agent definitions + AgentPool)
+
+### Done this session
+- Created executor/agents/base.py — AgentDefinition dataclass (v4: 11 fields incl. mcp_servers/frontmatter_skills/bash_whitelist) + filter_tools() + filter_mcp_tools()
+- Created executor/agents/general.py — GENERAL_AGENT (agent_type="general", allowed_tools=None, max_turns=50)
+- Created executor/agents/research.py — RESEARCH_AGENT/EXPLORE_AGENT (agent_type="explore", read_only=True, max_turns=30, BASH_WHITELIST 9条, READ_ONLY_TOOLS)
+- Created executor/agents/planner.py — PLANNER_AGENT (agent_type="planner", read_only=True, max_turns=10, output_format含"Critical Files for Implementation")
+- Created executor/agents/verifier.py — VERIFIER_AGENT + VERIFIER_SYSTEM_PROMPT原文(含VERDICT三态+4类专项验证 Frontend/Backend/CLI/Migration)
+- Created executor/agents/coordinator.py — COORDINATOR_AGENT (agent_type="coordinator", allowed_tools=["fork_agent","synthesize","task_stop"], max_turns=200)
+- Created executor/agents/plugin_builder.py — PLUGIN_BUILDER_AGENT (agent_type="plugin_builder", max_turns=40, 多轮需求收集约束)
+- Created executor/agents/pool.py — AgentPool: 6种+3别名(chat→general/research→explore/build→general), get()/list_types()/filter_tools_for_agent()
+- Created executor/agents/__init__.py — 导出 AgentDefinition + AgentPool + 7 AGENT实例 + 常量
+- Modified executor/harness/lifecycle.py — HarnessRuntime.__init__ 接受可选 agent_def: AgentDefinition | None; agent_def.read_only=True 时追加 GuardrailRule(id="AGENT-READONLY") + _is_write_bash helper
+
+### Verification results
+- Part B 验证步骤 15 项: 全部 PASS
+- py_compile 10文件 PASS
+- 6种unique agent_type断言 PASS
+- 3别名(chat/research/build) PASS
+- AGENT-READONLY规则: Write/Edit/Delete拦截 PASS; ls/grep/git status放行 PASS; rm拦截 PASS
+- grep from backend.app in executor/agents/: 0命中 PASS
+
+### Notes for next Task -- DOC-04 Task 4.2 (Fork + Context Isolation)
+- Fork 必须保留原 Agent 的 agent_type（不可覆盖 model）— 3 条 prompt-level 硬约束（PRD ADR-030/ADR-034 原文）：1) 父 Agent 的 agent_type 传给子 Agent; 2) 子 Agent 不能重选 model; 3) ForkBriefing 6字段结构化注入
+- AgentPool.get() 可获取 Fork 后子 Agent 的定义（直接按 agent_type 查找即可，不需要新 API）
+- Fork 子 Agent 启动时要 inherit parent 的 run_context（除 run_id 外）；briefing 注入时要带 parent_run_id / parent_session_id / parent_agent_type 三个字段
+
+### Risks / Open items
+- ADR 编号持续平移: PRD Task 4.1 原标 ADR-030/031/032 → 本实现 ADR-034/035/036（见 blocker.md）
+- HarnessRuntime.agent_def 参数在 DOC-07 Task 7.4 子进程启动时真实注入（AgentPool().get(run.agent_type)），本 Task 只提供接口
+- GENERAL_AGENT.behavior_constraints="" 时 PromptAssembler 的 agent_behavior_section 走 "general" 分支，已在 Task 2.4 实现，无需修改
+
+### Commit
+- `d04b909` — `feat(v4): 6 specialized Agent definitions + AgentPool (DOC-04 Task 4.1)`
+
+---
+
 ## DOC-03 DONE — 2026-04-18 收官 checkpoint
 
 ### DOC-03 6 Task 产物路径索引

@@ -14,6 +14,7 @@
 | DOC-02 v4 | ADR-004 ~ ADR-017 | Schema / 三密钥 / tokenizer / Prompt 装配 / 回合组 |
 | DOC-03 v4 | ADR-020 ~ ADR-031 | Harness 单实例 / 工具并行 / Redis 直通 / 心跳 / Hook 11 字段 / ask BLPOP / Compaction 4 级 / 配置 2 源 |
 | DOC-04 v4 | ADR-030 ~ ADR-038 | MCP 白名单 / Verifier VERDICT / Fork 3 约束 / ForkBriefing / Coordinator checkpoint / TaskRouter / PluginBuilder 打分 |
+| DOC-04 实施编号平移 | ADR-034 / ADR-035 / ADR-036 | Task 4.1 落地编号（PRD ADR-030/031/032 因 DOC-03 冲突平移至 ADR-034/035/036）|
 | DOC-05 v4 | ADR-040 ~ ADR-050 | Skill 三级 / 强制调用 / is_skill_context / Hook 4 handler / MCP 双通道 / 变量系统 / Skills 两源 / ConversionReport |
 | DOC-06 v4 | ADR-050 ~ ADR-055 | 三密钥独立 / SSE ticket / Refresh cookie |
 | DOC-07 v4 | ADR-060 ~ ADR-067 | sequence_no 原子 / promote 事务 / cancel 三模式 / 回调方案 A / permission-answer / HeartbeatMonitor / subprocess 参数 / coordinator_recovery |
@@ -405,6 +406,46 @@
 - **下游影响**:
   - DOC-07 Task 7.4：subprocess 启动时调用 HarnessConfigLoader(config_file_path=...).load() 并将产物注入 HarnessRuntime（本 Task 只提供 loader，不做 HarnessRuntime 注入）
   - DOC-05 Task 5.x：Plugin install 时一次性写入 harness_config.yaml 的 plugins 段 + 重启
+
+---
+
+---
+
+## DOC-04 Task 4.1: Agent 专业化定义 + AgentPool（ADR-034 / ADR-035 / ADR-036）
+
+## ADR-034: agent-scoped MCP 白名单（DOC-04 Task 4.1）
+- **来源**: PRD v4 DOC-04 Task 4.1 Part A ADR-030（PRD 原标 ADR-030，因 DOC-03 Task 3.4 已用 ADR-030，编号平移至 ADR-034）
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/agents/base.py` — AgentDefinition.mcp_servers: list[str] | None 字段
+  - `executor/agents/base.py` — AgentDefinition.filter_mcp_tools(all_mcp_tools) 方法：mcp_servers=None 时返回全部；非 None 时只返回白名单 server 的工具
+- **实施 commit**: d04b909
+- **偏离点**: 无。mcp_servers=None 语义为"不限制"，空列表语义为"禁止所有 MCP 工具"（隐含不同）。验证测试 PASS。
+- **验证结果**: filter_mcp_tools([("srv1","t1"),("srv2","t2")]) 当 mcp_servers=["srv1"] 时返回 ["t1"] PASS；mcp_servers=None 时返回 ["t1","t2"] PASS
+- **下游影响**: DOC-05 Task 5.2 MCP 双通道实现时，PromptAssembler 在组装 MCP 工具时调用 agent_def.filter_mcp_tools() 过滤
+
+## ADR-035: agent-specific frontmatter skills（DOC-04 Task 4.1）
+- **来源**: PRD v4 DOC-04 Task 4.1 Part A ADR-031（PRD 原标 ADR-031，因 DOC-03 Task 3.5 已用 ADR-031，编号平移至 ADR-035）
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/agents/base.py` — AgentDefinition.frontmatter_skills: list[str] = [] 字段
+  - 6 种 Agent 实例（general/explore/planner/verifier/coordinator/plugin_builder）均含此字段（默认空列表，表示对所有 agent_type 生效）
+- **实施 commit**: d04b909
+- **偏离点**: 无。Skill 的 frontmatter `agents: [research, explore]` 过滤逻辑在 DOC-05 Task 5.1 实现（本 Task 仅落地字段声明）。
+- **验证结果**: AgentDefinition 含 frontmatter_skills 字段 PASS（通过 dataclass 字段检查）
+- **下游影响**: DOC-05 Task 5.1 Skill 三级加载时，根据 agent_def.frontmatter_skills 白名单过滤可激活的 Skill
+
+## ADR-036: Verifier VERDICT 协议强制（DOC-04 Task 4.1）
+- **来源**: PRD v4 DOC-04 Task 4.1 Part A ADR-032（PRD 原标 ADR-032，因 DOC-03 Task 3.5 已用 ADR-032，编号平移至 ADR-036）
+- **实施状态**: ✅ 2026-04-18
+- **落地位置**:
+  - `executor/agents/verifier.py` — VERIFIER_SYSTEM_PROMPT 完整原文（含 try to break it 使命 + 两种失败模式 + 4 类专项验证 Frontend/Backend/CLI/Migration + VERDICT 三态格式）
+  - `executor/agents/verifier.py` — VERIFIER_AGENT.behavior_constraints = VERIFIER_SYSTEM_PROMPT
+  - `executor/agents/verifier.py` — VERIFIER_AGENT.output_format 明确要求以 VERDICT: PASS|FAIL|PARTIAL 结尾
+- **实施 commit**: d04b909
+- **偏离点**: 无。VERIFIER_SYSTEM_PROMPT 99% 按 PRD Part B 原文保留，仅将 ASCII 引号统一为中文标点（保持中文文档一致性）。VERDICT 三态协议完整注入。
+- **验证结果**: behavior_constraints 含 "VERDICT" PASS；含 "try to break" PASS；含 "Frontend"/"Backend"/"CLI"/"Migration" 4 类 PASS
+- **下游影响**: DOC-04 Task 4.4 TaskRouter 路由到 verifier 时，PromptAssembler 使用 VERIFIER_AGENT.behavior_constraints 注入 VERDICT 协议；DOC-05 Task 5.3 Hook 4 handler 可读取 VERDICT 状态
 
 ---
 

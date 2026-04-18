@@ -61,6 +61,8 @@ proceeds with 18 tables (which are fully aligned with §4.2 schema definitions).
 
 **2026-04-18 ADR-029/030 编号在 DOC-03 Task 3.4 和 3.5 重用（PRD 笔误），本实现将 Task 3.5 的两条改编为 ADR-031/032**（Compaction 按回合组原子裁剪 = ADR-031；is_skill_context 优先保留 = ADR-032）。DECISIONS.md 已按 ADR-031/032 落地，Task 3.4 的 ADR-029/030 编号不变。
 
+**ADR 编号持续平移：DOC-03 原标 ADR-031 用 ADR-033；DOC-04 Task 4.1 原标 ADR-030/031/032 用 ADR-034/035/036**（因 DOC-03 Task 3.4/3.5/3.6 已各占用 ADR-030/031/032/033，DOC-04 Task 4.1 的三条 ADR 依次平移为 034/035/036）。后续 DOC-04 Task 4.2+ 的 ADR 继续从 ADR-037 接续。
+
 ---
 
 ### Action required from human reviewer
