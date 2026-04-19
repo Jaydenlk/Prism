@@ -524,8 +524,14 @@
     get(name) {
       return request('GET', `/skills/${name}`);
     },
-    install({ skill_name, source, source_url, version, install_path }) {
-      return request('POST', '/skills/install', { json: { skill_name, source, source_url, version, install_path } });
+    install({ skill_name, source, source_url, version, install_path, content_base64, has_hooks, has_mcp } = {}) {
+      return request('POST', '/skills/install', { json: { skill_name, source, source_url, version, install_path, content_base64, has_hooks, has_mcp } });
+    },
+    patch(name, { enabled }) {
+      return request('PATCH', `/skills/${name}`, { json: { enabled } });
+    },
+    getContent(name) {
+      return request('GET', `/skills/${name}/content`);
     },
     update(name) {
       return request('POST', `/skills/${name}/update`);

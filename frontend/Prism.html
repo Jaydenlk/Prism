@@ -1174,92 +1174,217 @@ function UsagePage() {
 }
 
 function SkillsPage() {
-  const [skills, setSkills] = useState([]);
+  const { PrismAPI } = window;
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [searchResults, setSearchResults] = useState([]);
   const [installed, setInstalled] = useState([]);
   const [q, setQ] = useState("");
   const [source, setSource] = useState("all");
-  const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
-  const [errMsg, setErrMsg] = useState("");
-  const [expandedReadme, setExpandedReadme] = useState(null); // skill name
-  const [actionLoading, setActionLoading] = useState(null); // skill name
+  const [searchErr, setSearchErr] = useState("");
+
+  // Install channel: "local_file" | "github" | "custom_md"
+  const [installTab, setInstallTab] = useState("local_file");
+  const [installing, setInstalling] = useState(false);
+
+  // Local file channel
+  const [localFileName, setLocalFileName] = useState("");
+  const [localB64, setLocalB64] = useState("");
+  const [localSkillName, setLocalSkillName] = useState("");
+
+  // GitHub channel
+  const [ghUrl, setGhUrl] = useState("");
+  const [ghVersion, setGhVersion] = useState("latest");
+  const [ghSkillName, setGhSkillName] = useState("");
+
+  // Custom Markdown channel
+  const [mdContent, setMdContent] = useState("---\nname: my-skill\ndescription: 描述这个 Skill 干什么\n---\n\n# My Skill\n\n...");
+  const [mdSkillName, setMdSkillName] = useState("my-skill");
+
+  // View modal
+  const [viewModal, setViewModal] = useState(null); // { name, content }
+  const [viewLoading, setViewLoading] = useState(false);
+
+  // Action loading per installed skill
+  const [actionLoading, setActionLoading] = useState(null);
+
+  // Toasts
   const [toasts, setToasts] = useState([]);
 
-  function addLocalToast(t) {
-    setToasts(prev => [...prev, t]);
-    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), 5000);
+  // Debounce timer ref
+  const debounceRef = useRef(null);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function addToast(kind, title, body) {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, kind, title, body }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
   }
 
+  function unwrap(resp) {
+    // PrismAPI returns { data: [...] } or plain array
+    if (resp && resp.data !== undefined) return resp.data;
+    return resp;
+  }
+
+  // ── Data loaders ───────────────────────────────────────────────────────────
   async function loadInstalled() {
     try {
-      const list = await PrismAPI.skills.listInstalled();
-      setInstalled(Array.isArray(list) ? list : []);
+      const resp = await PrismAPI.skills.listInstalled();
+      setInstalled(Array.isArray(unwrap(resp)) ? unwrap(resp) : []);
     } catch { /* non-fatal */ }
   }
 
-  async function loadSkills(searchQ, searchSource) {
-    setLoading(true);
-    setErrMsg("");
+  async function doSearch(searchQ, searchSource) {
+    setSearching(true);
+    setSearchErr("");
     try {
-      const results = await PrismAPI.skills.search({ q: searchQ || undefined, source: searchSource !== "all" ? searchSource : undefined, limit: 50 });
-      setSkills(Array.isArray(results) ? results : []);
+      const resp = await PrismAPI.skills.search({
+        q: searchQ || undefined,
+        source: searchSource !== "all" ? searchSource : undefined,
+        limit: 50,
+      });
+      setSearchResults(Array.isArray(unwrap(resp)) ? unwrap(resp) : []);
     } catch (err) {
-      setErrMsg(err.message || "加载失败");
-      setSkills([]);
+      setSearchErr(err.message || "搜索失败");
+      setSearchResults([]);
     }
-    setLoading(false);
+    setSearching(false);
   }
 
   useEffect(() => {
     loadInstalled();
-    loadSkills("", "all");
+    doSearch("", "all");
   }, []);
 
-  function isInstalled(skName) {
-    return installed.some(s => (s.skill_name || s.name) === skName);
+  // Debounced search on q/source change
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => doSearch(q, source), 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [q, source]);
+
+  // ── Local file picker ─────────────────────────────────────────────────────
+  function handleFilePick(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLocalFileName(file.name);
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    if (!localSkillName) setLocalSkillName(baseName);
+    const reader = new FileReader();
+    reader.onload = ev => setLocalB64(btoa(unescape(encodeURIComponent(ev.target.result))));
+    reader.readAsText(file, "utf-8");
   }
 
-  async function handleSearch() {
-    setSearching(true);
-    await loadSkills(q, source);
-    setSearching(false);
-  }
-
-  async function handleInstall(sk) {
-    const name = sk.skill_name || sk.name;
-    setActionLoading(name);
+  // ── Install handlers ───────────────────────────────────────────────────────
+  async function handleLocalInstall() {
+    if (!localB64) { addToast("warn", "请先选择文件", ""); return; }
+    if (!localSkillName.trim()) { addToast("warn", "请填写技能名", ""); return; }
+    setInstalling(true);
     try {
-      await PrismAPI.skills.install({ skill_name: name, source: sk.source || "local" });
-      addLocalToast({ id: Date.now(), kind: "success", title: "已安装", body: name });
+      await PrismAPI.skills.install({ skill_name: localSkillName.trim(), source: "local", content_base64: localB64 });
+      addToast("success", "安装成功", localSkillName.trim());
+      setLocalB64(""); setLocalFileName(""); setLocalSkillName("");
       await loadInstalled();
     } catch (err) {
-      addLocalToast({ id: Date.now(), kind: "danger", title: "安装失败", body: err.message });
+      addToast("danger", "安装失败", err.message || String(err));
+    }
+    setInstalling(false);
+  }
+
+  async function handleGithubInstall() {
+    if (!ghUrl.trim()) { addToast("warn", "请填写 GitHub URL", ""); return; }
+    if (!ghSkillName.trim()) { addToast("warn", "请填写技能名", ""); return; }
+    setInstalling(true);
+    try {
+      await PrismAPI.skills.install({ skill_name: ghSkillName.trim(), source: "github", source_url: ghUrl.trim(), version: ghVersion.trim() || "latest" });
+      addToast("success", "安装成功", ghSkillName.trim());
+      setGhUrl(""); setGhSkillName(""); setGhVersion("latest");
+      await loadInstalled();
+    } catch (err) {
+      addToast("danger", "安装失败", err.message || String(err));
+    }
+    setInstalling(false);
+  }
+
+  async function handleCustomMdInstall() {
+    if (!mdSkillName.trim()) { addToast("warn", "请填写技能名", ""); return; }
+    if (!mdContent.trim()) { addToast("warn", "Markdown 内容不能为空", ""); return; }
+    setInstalling(true);
+    try {
+      const b64 = btoa(unescape(encodeURIComponent(mdContent)));
+      await PrismAPI.skills.install({ skill_name: mdSkillName.trim(), source: "local", content_base64: b64 });
+      addToast("success", "安装成功", mdSkillName.trim());
+      await loadInstalled();
+    } catch (err) {
+      addToast("danger", "安装失败", err.message || String(err));
+    }
+    setInstalling(false);
+  }
+
+  // ── Installed list CRUD ────────────────────────────────────────────────────
+  async function handleToggleEnabled(sk) {
+    const name = sk.skill_name || sk.name;
+    const meta = sk.metadata || {};
+    const newEnabled = !meta.enabled;
+    setActionLoading(name);
+    try {
+      await PrismAPI.skills.patch(name, { enabled: newEnabled });
+      addToast("success", newEnabled ? "已启用" : "已禁用", name);
+      await loadInstalled();
+    } catch (err) {
+      addToast("danger", "操作失败", err.message || String(err));
     }
     setActionLoading(null);
+  }
+
+  async function handleViewContent(sk) {
+    const name = sk.skill_name || sk.name;
+    setViewModal({ name, content: "加载中…" });
+    setViewLoading(true);
+    try {
+      const resp = await PrismAPI.skills.getContent(name);
+      const data = unwrap(resp);
+      setViewModal({ name, content: (data && data.content) || "（SKILL.md 内容为空）" });
+    } catch (err) {
+      setViewModal({ name, content: `加载失败: ${err.message || String(err)}` });
+    }
+    setViewLoading(false);
   }
 
   async function handleUninstall(sk) {
     const name = sk.skill_name || sk.name;
-    if (!confirm(`卸载 ${name}？`)) return;
+    if (!confirm(`确认卸载 "${name}"？`)) return;
     setActionLoading(name);
     try {
       await PrismAPI.skills.uninstall(name);
-      addLocalToast({ id: Date.now(), kind: "success", title: "已卸载", body: name });
+      addToast("success", "已卸载", name);
       await loadInstalled();
     } catch (err) {
-      addLocalToast({ id: Date.now(), kind: "danger", title: "卸载失败", body: err.message });
+      addToast("danger", "卸载失败", err.message || String(err));
     }
     setActionLoading(null);
   }
 
+  // ── Tab style ──────────────────────────────────────────────────────────────
+  function tabStyle(active) {
+    return {
+      padding: "5px 12px", fontSize: 12, background: "none", border: "none",
+      borderBottom: active ? "2px solid var(--ink)" : "2px solid transparent",
+      color: active ? "var(--ink)" : "var(--ink-3)", cursor: "pointer", marginBottom: -1,
+    };
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="page">
       <div className="page-head">
         <div className="page-title">技能市场</div>
-        <div className="page-sub">Skill 就是一份 Markdown 加可选的钩子。本地装、GitHub 装、签过名的 registry 装都行。</div>
+        <div className="page-sub">Skill 就是一份 Markdown 加可选钩子。本地装、GitHub 装、自定义 Markdown 都行。</div>
       </div>
 
-      {/* Toast stack local */}
+      {/* Toast stack */}
       {toasts.length > 0 && (
         <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 200, display: "flex", flexDirection: "column", gap: 8 }}>
           {toasts.map(t => (
@@ -1270,78 +1395,178 @@ function SkillsPage() {
         </div>
       )}
 
-      {/* Search bar */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-        <input className="input" style={{ flex: 1, minWidth: 180 }} placeholder="搜索技能名…" value={q}
-          onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()}/>
-        <select className="input" style={{ width: 120 }} value={source} onChange={e => setSource(e.target.value)}>
-          <option value="all">全部来源</option>
-          <option value="local">本地</option>
-          <option value="github">GitHub</option>
-        </select>
-        <button className="btn" onClick={handleSearch} disabled={searching}>{searching ? "搜索中…" : "搜索"}</button>
-      </div>
-
-      {errMsg && <div style={{ color: "var(--danger)", marginBottom: 16, fontSize: 13 }}>{errMsg}</div>}
-
-      {loading ? (
-        <div style={{ color: "var(--ink-3)", padding: 20 }}>加载中…</div>
-      ) : skills.length === 0 ? (
-        <div style={{ color: "var(--ink-3)", padding: 20, fontFamily: "var(--serif)", fontStyle: "italic" }}>
-          {q ? `没有找到匹配 "${q}" 的技能` : "暂无可用技能"}
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
-          {skills.map((sk, idx) => {
-            const name = sk.skill_name || sk.name;
-            const inst = isInstalled(name);
-            const acting = actionLoading === name;
-            const readmeOpen = expandedReadme === name;
-            return (
-              <div key={name || idx} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{name}</div>
-                    <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 3, fontFamily: "var(--mono)" }}>
-                      {sk.author || sk.source || "local"}{sk.version ? ` · v${sk.version}` : ""}
-                    </div>
-                  </div>
-                  {inst && <span className="badge teal">装了</span>}
-                </div>
-                <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6, minHeight: 36, fontFamily: "var(--serif)", fontStyle: "italic" }}>
-                  {sk.description || sk.desc || "暂无描述"}
-                </div>
-                {readmeOpen && sk.readme_preview && (
-                  <div style={{ fontSize: 12, color: "var(--ink-2)", background: "var(--bg)", borderRadius: 8, padding: "10px 12px", maxHeight: 160, overflow: "auto", fontFamily: "var(--mono)", lineHeight: 1.6 }}>
-                    {sk.readme_preview}
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 6, marginTop: "auto", paddingTop: 10 }}>
-                  {inst ? (
-                    <>
-                      <button className="btn sm ghost" onClick={() => setExpandedReadme(readmeOpen ? null : name)}>
-                        <Icon name="eye" size={11}/> 看看
-                      </button>
-                      <button className="btn sm danger" style={{ marginLeft: "auto" }} onClick={() => handleUninstall(sk)} disabled={acting}>
-                        {acting ? "…" : "关掉"}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button className="btn sm ghost" onClick={() => setExpandedReadme(readmeOpen ? null : name)}>
-                        <Icon name="book" size={11}/> 读
-                      </button>
-                      <button className="btn sm primary" style={{ marginLeft: "auto" }} onClick={() => handleInstall(sk)} disabled={acting}>
-                        {acting ? "…" : "装"}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      {/* View content modal */}
+      {viewModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setViewModal(null)}>
+          <div style={{ background: "var(--paper)", borderRadius: 12, padding: 28, maxWidth: 640, width: "90%", maxHeight: "80vh", display: "flex", flexDirection: "column", gap: 14 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>{viewModal.name} / SKILL.md</div>
+              <button className="btn ghost sm" onClick={() => setViewModal(null)}>关闭</button>
+            </div>
+            <pre style={{ flex: 1, overflow: "auto", fontSize: 12.5, lineHeight: 1.6, fontFamily: "var(--mono)", background: "var(--bg)", borderRadius: 8, padding: "12px 14px", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {viewLoading ? "加载中…" : viewModal.content}
+            </pre>
+          </div>
         </div>
       )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, alignItems: "start" }}>
+        {/* ── Left: search + results ─────────────────────────────── */}
+        <div>
+          {/* Search bar */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+            <input className="input" style={{ flex: 1, minWidth: 160 }} placeholder="搜索技能名…（300ms 防抖）" value={q}
+              onChange={e => setQ(e.target.value)}/>
+            <select className="input" style={{ width: 110 }} value={source} onChange={e => setSource(e.target.value)}>
+              <option value="all">全部来源</option>
+              <option value="local">本地</option>
+              <option value="github">GitHub</option>
+            </select>
+          </div>
+
+          {searchErr && <div style={{ color: "var(--rust)", marginBottom: 12, fontSize: 13 }}>{searchErr}</div>}
+
+          {searching ? (
+            <div style={{ color: "var(--ink-3)", padding: "16px 0", fontSize: 13 }}>搜索中…</div>
+          ) : searchResults.length === 0 ? (
+            <div style={{ color: "var(--ink-3)", padding: "16px 0", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>
+              {q ? `没有找到匹配 "${q}" 的技能` : "暂无可用技能"}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {searchResults.map((sk, idx) => {
+                const name = sk.skill_name || sk.name;
+                const isInst = installed.some(s => (s.skill_name || s.name) === name);
+                return (
+                  <div key={name || idx} className="card" style={{ padding: 16, display: "flex", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span className="mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{name}</span>
+                        {isInst && <span className="badge teal" style={{ fontSize: 10 }}>已安装</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6, fontFamily: "var(--mono)" }}>
+                        {sk.source || "local"}{sk.version ? ` · v${sk.version}` : ""}{sk.author ? ` · ${sk.author}` : ""}
+                      </div>
+                      <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5, fontFamily: "var(--serif)", fontStyle: "italic" }}>
+                        {sk.description || "暂无描述"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Right: install + installed ─────────────────────────── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Install panel */}
+          <div className="card" style={{ padding: 20 }}>
+            <div className="section-title" style={{ marginBottom: 14 }}>安装技能</div>
+            <div style={{ borderBottom: "1px solid var(--line)", marginBottom: 16 }}>
+              <button style={tabStyle(installTab === "local_file")} onClick={() => setInstallTab("local_file")}>本地文件</button>
+              <button style={tabStyle(installTab === "github")} onClick={() => setInstallTab("github")}>GitHub URL</button>
+              <button style={tabStyle(installTab === "custom_md")} onClick={() => setInstallTab("custom_md")}>自定义 MD</button>
+            </div>
+
+            {/* Local file */}
+            {installTab === "local_file" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <label style={{ cursor: "pointer" }}>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>选择 SKILL.md 文件</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <div className="input" style={{ flex: 1, color: localFileName ? "var(--ink)" : "var(--ink-4)", cursor: "pointer", display: "flex", alignItems: "center" }}>
+                      {localFileName || "点击选择 .md 文件"}
+                    </div>
+                    <input type="file" accept=".md,.txt" style={{ display: "none" }} onChange={handleFilePick}/>
+                  </div>
+                </label>
+                <label>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>技能名（唯一标识）</div>
+                  <input className="input" value={localSkillName} onChange={e => setLocalSkillName(e.target.value)} placeholder="my-skill"/>
+                </label>
+                <button className="btn primary" style={{ justifyContent: "center", marginTop: 4 }} onClick={handleLocalInstall} disabled={installing || !localB64}>
+                  {installing ? "安装中…" : "安装"}
+                </button>
+              </div>
+            )}
+
+            {/* GitHub URL */}
+            {installTab === "github" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <label>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>GitHub URL</div>
+                  <input className="input" value={ghUrl} onChange={e => setGhUrl(e.target.value)} placeholder="https://github.com/user/repo"/>
+                </label>
+                <label>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>版本（默认 latest）</div>
+                  <input className="input" value={ghVersion} onChange={e => setGhVersion(e.target.value)} placeholder="latest"/>
+                </label>
+                <label>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>技能名</div>
+                  <input className="input" value={ghSkillName} onChange={e => setGhSkillName(e.target.value)} placeholder="my-skill"/>
+                </label>
+                <button className="btn primary" style={{ justifyContent: "center", marginTop: 4 }} onClick={handleGithubInstall} disabled={installing}>
+                  {installing ? "安装中…" : "安装"}
+                </button>
+              </div>
+            )}
+
+            {/* Custom Markdown */}
+            {installTab === "custom_md" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <label>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>技能名</div>
+                  <input className="input" value={mdSkillName} onChange={e => setMdSkillName(e.target.value)} placeholder="my-skill"/>
+                </label>
+                <label>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>SKILL.md 内容</div>
+                  <textarea className="input" rows={10} style={{ fontFamily: "var(--mono)", fontSize: 12, resize: "vertical" }} value={mdContent} onChange={e => setMdContent(e.target.value)}/>
+                </label>
+                <button className="btn primary" style={{ justifyContent: "center", marginTop: 4 }} onClick={handleCustomMdInstall} disabled={installing}>
+                  {installing ? "安装中…" : "安装"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Installed list */}
+          <div className="card" style={{ padding: 20 }}>
+            <div className="section-title" style={{ marginBottom: 14 }}>已安装 ({installed.length})</div>
+            {installed.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic" }}>暂未安装任何技能</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {installed.map(sk => {
+                  const name = sk.skill_name || sk.name;
+                  const meta = sk.metadata || {};
+                  const enabled = meta.enabled !== false; // default enabled
+                  const acting = actionLoading === name;
+                  return (
+                    <div key={name} style={{ borderRadius: 8, border: "1px solid var(--line)", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, background: enabled ? "var(--paper)" : "var(--bg)" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: enabled ? "var(--ink)" : "var(--ink-4)" }}>{name}</div>
+                        <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>v{sk.version || "1.0.0"} · {sk.source || "local"}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+                        <button className="btn sm ghost" onClick={() => handleToggleEnabled(sk)} disabled={acting} title={enabled ? "禁用" : "启用"}>
+                          {enabled ? "禁用" : "启用"}
+                        </button>
+                        <button className="btn sm ghost" onClick={() => handleViewContent(sk)} disabled={acting} title="查看 SKILL.md">
+                          查看
+                        </button>
+                        <button className="btn sm danger" onClick={() => handleUninstall(sk)} disabled={acting} title="卸载">
+                          {acting ? "…" : "卸载"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

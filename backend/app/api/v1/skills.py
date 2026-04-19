@@ -20,6 +20,7 @@ Prometheus metrics（Batch 5 §B5-I）:
 
 from __future__ import annotations
 
+import base64
 import os
 from typing import Annotated, Literal
 
@@ -103,11 +104,12 @@ class SkillInstallRequest(BaseModel):
 
     skill_name: str = Field(description="Skill 名称（如 'web-researcher'）")
     source: Literal["local", "github"] = Field(description="来源")
-    source_url: str = Field(description="源地址（本地路径或 GitHub URL）")
-    version: str = Field(description="版本号（如 '1.0.0' 或 'latest'）")
-    install_path: str = Field(description="本地安装路径（.prism/skills/@source/name/）")
+    source_url: str | None = Field(default=None, description="源地址（本地路径或 GitHub URL）；local+content_base64 时可省略")
+    version: str | None = Field(default=None, description="版本号（如 '1.0.0'）；local+content_base64 时可省略，默认 '1.0.0'")
+    install_path: str | None = Field(default=None, description="本地安装路径；local+content_base64 时由服务端自动推导")
     has_hooks: bool = Field(default=False, description="是否含 hooks")
     has_mcp: bool = Field(default=False, description="是否含 MCP 配置")
+    content_base64: str | None = Field(default=None, description="Skill SKILL.md 内容 base64（source='local' 时用于直接上传内容）")
 
 
 class SkillInstallResponse(BaseModel):
@@ -229,6 +231,12 @@ async def list_installed_skills(
 # ---------------------------------------------------------------------------
 
 
+class SkillPatchRequest(BaseModel):
+    """PATCH /skills/{skill_name} 请求体：切换启用/禁用状态"""
+
+    enabled: bool = Field(description="true=启用, false=禁用")
+
+
 @router.post(
     "/install",
     response_model=ApiResponse[SkillInstallResponse],
@@ -242,9 +250,47 @@ async def install_skill(
 ) -> ApiResponse[SkillInstallResponse]:
     """接收 CLI/UI install 请求，写入 skill_installs 表（ADR-053）。
 
-    注：实际文件下载/解压由 CLI（SkillsRegistry.install()）完成。
-        本端点只负责 DB 持久化（UPSERT 语义）+ Redis 缓存刷新。
+    local + content_base64: 将 base64 内容写入 .prism/skills/@local/<name>/SKILL.md。
+    github: source_url 和 version 必填。
     """
+    # ── 本地 content_base64 路径 ────────────────────────────────────────────
+    resolved_source_url = request.source_url
+    resolved_version = request.version or "1.0.0"
+    resolved_install_path = request.install_path
+
+    if request.source == "local" and request.content_base64:
+        try:
+            md_bytes = base64.b64decode(request.content_base64)
+            md_text = md_bytes.decode("utf-8")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"content_base64 解码失败: {exc}",
+            )
+
+        workspace = os.environ.get("PRISM_WORKSPACE", os.getcwd())
+        skill_dir = os.path.join(workspace, ".prism", "skills", "@local", request.skill_name)
+        os.makedirs(skill_dir, exist_ok=True)
+        skill_md_path = os.path.join(skill_dir, "SKILL.md")
+        with open(skill_md_path, "w", encoding="utf-8") as f:
+            f.write(md_text)
+
+        resolved_source_url = resolved_source_url or skill_md_path
+        resolved_install_path = resolved_install_path or skill_dir
+
+        logger.info(
+            "skills_api.install.local_content_written",
+            skill_name=request.skill_name,
+            path=skill_md_path,
+            user_id=str(current_user.id),
+        )
+
+    elif request.source == "github" and not request.source_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="source='github' 时 source_url 为必填",
+        )
+
     try:
         # 懒加载 Redis（DOC-07 Task 7.1 之前占位）
         redis_client = _get_redis_client()
@@ -253,9 +299,9 @@ async def install_skill(
             user_id=current_user.id,
             skill_name=request.skill_name,
             source=request.source,
-            source_url=request.source_url,
-            version=request.version,
-            install_path=request.install_path,
+            source_url=resolved_source_url,
+            version=resolved_version,
+            install_path=resolved_install_path or "",
             has_hooks=request.has_hooks,
             has_mcp=request.has_mcp,
         )
@@ -319,6 +365,97 @@ async def uninstall_skill(
         skill_name=skill_name,
     )
     return ApiResponse(data={"skill_name": skill_name, "status": "uninstalled"})
+
+
+# ---------------------------------------------------------------------------
+# PATCH /skills/{skill_name} — 启用 / 禁用（更新 metadata_.enabled）
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/{skill_name}",
+    response_model=ApiResponse[dict],
+    summary="启用或禁用 Skill（更新 metadata_.enabled 字段）",
+)
+async def patch_skill(
+    skill_name: str,
+    request: SkillPatchRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[dict]:
+    """切换已安装 Skill 的启用状态，写入 metadata_.enabled（ADR-053）。"""
+    from app.models.skill_install import SkillInstall
+    from datetime import datetime, timezone
+
+    existing = (
+        db.query(SkillInstall)
+        .filter_by(user_id=current_user.id, skill_name=skill_name)
+        .first()
+    )
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{skill_name}' 未安装或不属于当前用户。",
+        )
+
+    meta = dict(existing.metadata_ or {})
+    meta["enabled"] = request.enabled
+    existing.metadata_ = meta
+    existing.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    logger.info(
+        "skills_api.patch",
+        user_id=str(current_user.id),
+        skill_name=skill_name,
+        enabled=request.enabled,
+    )
+    return ApiResponse(data={"skill_name": skill_name, "enabled": request.enabled})
+
+
+# ---------------------------------------------------------------------------
+# GET /skills/{skill_name}/content — 返回 SKILL.md 内容（供查看弹窗使用）
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{skill_name}/content",
+    response_model=ApiResponse[dict],
+    summary="获取已安装 Skill 的 SKILL.md 内容（供查看弹窗）",
+)
+async def get_skill_content(
+    skill_name: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[dict]:
+    """返回已安装 Skill 的 SKILL.md 文件内容，供前端查看弹窗显示。"""
+    svc = SkillInstallService(db=db)
+    install = svc.get_install(user_id=current_user.id, skill_name=skill_name)
+
+    if install is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Skill '{skill_name}' 未安装或不属于当前用户。",
+        )
+
+    meta = install.metadata_ or {}
+    install_path = meta.get("install_path") or ""
+    skill_md_path = os.path.join(install_path, "SKILL.md") if install_path else ""
+
+    content = ""
+    if skill_md_path and os.path.isfile(skill_md_path):
+        try:
+            with open(skill_md_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as exc:
+            logger.warning(
+                "skills_api.content_read_error",
+                skill_name=skill_name,
+                path=skill_md_path,
+                error=str(exc),
+            )
+
+    return ApiResponse(data={"skill_name": skill_name, "content": content})
 
 
 # ---------------------------------------------------------------------------
