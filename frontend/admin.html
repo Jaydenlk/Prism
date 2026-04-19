@@ -248,7 +248,7 @@ html, body { background: var(--admin-bg); }
 .alert-card .msg { font-size: 12.5px; color: var(--ink-3); margin-top: 4px; line-height: 1.5; }
 .alert-card .t-time { margin-left: auto; font-size: 11px; color: var(--ink-4); font-family: var(--mono); white-space: nowrap; }
 
-/* Tenant row */
+/* Tenant / IM row */
 .tenant-row {
   display: grid; grid-template-columns: 1fr 100px 120px 160px 90px 70px;
   gap: 14px; align-items: center;
@@ -265,17 +265,89 @@ html, body { background: var(--admin-bg); }
   font-family: var(--serif); font-size: 13px;
 }
 .tenant-row .mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+
+/* Toast */
+.toast-wrap {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.toast {
+  padding: 10px 16px; border-radius: 10px;
+  font-size: 13px; font-family: var(--mono);
+  background: var(--ink); color: var(--paper);
+  box-shadow: var(--shadow-3);
+  pointer-events: auto;
+  animation: toast-in 0.2s ease;
+}
+.toast.err { background: var(--rust); }
+.toast.ok { background: var(--teal); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Modal overlay */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(28,27,24,0.55);
+  z-index: 8888; display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: var(--paper); border-radius: 18px;
+  border: 1px solid var(--line); width: 480px; max-width: 95vw;
+  box-shadow: var(--shadow-3);
+}
+.modal-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 22px; border-bottom: 1px solid var(--line);
+}
+.modal-head h3 { font-family: var(--serif); font-size: 16px; font-weight: 500; margin: 0; font-style: italic; }
+.modal-head .spacer { flex: 1; }
+.modal-body { padding: 22px; }
+.modal-foot { padding: 14px 22px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Auth gate / empty state */
+.gate-wrap {
+  height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--admin-bg);
+}
+.gate-card {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 18px;
+  padding: 48px 56px; text-align: center; max-width: 420px; width: 100%;
+  box-shadow: var(--shadow-3);
+}
 </style>
 </head>
 <body>
 <div id="root"></div>
 
+<script src="apiClient.js"></script>
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
 <script type="text/babel" data-presets="react">
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useCallback, useRef } = React;
+
+/* ================== TOAST ================== */
+let _toastId = 0;
+let _toastSetter = null;
+function toast(msg, type = '') {
+  if (_toastSetter) _toastSetter(prev => {
+    const id = ++_toastId;
+    const next = [...prev, { id, msg, type }];
+    setTimeout(() => _toastSetter(p => p.filter(t => t.id !== id)), 3500);
+    return next;
+  });
+}
+
+function ToastContainer() {
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => { _toastSetter = setToasts; return () => { _toastSetter = null; }; }, []);
+  return (
+    <div className="toast-wrap">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>
+      ))}
+    </div>
+  );
+}
 
 /* ================== ICONS ================== */
 const Icon = ({ name, size = 16, stroke = 1.5, style = {} }) => {
@@ -308,6 +380,11 @@ const Icon = ({ name, size = 16, stroke = 1.5, style = {} }) => {
     flow: <><rect x="2" y="2" width="5" height="4" rx="1.5"/><rect x="9" y="10" width="5" height="4" rx="1.5"/><path d="M4 6v4M4 10h9"/></>,
     bell: <><path d="M4 7a4 4 0 118 0v3l1.5 2h-11L4 10V7zM6.5 14a1.5 1.5 0 003 0"/></>,
     clock: <><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></>,
+    mail: <><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M2 4l6 5 6-5"/></>,
+    plus: <><path d="M8 3v10M3 8h10"/></>,
+    edit: <><path d="M11 2l3 3-8 8H3v-3L11 2z"/></>,
+    trash: <><path d="M2 4h12M5 4V2h6v2M4 4l1 9h6l1-9"/></>,
+    link: <><path d="M7 9a3 3 0 004.24.12l2-2a3 3 0 00-4.24-4.24L7.5 4.5M9 7a3 3 0 00-4.24-.12l-2 2a3 3 0 004.24 4.24L8.5 11.5"/></>,
   };
   return <svg viewBox="0 0 16 16" style={{ ...s, ...style }}>{p[name] || null}</svg>;
 };
@@ -327,7 +404,7 @@ const PrismMark = ({ size = 22 }) => (
 /* ================== NAV ================== */
 const NAV = [
   { id: "overview", icon: "activity", label: "总览" },
-  { id: "tenants", icon: "building", label: "租户" },
+  { id: "tenants", icon: "building", label: "IM 频道" },
   { id: "users", icon: "users", label: "用户" },
   { id: "providers", icon: "layers", label: "Providers" },
   { id: "runs", icon: "play", label: "Runs" },
@@ -340,224 +417,427 @@ const NAV = [
   { id: "security", icon: "lock", label: "安全" },
 ];
 
-/* ================== DATA ================== */
-const TENANTS = [
-  { id: "t1", name: "Hangzhou Research", slug: "hangzhou-research", seats: 24, runs7d: 2840, spend: 1247, quota: 2000, status: "ok", plan: "team", created: "2025-09-14" },
-  { id: "t2", name: "Shanghai Markets", slug: "sh-markets", seats: 41, runs7d: 5120, spend: 3890, quota: 4000, status: "warn", plan: "enterprise", created: "2025-06-02" },
-  { id: "t3", name: "Shenzhen Labs", slug: "sz-labs", seats: 8, runs7d: 412, spend: 184, quota: 500, status: "ok", plan: "team", created: "2026-01-18" },
-  { id: "t4", name: "Beijing Compliance", slug: "bj-compliance", seats: 12, runs7d: 880, spend: 412, quota: 800, status: "ok", plan: "team", created: "2025-11-03" },
-  { id: "t5", name: "Chengdu Pilot", slug: "cd-pilot", seats: 3, runs7d: 28, spend: 14, quota: 100, status: "idle", plan: "starter", created: "2026-03-28" },
-  { id: "t6", name: "Guangzhou Ops", slug: "gz-ops", seats: 18, runs7d: 1902, spend: 870, quota: 1500, status: "ok", plan: "team", created: "2025-10-22" },
-  { id: "t7", name: "Xi'an Research", slug: "xa-research", seats: 6, runs7d: 4, spend: 2, quota: 100, status: "err", plan: "starter", created: "2026-04-01" },
-];
+/* ================== LOADING SPINNER ================== */
+function Spinner({ msg = "加载中…" }) {
+  return (
+    <div style={{ padding: 48, textAlign: "center", color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic" }}>
+      {msg}
+    </div>
+  );
+}
 
-const PROVIDERS = [
-  { n: "Anthropic · sonnet-4-5", region: "us-east", health: "ok", p50: "210ms", p95: "1.8s", rps: 84, err: "0.1%" },
-  { n: "Anthropic · haiku-4-5", region: "us-east", health: "ok", p50: "120ms", p95: "0.9s", rps: 28, err: "0.0%" },
-  { n: "MiniMax · m2", region: "cn-sh", health: "ok", p50: "340ms", p95: "2.1s", rps: 42, err: "0.3%" },
-  { n: "DeepSeek · v3", region: "cn-bj", health: "ok", p50: "280ms", p95: "1.4s", rps: 33, err: "0.1%" },
-  { n: "Kimi · k2", region: "cn-bj", health: "warn", p50: "520ms", p95: "4.2s", rps: 11, err: "2.8%" },
-  { n: "Qwen · max", region: "cn-hz", health: "ok", p50: "290ms", p95: "1.9s", rps: 18, err: "0.2%" },
-];
+function EmptyState({ msg }) {
+  return (
+    <div style={{ padding: 48, textAlign: "center", color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic" }}>
+      <div style={{ marginBottom: 12 }}><PrismMark size={36}/></div>
+      {msg}
+    </div>
+  );
+}
 
-// Generate a 60-point timeline of health for each provider
-const genHealth = (badAt = []) => Array.from({ length: 60 }, (_, i) => {
-  if (badAt.includes(i)) return "bad";
-  if (Math.abs(badAt[0] - i) <= 2 && badAt[0] != null) return "mid";
-  const r = Math.random();
-  if (r > 0.96) return "mid";
-  return "ok";
-});
-const HEALTH = {
-  "Anthropic · sonnet-4-5": genHealth([]),
-  "Anthropic · haiku-4-5": genHealth([]),
-  "MiniMax · m2": genHealth([28]),
-  "DeepSeek · v3": genHealth([]),
-  "Kimi · k2": genHealth([8, 9, 10, 11, 42, 43, 44, 55, 56, 57, 58]),
-  "Qwen · max": genHealth([37]),
-};
+/* ================== ALERT CONFIG MODAL ================== */
+function AlertConfigModal({ onClose }) {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-const ALERTS = [
-  { sev: "critical", title: "Kimi k2 连续 502", at: "3 分钟前", tags: "provider · kimi-k2 · cn-bj", msg: "过去 12 分钟里有 18 次 HTTP 502。fallback 已自动切到 deepseek-v3。建议检查 Kimi 状态页。" },
-  { sev: "warn", title: "租户 Shanghai Markets 逼近配额", at: "14 分钟前", tags: "quota · sh-markets", msg: "本月已用 ¥3,890 / ¥4,000 (97%)。按当前速率明天凌晨会触发硬切。" },
-  { sev: "warn", title: "MCP finance-mcp 心跳丢失", at: "32 分钟前", tags: "mcp · t2 · finance-data", msg: "sh-markets 的 finance-data MCP 子进程心跳超时 90s 自动拉起,但 Run r-8f02 已失败。" },
-  { sev: "info", title: "Postgres 主库慢查询 > 2s", at: "1 小时前", tags: "infra · pg-primary", msg: "p95 慢查询 2.4s,命中 runs_by_tenant_idx 的索引下推效率下降,建议周末 REINDEX。" },
-];
+  useEffect(() => {
+    PrismAPI.admin.getAlertConfig()
+      .then(setCfg)
+      .catch(e => { toast('加载告警配置失败: ' + e.message, 'err'); onClose(); });
+  }, []);
 
-const AUDIT = [
-  { d: "2026-04-19", wkd: "Sunday", rows: [
-    { t: "14:28:04", kind: "permission", who: "alice@hz-research", tenant: "hz-research", txt: <>批准执行 <em>rm -rf tmp/cache/</em>,会话 r-5b03,护栏 GR-EXEC-004。</> },
-    { t: "14:22:17", kind: "config", who: "ops@prism", tenant: "—", txt: <>将 Kimi k2 从 Provider fallback 链 <em>第 2 位</em> 移至 <em>第 5 位</em>。</> },
-    { t: "13:47:02", kind: "deny", who: "ben@sh-markets", tenant: "sh-markets", txt: <>拒绝执行 <em>curl -X POST https://external.example.com</em>,触发 GR-PRIVACY-001。</> },
-    { t: "11:05:43", kind: "config", who: "ops@prism", tenant: "hz-research", txt: <>月度预算从 <em>¥500</em> 调至 <em>¥800</em>,理由: Q2 内部研究季。</> },
-    { t: "09:12:55", kind: "permission", who: "cat@hz-research", tenant: "hz-research", txt: <>批准 MCP <em>github</em> 读取私有仓库 <em>prism-core/prompts</em>。</> },
-  ]},
-  { d: "2026-04-18", wkd: "Saturday", rows: [
-    { t: "22:12:08", kind: "deny", who: "system", tenant: "bj-compliance", txt: <>自动拒绝 Agent 输出: 未溯源的数字 <em>38%</em>,触发 GR-COMPLIANCE-002,共 3 次。</> },
-    { t: "19:03:41", kind: "config", who: "ops@prism", tenant: "—", txt: <>新增 IP 白名单 <em>203.0.113.4/29</em>,用途: 杭州 VPN 网关升级。</> },
-    { t: "18:40:00", kind: "permission", who: "esther@sh-markets", tenant: "sh-markets", txt: <>批准 Skill <em>finance-compliance@2.0.0</em> 升级至 v2.0.1。</> },
-    { t: "10:17:22", kind: "deny", who: "dan@visitor", tenant: "cd-pilot", txt: <>拒绝访问 <em>Admin · Users</em> 页面,角色不足 (visitor)。</> },
-  ]},
-  { d: "2026-04-17", wkd: "Friday", rows: [
-    { t: "16:55:10", kind: "config", who: "ops@prism", tenant: "—", txt: <>完成密钥轮换: <em>prism_ws_7f3a…de21</em> → <em>prism_ws_18be…a93c</em>,48 小时双活。</> },
-    { t: "11:02:33", kind: "permission", who: "alice@hz-research", tenant: "hz-research", txt: <>批准 Coordinator 模式的 <em>verifier</em> 子 agent 读取 runs 归档。</> },
-  ]},
-];
+  async function save() {
+    if (!window.confirm('确认保存告警配置？')) return;
+    setSaving(true);
+    try {
+      await PrismAPI.admin.updateAlertConfig(cfg);
+      toast('告警配置已保存', 'ok');
+      onClose();
+    } catch (e) {
+      toast('保存失败: ' + e.message, 'err');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const Field = ({ label, k, type = 'text', placeholder = '' }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 5, fontFamily: "var(--mono)" }}>{label}</div>
+      <input
+        type={type}
+        value={cfg ? (cfg[k] ?? '') : ''}
+        placeholder={placeholder}
+        onChange={e => setCfg(prev => ({ ...prev, [k]: e.target.value }))}
+        style={{ width: "100%", padding: "7px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, fontFamily: "var(--mono)", background: "var(--bg)", boxSizing: "border-box" }}
+      />
+    </div>
+  );
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box">
+        <div className="modal-head">
+          <Icon name="bell" size={15}/>
+          <h3>告警配置</h3>
+          <div className="spacer"/>
+          <button className="icon-btn" onClick={onClose}><Icon name="x" size={14}/></button>
+        </div>
+        <div className="modal-body">
+          {!cfg ? <Spinner/> : <>
+            <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 12, color: "var(--ink-3)", marginBottom: 16 }}>IM / Email 告警通道</div>
+            <Field label="IM 频道 (如 feishu_group_id)" k="alert_im_channel" placeholder="留空则不通知 IM"/>
+            <Field label="告警邮件地址" k="alert_email" placeholder="ops@company.com"/>
+            <Field label="SMTP Host" k="smtp_host" placeholder="smtp.example.com"/>
+            <Field label="SMTP Port" k="smtp_port" type="number"/>
+            <Field label="SMTP 用户名" k="smtp_user"/>
+            <Field label="SMTP 发件人" k="smtp_from" placeholder="noreply@prism.local"/>
+            <Field label="Prism 基础 URL (告警跳转)" k="prism_base_url" placeholder="https://prism.example.com"/>
+          </>}
+        </div>
+        <div className="modal-foot">
+          <button className="btn sm ghost" onClick={onClose}>取消</button>
+          <button className="btn sm primary" onClick={save} disabled={saving || !cfg}>
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================== PROVIDER EDIT MODAL ================== */
+function ProviderEditModal({ provider, onClose, onSaved }) {
+  const isNew = !provider.id;
+  const [presets, setPresets] = useState([]);
+  const [selectedPreset, setSelectedPreset] = useState(null);
+  const [form, setForm] = useState({
+    name: provider.name || '',
+    protocol: provider.protocol || 'anthropic',
+    base_url: provider.base_url || '',
+    model_id: provider.model_id || '',
+    api_key: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (isNew) {
+      PrismAPI.providers.presets().then(data => {
+        const list = Array.isArray(data) ? data : [];
+        setPresets(list);
+      }).catch(() => {});
+    }
+  }, [isNew]);
+
+  function applyPreset(preset) {
+    setSelectedPreset(preset);
+    setForm(f => ({
+      ...f,
+      name: preset.name,
+      protocol: preset.protocol,
+      base_url: preset.base_url,
+      model_id: preset.model_id,
+    }));
+  }
+
+  async function save() {
+    if (!window.confirm(isNew ? '确认创建 Provider？' : '确认更新 Provider？')) return;
+    setSaving(true);
+    try {
+      const body = { ...form };
+      if (!body.api_key) delete body.api_key; // don't send empty key
+      if (isNew) {
+        await PrismAPI.providers.create(body);
+        toast('Provider 已创建', 'ok');
+      } else {
+        await PrismAPI.providers.update(provider.id, body);
+        toast('Provider 已更新', 'ok');
+      }
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast((isNew ? '创建' : '更新') + '失败: ' + e.message, 'err');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const F = ({ label, k, type = 'text', placeholder = '' }) => (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontFamily: "var(--mono)" }}>{label}</div>
+      <input type={type} value={form[k] ?? ''} placeholder={placeholder}
+        onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+        style={{ width: "100%", padding: "7px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, fontFamily: "var(--mono)", background: "var(--bg)", boxSizing: "border-box" }}
+      />
+    </div>
+  );
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box">
+        <div className="modal-head">
+          <Icon name={isNew ? "plus" : "edit"} size={15}/>
+          <h3>{isNew ? '新增 Provider' : '编辑 Provider'}</h3>
+          <div className="spacer"/>
+          <button className="icon-btn" onClick={onClose}><Icon name="x" size={14}/></button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
+          {isNew && presets.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 8, fontFamily: "var(--mono)" }}>选择预设</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {presets.map((p, i) => (
+                  <button key={i}
+                    onClick={() => applyPreset(p)}
+                    className={`btn sm ${selectedPreset?.name === p.name ? 'primary' : 'ghost'}`}
+                    style={{ fontSize: 11 }}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <F label="名称" k="name" placeholder="Anthropic Claude"/>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontFamily: "var(--mono)" }}>协议</div>
+            <select value={form.protocol} onChange={e => setForm(f => ({ ...f, protocol: e.target.value }))}
+              style={{ width: "100%", padding: "7px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, background: "var(--bg)", boxSizing: "border-box" }}>
+              <option value="anthropic">anthropic</option>
+              <option value="openai">openai</option>
+            </select>
+          </div>
+          <F label="Base URL" k="base_url" placeholder="https://api.anthropic.com"/>
+          <F label="Model ID" k="model_id" placeholder="claude-sonnet-4-6"/>
+          <F label={provider.api_key_masked ? `API Key (当前: ${provider.api_key_masked}，留空保留)` : 'API Key'} k="api_key" type="password" placeholder="sk-…"/>
+        </div>
+        <div className="modal-foot">
+          <button className="btn sm ghost" onClick={onClose}>取消</button>
+          <button className="btn sm primary" onClick={save} disabled={saving}>
+            {saving ? '保存中…' : (isNew ? '创建' : '保存')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================== INVITE CODE MODAL ================== */
+function InviteCodeModal({ onClose }) {
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [maxUses, setMaxUses] = useState('');
+
+  async function load() {
+    try {
+      const data = await PrismAPI.admin.listInviteCodes();
+      setCodes(Array.isArray(data) ? data : (data?.items || []));
+    } catch (e) {
+      toast('加载邀请码失败: ' + e.message, 'err');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function create() {
+    if (!window.confirm('确认创建邀请码？')) return;
+    setCreating(true);
+    try {
+      const body = {};
+      if (maxUses) body.max_uses = parseInt(maxUses);
+      await PrismAPI.admin.createInviteCode(body);
+      toast('邀请码已创建', 'ok');
+      setMaxUses('');
+      load();
+    } catch (e) {
+      toast('创建失败: ' + e.message, 'err');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function revoke(id) {
+    if (!window.confirm('确认撤销此邀请码？')) return;
+    try {
+      await PrismAPI.admin.revokeInviteCode(id);
+      toast('已撤销', 'ok');
+      load();
+    } catch (e) {
+      toast('撤销失败: ' + e.message, 'err');
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ width: 560 }}>
+        <div className="modal-head">
+          <Icon name="key" size={15}/>
+          <h3>邀请码管理</h3>
+          <div className="spacer"/>
+          <button className="icon-btn" onClick={onClose}><Icon name="x" size={14}/></button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: '55vh', overflowY: 'auto' }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 18, alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4, fontFamily: "var(--mono)" }}>最大使用次数（留空=无限）</div>
+              <input type="number" value={maxUses} onChange={e => setMaxUses(e.target.value)} placeholder="10"
+                style={{ width: "100%", padding: "7px 12px", borderRadius: 8, border: "1px solid var(--line)", fontSize: 13, fontFamily: "var(--mono)", background: "var(--bg)", boxSizing: "border-box" }}/>
+            </div>
+            <button className="btn sm primary" onClick={create} disabled={creating}>
+              <Icon name="plus" size={11}/> {creating ? '创建中…' : '创建邀请码'}
+            </button>
+          </div>
+          {loading ? <Spinner/> : codes.length === 0 ? <EmptyState msg="暂无邀请码"/> : (
+            <table className="table" style={{ width: "100%" }}>
+              <thead><tr><th>Code</th><th>已用/上限</th><th>过期</th><th></th></tr></thead>
+              <tbody>
+                {codes.map(c => (
+                  <tr key={c.id}>
+                    <td className="mono" style={{ fontWeight: 500, color: "var(--ink)" }}>{c.code}</td>
+                    <td className="mono">{c.used_count ?? 0} / {c.max_uses ?? '∞'}</td>
+                    <td style={{ color: "var(--ink-3)", fontFamily: "var(--mono)", fontSize: 11 }}>{c.expires_at ? new Date(c.expires_at).toLocaleDateString() : '永不'}</td>
+                    <td>
+                      <button className="btn sm ghost" style={{ color: "var(--rust)" }} onClick={() => revoke(c.id)}>
+                        <Icon name="trash" size={11}/> 撤销
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button className="btn sm ghost" onClick={onClose}>关闭</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ================== PAGES ================== */
-function Overview() {
+
+function Overview({ dashData, healthData }) {
+  const d = dashData || {};
+  const h = healthData || {};
+  const res = h.resources || {};
+  const agents = h.agents || {};
+  const provHealth = h.providers || {};
+
+  const memPct = res.memory_percent ?? 0;
+  const cpuPct = res.cpu_percent ?? 0;
+  const providersUp = provHealth.circuit_breakers_open === 0 ? '全部正常' : `${provHealth.circuit_breakers_open} 断路`;
+  const dbStatus = (h.checks || {}).database === 'ok' ? 'ok' : 'err';
+  const redisStatus = (h.checks || {}).redis === 'ok' ? 'ok' : 'err';
+
   return (
     <div>
       <div className="page-head">
         <div className="page-title">Control Room</div>
         <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>
-          Prism 平台,现在正在发生什么。
+          Prism 平台，现在正在发生什么。
         </div>
       </div>
 
       <div className="strip">
-        <div className="cell"><div className="lbl">活跃租户</div><div className="val">7</div><div className="delta up">↑ 1 本月新增</div></div>
-        <div className="cell"><div className="lbl">正在跑的 runs</div><div className="val">12</div><div className="delta">跨 4 个租户</div></div>
-        <div className="cell"><div className="lbl">24h tokens</div><div className="val">14.2M</div><div className="delta up">缓存省下 68%</div></div>
-        <div className="cell"><div className="lbl">24h 花费</div><div className="val">¥412</div><div className="delta dn">↑ 8% vs 昨天</div></div>
-        <div className="cell"><div className="lbl">护栏命中</div><div className="val">89</div><div className="delta">7 次拦截</div></div>
-        <div className="cell"><div className="lbl">未处理告警</div><div className="val" style={{ color: "var(--rust)" }}>3</div><div className="delta" style={{ color: "var(--rust)" }}>1 critical</div></div>
+        <div className="cell">
+          <div className="lbl">注册用户</div>
+          <div className="val">{d.active_users_24h ?? '—'}</div>
+          <div className="delta">24h 活跃</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">活跃会话</div>
+          <div className="val">{d.active_sessions ?? 0}</div>
+          <div className="delta">当前</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">24h Runs</div>
+          <div className="val">{d.runs_24h ?? 0}</div>
+          <div className="delta">7d: {d.runs_7d ?? 0}</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">内存使用</div>
+          <div className="val" style={{ color: memPct > 85 ? "var(--rust)" : memPct > 70 ? "var(--amber)" : "var(--ink)" }}>
+            {memPct.toFixed(1)}%
+          </div>
+          <div className="delta">{res.backend_memory_mb ? `${res.backend_memory_mb.toFixed(0)} MB` : ''}</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">CPU</div>
+          <div className="val" style={{ color: cpuPct > 95 ? "var(--rust)" : cpuPct > 80 ? "var(--amber)" : "var(--ink)" }}>
+            {cpuPct.toFixed(1)}%
+          </div>
+          <div className="delta">子进程 {agents.running ?? 0}/{agents.max ?? 0}</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">Providers</div>
+          <div className="val" style={{ color: provHealth.circuit_breakers_open > 0 ? "var(--rust)" : "var(--teal)", fontSize: 14 }}>
+            {providersUp}
+          </div>
+          <div className="delta">熔断器状态</div>
+        </div>
       </div>
 
       <div className="two-col">
         <div className="panel">
           <div className="panel-head">
-            <Icon name="layers" size={14}/>
-            <h3>Providers 健康度</h3>
-            <span className="eyebrow">过去 60 分钟 · 每格 = 1 分钟</span>
-            <div className="spacer"/>
-            <span style={{ display: "flex", gap: 8, fontSize: 11, color: "var(--ink-3)", alignItems: "center" }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: "#C8D9CE" }}/> 正常
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: "#E2D6B3", marginLeft: 6 }}/> 抖动
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: "#D9B4A2", marginLeft: 6 }}/> 故障
-            </span>
-          </div>
-          <div className="panel-body">
-            {PROVIDERS.map(p => (
-              <div className="health-grid" key={p.n}>
-                <div className="label">
-                  <span className={`st ${p.health}`}/>
-                  <span style={{ fontSize: 11.5, color: "var(--ink)" }}>{p.n.split(' · ')[1]}</span>
-                  <span style={{ color: "var(--ink-4)", fontSize: 10.5 }}>· {p.region}</span>
-                </div>
-                {HEALTH[p.n].map((v, i) => (
-                  <div key={i} className={`cell health-${v}`} title={`t-${59-i}min`}/>
-                ))}
-              </div>
-            ))}
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed var(--line)", display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, fontSize: 11, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
-              {PROVIDERS.map(p => (
-                <div key={p.n}>
-                  <div style={{ color: "var(--ink-4)", fontSize: 10 }}>{p.n.split(' · ')[1]}</div>
-                  <div>p50 {p.p50}</div>
-                  <div>p95 {p.p95}</div>
-                  <div>err {p.err}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-head">
-            <Icon name="bell" size={14} style={{ color: "var(--rust)" }}/>
-            <h3>告警队列</h3>
-            <span className="eyebrow">未处理 · 4</span>
-            <div className="spacer"/>
-            <button className="btn sm ghost"><Icon name="filter" size={11}/> 全部</button>
-          </div>
-          <div className="panel-body" style={{ padding: 14 }}>
-            {ALERTS.map((a, i) => (
-              <div key={i} className={`alert-card ${a.sev}`}>
-                <div className="sev"/>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "baseline" }}>
-                    <div className="title">{a.title}</div>
-                    <div className="t-time" style={{ marginLeft: "auto" }}>{a.at}</div>
-                  </div>
-                  <div className="meta">{a.tags}</div>
-                  <div className="msg">{a.msg}</div>
-                  <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                    <button className="btn sm">静音 1h</button>
-                    <button className="btn sm ghost">跳去 trace →</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="two-col" style={{ marginTop: 16 }}>
-        <div className="panel">
-          <div className="panel-head">
-            <Icon name="building" size={14}/>
-            <h3>租户实时动态</h3>
-            <span className="eyebrow">按 24h 花费排序 · 前 7</span>
-            <div className="spacer"/>
-            <button className="btn sm ghost" onClick={() => window.__setPage?.("tenants")}>全部 →</button>
-          </div>
-          <div className="panel-body tight">
-            {TENANTS.map(t => {
-              const usage = Math.round(t.spend / t.quota * 100);
-              const fillClass = usage > 95 ? "err" : usage > 80 ? "warn" : "";
-              return (
-                <div key={t.id} className="tenant-row">
-                  <div className="name">
-                    <div className="avatar-sq">{t.name.split(' ')[0][0]}</div>
-                    <div>
-                      <div>{t.name}</div>
-                      <div className="mono" style={{ fontWeight: 400, color: "var(--ink-4)" }}>{t.slug}</div>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="badge">{t.plan}</span>
-                  </div>
-                  <div>
-                    <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4 }}>¥{t.spend} / ¥{t.quota}</div>
-                    <div className="p-pill"><div className={`fill ${fillClass}`} style={{ width: `${Math.min(100, usage)}%` }}/></div>
-                  </div>
-                  <div>
-                    <div className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>7d runs</div>
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink)" }}>{t.runs7d.toLocaleString()}</div>
-                  </div>
-                  <div><span className={`st ${t.status}`}>{t.status === "ok" ? "正常" : t.status === "warn" ? "逼近" : t.status === "err" ? "故障" : "闲置"}</span></div>
-                  <div style={{ textAlign: "right" }}><Icon name="more" size={14} style={{ color: "var(--ink-4)" }}/></div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-head">
             <Icon name="server" size={14}/>
-            <h3>基础设施</h3>
-            <span className="eyebrow">hangzhou-prod</span>
+            <h3>基础设施健康</h3>
+            <span className="eyebrow">实时</span>
             <div className="spacer"/>
-            <span className="st ok">整体正常</span>
+            <span className={`st ${dbStatus}`}>DB</span>
+            <span className={`st ${redisStatus}`} style={{ marginLeft: 10 }}>Redis</span>
           </div>
           <div className="panel-body">
             {[
-              { k: "API gateway", v: "4 实例 · p50 38ms · 正常", ok: true },
-              { k: "Coordinator", v: "3 worker · 12 runs 在跑 · 正常", ok: true },
-              { k: "Postgres 16.2", v: "主 42GB · 只读副本 同步滞后 12ms", ok: true },
-              { k: "Redis 7.2", v: "512MB · 命中率 94%", ok: true },
-              { k: "OTel collector", v: "jaeger 1.58 · 吞吐 1.2k span/s", ok: true },
-              { k: "S3 sessions", v: "8.2 GB · 昨天备份 ✓", ok: true },
-              { k: "Subprocess pool", v: "14 活跃 / 20 上限 · 1 次心跳超时", warn: true },
-            ].map((r, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "130px 1fr auto", gap: 14, alignItems: "center", padding: "9px 0", borderBottom: i < 6 ? "1px dashed var(--line)" : "" }}>
+              { k: "Postgres", v: `状态: ${(h.checks || {}).database || '—'}`, ok: dbStatus === 'ok' },
+              { k: "Redis", v: `状态: ${(h.checks || {}).redis || '—'}`, ok: redisStatus === 'ok' },
+              { k: "Agent 进程", v: `${agents.running ?? 0} 活跃 / ${agents.max ?? 0} 上限`, ok: true },
+              { k: "队列深度", v: `${res.queue_depth ?? 0} 个任务等待`, ok: (res.queue_depth ?? 0) === 0 },
+              { k: "内存", v: `${res.backend_memory_mb?.toFixed(0) ?? '—'} MB / ${res.system_memory?.total_mb?.toFixed(0) ?? '—'} MB 系统`, ok: memPct < 70 },
+              { k: "CPU", v: `${cpuPct.toFixed(1)}%`, ok: cpuPct < 80 },
+              { k: "版本", v: h.version || '—', ok: true },
+              { k: "运行时间", v: h.uptime_seconds ? `${Math.floor(h.uptime_seconds / 60)} 分钟` : '—', ok: true },
+            ].map((r, i, arr) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "130px 1fr auto", gap: 14, alignItems: "center", padding: "9px 0", borderBottom: i < arr.length - 1 ? "1px dashed var(--line)" : "" }}>
                 <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, color: "var(--ink)" }}>{r.k}</div>
                 <div style={{ fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>{r.v}</div>
-                <span className={`st ${r.warn ? "warn" : "ok"}`}/>
+                <span className={`st ${r.ok ? "ok" : "warn"}`}/>
               </div>
             ))}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="activity" size={14}/>
+            <h3>系统概览</h3>
+            <div className="spacer"/>
+          </div>
+          <div className="panel-body">
+            <div className="kv-grid">
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>7d Runs</div>
+              <div className="v">{d.runs_7d ?? 0}</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>7d 花费</div>
+              <div className="v">${(d.cost_usd_7d ?? 0).toFixed(4)}</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>缓存省下</div>
+              <div className="v">${(d.cache_savings_usd_7d ?? 0).toFixed(4)}</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>断路器开启</div>
+              <div className="v" style={{ color: (provHealth.circuit_breakers_open ?? 0) > 0 ? "var(--rust)" : "var(--teal)" }}>
+                {provHealth.circuit_breakers_open ?? 0}
+              </div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>组件健康</div>
+              <div className="v">
+                {Object.entries(d.component_health || {}).map(([k, v]) => (
+                  <span key={k} style={{ marginRight: 8 }}>
+                    <span className={`st ${v === 'healthy' ? 'ok' : 'err'}`}>{k}</span>
+                  </span>
+                ))}
+              </div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>子进程</div>
+              <div className="v">{res.child_count ?? 0} 个</div>
+            </div>
           </div>
         </div>
       </div>
@@ -565,130 +845,191 @@ function Overview() {
   );
 }
 
-function Tenants() {
+function IMChannels() {
+  const [channels, setChannels] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    PrismAPI.request('GET', '/im/channels')
+      .then(data => {
+        setChannels(Array.isArray(data) ? data : []);
+      })
+      .catch(e => toast('加载 IM 频道失败: ' + e.message, 'err'))
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
         <div>
-          <div className="page-title">租户</div>
-          <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>每个租户是一个独立宇宙 —— 数据、配额、provider、密钥,互相看不见。</div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn sm"><Icon name="download" size={11}/> 导出</button>
-          <button className="btn sm primary"><Icon name="building" size={11}/> 新建租户</button>
+          <div className="page-title">IM 频道</div>
+          <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>
+            本版本为单租户。飞书 / 企微 / Telegram 通道配置。
+          </div>
         </div>
       </div>
       <div className="panel">
-        <div className="panel-body tight">
-          <div style={{ padding: "12px 14px", display: "flex", gap: 10, alignItems: "center", borderBottom: "1px solid var(--line)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", background: "var(--bg)", borderRadius: 999, fontSize: 12, color: "var(--ink-3)", flex: 1 }}>
-              <Icon name="search" size={12}/>
-              <span>搜索租户、slug、创建人…</span>
-            </div>
-            <button className="btn sm ghost"><Icon name="filter" size={11}/> plan</button>
-            <button className="btn sm ghost"><Icon name="filter" size={11}/> status</button>
-          </div>
-          <table className="table">
-            <thead><tr><th>租户</th><th>Plan</th><th>座位</th><th>7 天 runs</th><th>本月用量</th><th>护栏</th><th>状态</th><th>创建</th><th></th></tr></thead>
-            <tbody>
-              {TENANTS.map(t => {
-                const pct = Math.round(t.spend / t.quota * 100);
-                return (
-                  <tr key={t.id}>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div className="avatar-sq">{t.name.split(' ')[0][0]}</div>
-                        <div>
-                          <div style={{ color: "var(--ink)", fontWeight: 500 }}>{t.name}</div>
-                          <div className="mono" style={{ color: "var(--ink-4)", fontSize: 11 }}>{t.slug}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><span className="badge">{t.plan}</span></td>
-                    <td className="mono">{t.seats}</td>
-                    <td className="mono">{t.runs7d.toLocaleString()}</td>
-                    <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                        <div className="mono" style={{ fontSize: 11 }}>¥{t.spend} / ¥{t.quota} · {pct}%</div>
-                        <div className="p-pill" style={{ width: 120 }}>
-                          <div className={`fill ${pct > 95 ? "err" : pct > 80 ? "warn" : ""}`} style={{ width: `${Math.min(100, pct)}%` }}/>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="mono">3 条</td>
-                    <td><span className={`st ${t.status}`}>{t.status === "ok" ? "正常" : t.status === "warn" ? "逼近" : t.status === "err" ? "故障" : "闲置"}</span></td>
-                    <td style={{ color: "var(--ink-3)", fontFamily: "var(--mono)", fontSize: 11 }}>{t.created}</td>
-                    <td><Icon name="more" size={14} style={{ color: "var(--ink-4)", cursor: "pointer" }}/></td>
+        <div className="panel-head">
+          <Icon name="link" size={14}/>
+          <h3>已配置的 IM 通道</h3>
+          <span className="eyebrow">{channels.length} 个</span>
+          <div className="spacer"/>
+        </div>
+        <div className="panel-body">
+          {loading ? <Spinner/> : channels.length === 0 ? (
+            <EmptyState msg="暂无 IM 频道配置。在 .env 中设置 FEISHU_APP_ID / WECOM_CORP_ID / TELEGRAM_BOT_TOKEN 后重启服务。"/>
+          ) : (
+            <table className="table" style={{ width: "100%" }}>
+              <thead><tr><th>频道</th><th>平台</th><th>状态</th><th>配置</th></tr></thead>
+              <tbody>
+                {channels.map((c, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 500, color: "var(--ink)" }}>{c.channel || c.name || '—'}</td>
+                    <td><span className="badge">{c.platform || c.channel || '—'}</span></td>
+                    <td><span className={`st ${c.enabled || c.is_enabled ? 'ok' : 'idle'}`}>{c.enabled || c.is_enabled ? '启用' : '停用'}</span></td>
+                    <td className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{c.webhook_url || c.bot_token ? '已配置' : '未配置'}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div style={{ marginTop: 24, padding: 16, background: "var(--bg)", borderRadius: 12, fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.6 }}>
+            <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", color: "var(--ink)", marginBottom: 6 }}>绑定流程</div>
+            <div>① 用户在前端点「绑定 IM」→ 后端生成 6 位配对码（5 分钟有效）</div>
+            <div>② 在 IM 中向 Prism Bot 发送 <code style={{ background: "var(--paper)", padding: "1px 6px", borderRadius: 4 }}>/bind PAIR-XXXXXX</code></div>
+            <div>③ 后端验证 → 写入绑定记录（channel + platform_user_id + chat_id 三元组唯一）</div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function Users() {
-  const USERS = [
-    { n: "Alice Chen", e: "alice@hangzhou", r: "workspace-admin", t: "hz-research", last: "刚才", runs: 142, status: "ok" },
-    { n: "Ben Wu", e: "ben@sh-markets", r: "member", t: "sh-markets", last: "2h 前", runs: 88, status: "ok" },
-    { n: "Cat Liu", e: "cat@hz-research", r: "member", t: "hz-research", last: "4h 前", runs: 62, status: "ok" },
-    { n: "Dan Zhou", e: "dan@external", r: "visitor", t: "cd-pilot", last: "昨天", runs: 4, status: "idle" },
-    { n: "Esther Yin", e: "esther@sh-markets", r: "workspace-admin", t: "sh-markets", last: "2 天前", runs: 31, status: "ok" },
-    { n: "Fang Li", e: "fang@bj-compliance", r: "member", t: "bj-compliance", last: "2 天前", runs: 12, status: "ok" },
-    { n: "Gregor Tao", e: "gregor@gz-ops", r: "member", t: "gz-ops", last: "3 天前", runs: 220, status: "ok" },
-    { n: "Helen Ma", e: "helen@xa-research", r: "member", t: "xa-research", last: "7 天前", runs: 2, status: "err" },
-    { n: "Ivan Ge", e: "ivan@external", r: "platform-admin", t: "—", last: "刚才", runs: 0, status: "ok" },
-  ];
+function Users({ currentUser }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({});
+  const [showInvite, setShowInvite] = useState(false);
+
+  const load = useCallback(async (p = 1, q = '') => {
+    setLoading(true);
+    try {
+      const data = await PrismAPI.admin.listUsers({ page: p, search: q || undefined });
+      setUsers(data?.items || []);
+      setMeta({ total: data?.total, hasNext: data?.has_next, hasPrev: data?.has_prev });
+    } catch (e) {
+      toast('加载用户失败: ' + e.message, 'err');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(1, search); }, []);
+
+  function doSearch() { setPage(1); load(1, search); }
+
+  async function changeRole(user) {
+    const newRole = user.role === 'admin' ? 'user' : 'admin';
+    if (!window.confirm(`确认将 ${user.email} 的角色改为 ${newRole}？`)) return;
+    try {
+      await PrismAPI.admin.changeUserRole(user.id, newRole);
+      toast('角色已更新', 'ok');
+      load(page, search);
+    } catch (e) {
+      toast('修改失败: ' + e.message, 'err');
+    }
+  }
+
+  async function disableUser(user) {
+    if (user.id === currentUser?.id) { toast('不能禁用自己', 'err'); return; }
+    if (!window.confirm(`确认禁用用户 ${user.email}？此操作不可逆（软删除）。`)) return;
+    try {
+      await PrismAPI.admin.disableUser(user.id);
+      toast('用户已禁用', 'ok');
+      load(page, search);
+    } catch (e) {
+      toast('禁用失败: ' + e.message, 'err');
+    }
+  }
+
   return (
     <div>
-      <div className="page-head"><div className="page-title">用户与角色</div><div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>RBAC 三层: 平台 / 工作区 / 成员。Visitor 临时给外部。</div></div>
+      <div className="page-head"><div className="page-title">用户与角色</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>管理员 / 普通用户。最后一个管理员不可降级（后端 409 保护）。</div>
+      </div>
       <div className="two-col" style={{ gridTemplateColumns: "1fr 280px" }}>
         <div className="panel">
           <div className="panel-head">
             <Icon name="users" size={14}/>
             <h3>所有用户</h3>
-            <span className="eyebrow">跨全部租户 · {USERS.length}</span>
+            <span className="eyebrow">共 {meta.total ?? '…'} 人</span>
             <div className="spacer"/>
-            <button className="btn sm"><Icon name="download" size={11}/> 导出</button>
-            <button className="btn sm primary"><Icon name="users" size={11}/> 邀请</button>
+            <button className="btn sm" onClick={() => setShowInvite(true)}><Icon name="key" size={11}/> 邀请码</button>
           </div>
           <div className="panel-body tight">
-            <table className="table">
-              <thead><tr><th>名字</th><th>邮箱</th><th>角色</th><th>租户</th><th>30d runs</th><th>最后活跃</th><th></th></tr></thead>
-              <tbody>
-                {USERS.map((u, i) => (
-                  <tr key={i}>
-                    <td style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div className="avatar-sq" style={{ width: 24, height: 24, fontSize: 11 }}>{u.n[0]}</div>
-                      <div>
-                        <div style={{ color: "var(--ink)", fontWeight: 500 }}>{u.n}</div>
-                      </div>
-                    </td>
-                    <td className="mono" style={{ color: "var(--ink-3)" }}>{u.e}</td>
-                    <td><span className={`badge ${u.r === "platform-admin" ? "ink" : u.r === "visitor" ? "" : ""}`}>{u.r}</span></td>
-                    <td className="mono" style={{ color: "var(--ink-3)", fontSize: 11 }}>{u.t}</td>
-                    <td className="mono">{u.runs}</td>
-                    <td style={{ color: "var(--ink-3)" }}>{u.last}</td>
-                    <td><Icon name="more" size={14} style={{ color: "var(--ink-4)", cursor: "pointer" }}/></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ padding: "10px 14px", display: "flex", gap: 10, alignItems: "center", borderBottom: "1px solid var(--line)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", background: "var(--bg)", borderRadius: 999, fontSize: 12, color: "var(--ink-3)", flex: 1 }}>
+                <Icon name="search" size={12}/>
+                <input value={search} onChange={e => setSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && doSearch()}
+                  placeholder="搜索邮箱…"
+                  style={{ background: "transparent", border: "none", outline: "none", fontSize: 12, width: "100%", color: "var(--ink)" }}/>
+              </div>
+              <button className="btn sm ghost" onClick={doSearch}><Icon name="search" size={11}/></button>
+            </div>
+            {loading ? <Spinner/> : users.length === 0 ? <EmptyState msg="暂无用户"/> : (
+              <table className="table">
+                <thead><tr><th>用户</th><th>邮箱</th><th>角色</th><th>最后登录</th><th>操作</th></tr></thead>
+                <tbody>
+                  {users.map((u) => (
+                    <tr key={u.id}>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div className="avatar-sq" style={{ width: 24, height: 24, fontSize: 11 }}>{(u.username || u.email || '?')[0].toUpperCase()}</div>
+                          <div style={{ color: "var(--ink)", fontWeight: 500 }}>{u.username || '—'}</div>
+                        </div>
+                      </td>
+                      <td className="mono" style={{ color: "var(--ink-3)" }}>{u.email}</td>
+                      <td><span className={`badge ${u.role === 'admin' ? 'ink' : ''}`}>{u.role}</span></td>
+                      <td style={{ color: "var(--ink-3)", fontFamily: "var(--mono)", fontSize: 11 }}>
+                        {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '从未'}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button className="btn sm ghost" onClick={() => changeRole(u)} title={u.role === 'admin' ? '降为普通用户' : '升为管理员'}>
+                            {u.role === 'admin' ? '→user' : '→admin'}
+                          </button>
+                          {u.id !== currentUser?.id && (
+                            <button className="btn sm ghost" style={{ color: "var(--rust)" }} onClick={() => disableUser(u)}>
+                              <Icon name="trash" size={11}/>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {(meta.hasPrev || meta.hasNext) && (
+              <div style={{ display: "flex", justifyContent: "center", gap: 8, padding: 14 }}>
+                <button className="btn sm ghost" disabled={!meta.hasPrev} onClick={() => { setPage(p => p - 1); load(page - 1, search); }}>← 上一页</button>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-3)", alignSelf: "center" }}>第 {page} 页</span>
+                <button className="btn sm ghost" disabled={!meta.hasNext} onClick={() => { setPage(p => p + 1); load(page + 1, search); }}>下一页 →</button>
+              </div>
+            )}
           </div>
         </div>
         <div className="panel">
           <div className="panel-head"><Icon name="shield" size={14}/><h3>角色矩阵</h3></div>
           <div className="panel-body" style={{ fontSize: 12 }}>
             {[
-              { r: "platform-admin", c: ["全部租户", "基础设施", "密钥轮换", "审计导出"] },
-              { r: "workspace-admin", c: ["工作区成员", "预算", "Skill", "护栏"] },
-              { r: "member", c: ["自己的会话", "已装 Skill"] },
-              { r: "visitor", c: ["Chat 只读", "30 天自动清理"] },
+              { r: "admin", c: ["所有用户管理", "Provider 配置", "审计导出", "告警配置"] },
+              { r: "user", c: ["自己的会话", "自建 Provider", "安装 Skill"] },
             ].map((x, i) => (
-              <div key={i} style={{ paddingBottom: 12, marginBottom: 12, borderBottom: i < 3 ? "1px dashed var(--line)" : "" }}>
+              <div key={i} style={{ paddingBottom: 12, marginBottom: 12, borderBottom: i < 1 ? "1px dashed var(--line)" : "" }}>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink)", marginBottom: 6, fontWeight: 500 }}>{x.r}</div>
                 {x.c.map((y, j) => (
                   <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--ink-3)", padding: "2px 0" }}>
@@ -697,167 +1038,252 @@ function Users() {
                 ))}
               </div>
             ))}
-            <button className="btn sm" style={{ width: "100%", justifyContent: "center" }}>编辑角色矩阵</button>
           </div>
         </div>
       </div>
+      {showInvite && <InviteCodeModal onClose={() => setShowInvite(false)}/>}
     </div>
   );
 }
 
 function Providers() {
+  const [provs, setProvs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editProvider, setEditProvider] = useState(null); // null=closed, {}=new, {...}=edit
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await PrismAPI.providers.list();
+      setProvs(Array.isArray(data) ? data : []);
+    } catch (e) {
+      toast('加载 Providers 失败: ' + e.message, 'err');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, []);
+
+  async function del(p) {
+    if (!window.confirm(`确认删除 Provider "${p.name}"？`)) return;
+    try {
+      await PrismAPI.providers.delete_(p.id);
+      toast('已删除', 'ok');
+      load();
+    } catch (e) {
+      toast('删除失败: ' + e.message, 'err');
+    }
+  }
+
+  async function testConn(p) {
+    toast(`正在测试 ${p.name}…`);
+    try {
+      const res = await PrismAPI.providers.test(p.id);
+      toast(`${p.name} 测试通过`, 'ok');
+    } catch (e) {
+      toast(`${p.name} 测试失败: ${e.message}`, 'err');
+    }
+  }
+
   return (
     <div>
       <div className="page-head">
         <div className="page-title">Providers 与路由</div>
-        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>大模型只是水龙头。你在这儿决定每个租户喝哪条水、主坏了切哪条。</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>大模型只是水龙头。编辑 API key 和 Base URL 来接入供应商。</div>
       </div>
       <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="panel-head"><Icon name="layers" size={14}/><h3>全部 providers</h3><div className="spacer"/><button className="btn sm primary"><Icon name="layers" size={11}/> 新增接入</button></div>
+        <div className="panel-head">
+          <Icon name="layers" size={14}/>
+          <h3>全部 Providers</h3>
+          <span className="eyebrow">{provs.length} 个</span>
+          <div className="spacer"/>
+          <button className="btn sm primary" onClick={() => setEditProvider({})}>
+            <Icon name="plus" size={11}/> 新增接入
+          </button>
+        </div>
         <div className="panel-body tight">
-          <table className="table">
-            <thead><tr><th>名字</th><th>协议</th><th>Region</th><th>p50</th><th>p95</th><th>RPS</th><th>错误率</th><th>缓存</th><th>状态</th><th></th></tr></thead>
-            <tbody>
-              {PROVIDERS.map((p, i) => (
-                <tr key={i}>
-                  <td style={{ color: "var(--ink)", fontWeight: 500 }}>{p.n}</td>
-                  <td><span className="badge">{p.n.startsWith("Anthropic") ? "anthropic" : "openai"}</span></td>
-                  <td className="mono">{p.region}</td>
-                  <td className="mono">{p.p50}</td>
-                  <td className="mono">{p.p95}</td>
-                  <td className="mono">{p.rps}</td>
-                  <td className="mono" style={{ color: parseFloat(p.err) > 1 ? "var(--rust)" : "var(--ink-3)" }}>{p.err}</td>
-                  <td><Icon name="check" size={11} style={{ color: p.n.startsWith("Anthropic") || p.n.startsWith("MiniMax") ? "var(--teal)" : "var(--ink-4)" }}/></td>
-                  <td><span className={`st ${p.health}`}/></td>
-                  <td><Icon name="more" size={14} style={{ color: "var(--ink-4)", cursor: "pointer" }}/></td>
+          {loading ? <Spinner/> : provs.length === 0 ? (
+            <div style={{ padding: 32, textAlign: "center" }}>
+              <EmptyState msg="暂无 Provider。点「新增接入」选择预设后填入 API Key。"/>
+            </div>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>名称</th><th>协议</th><th>Model</th><th>Base URL</th><th>API Key</th><th>健康</th><th>操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {provs.map((p, i) => (
+                  <tr key={p.id || i}>
+                    <td style={{ color: "var(--ink)", fontWeight: 500 }}>{p.name}</td>
+                    <td><span className="badge">{p.protocol}</span></td>
+                    <td className="mono" style={{ fontSize: 11 }}>{p.model_id || '—'}</td>
+                    <td className="mono" style={{ fontSize: 10.5, color: "var(--ink-3)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.base_url || '—'}</td>
+                    <td className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{p.api_key_masked || (p.api_key ? '••••' : '未设置')}</td>
+                    <td>
+                      <span className={`st ${p.is_healthy === true ? 'ok' : p.is_healthy === false ? 'err' : 'idle'}`}>
+                        {p.is_healthy === true ? '正常' : p.is_healthy === false ? '异常' : '未知'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button className="icon-btn" title="测试连接" onClick={() => testConn(p)}><Icon name="refresh" size={12}/></button>
+                        <button className="icon-btn" title="编辑" onClick={() => setEditProvider(p)}><Icon name="edit" size={12}/></button>
+                        <button className="icon-btn" title="删除" style={{ color: "var(--rust)" }} onClick={() => del(p)}><Icon name="trash" size={12}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
       <div className="panel">
         <div className="panel-head">
           <Icon name="flow" size={14}/>
-          <h3>路由策略</h3>
-          <span className="eyebrow">全局默认 · 可按租户覆盖</span>
-          <div className="spacer"/>
-          <button className="btn sm ghost">YAML 编辑 →</button>
+          <h3>路由说明</h3>
+          <span className="eyebrow">ADR-013 熔断器</span>
         </div>
         <div className="panel-body">
-          <div className="kv-grid" style={{ gridTemplateColumns: "140px 1fr" }}>
-            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>默认主链</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              {["sonnet-4-5", "minimax-m2", "deepseek-v3", "qwen-max"].map((x, i) => (
-                <React.Fragment key={x}>
-                  <span className="badge">{x}</span>
-                  {i < 3 && <Icon name="arrowRight" size={11} style={{ color: "var(--ink-4)" }}/>}
-                </React.Fragment>
-              ))}
-            </div>
-            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>切换条件</div>
-            <div style={{ fontSize: 12.5 }}>HTTP 5xx 连续 3 次 <em style={{ color: "var(--ink-3)" }}>或</em> p95 &gt; 5s 持续 2 分钟</div>
-            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>回退行为</div>
-            <div style={{ fontSize: 12.5 }}>切到下一条,<em style={{ color: "var(--ink-3)" }}>同时</em>记一个 warn 级 OTel span + 通知平台 Ops。</div>
-            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>租户覆盖</div>
-            <div style={{ fontSize: 12.5 }}>
-              <span className="badge">sh-markets</span> 强制 sonnet-4-5 不 fallback,&nbsp;
-              <span className="badge">cd-pilot</span> 只允许 deepseek-v3 (成本硬约束)
-            </div>
+          <div className="kv-grid" style={{ gridTemplateColumns: "160px 1fr" }}>
+            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>is_healthy</div>
+            <div style={{ fontSize: 12.5 }}>从 Redis <code>harness:circuit:{'{id}'}</code> 熔断器状态读取，实时更新。</div>
+            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>API Key 安全</div>
+            <div style={{ fontSize: 12.5 }}>写入后 AES-256-GCM 加密存储，前端只显示掩码 <code>sk-1…abcd</code>。</div>
+            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>测试连接</div>
+            <div style={{ fontSize: 12.5 }}>点 <Icon name="refresh" size={11}/> 触发 <code>POST /providers/{'{id}'}/test</code>，探测 capabilities。</div>
           </div>
         </div>
       </div>
+
+      {editProvider !== null && (
+        <ProviderEditModal
+          provider={editProvider}
+          onClose={() => setEditProvider(null)}
+          onSaved={load}
+        />
+      )}
     </div>
   );
 }
 
 function Runs() {
-  const RUNS = [
-    { id: "r-5b03", t: "14:32", sess: "Harness 2026 简报", user: "alice", tenant: "hz-research", mode: "coordinator", status: "running", turn: 11, tokens: "28.4k", cache: "72%", cost: "¥0.28" },
-    { id: "r-5b02", t: "14:28", sess: "Kimi k2 健康排查", user: "ops", tenant: "—", mode: "general", status: "running", turn: 3, tokens: "4.1k", cache: "41%", cost: "¥0.03" },
-    { id: "r-5af9", t: "14:12", sess: "沪深合规数字复核", user: "ben", tenant: "sh-markets", mode: "coordinator", status: "failed", turn: 8, tokens: "18.2k", cache: "60%", cost: "¥0.14" },
-    { id: "r-5af4", t: "13:47", sess: "外部接口权限驳回", user: "ben", tenant: "sh-markets", mode: "general", status: "completed", turn: 2, tokens: "1.1k", cache: "—", cost: "¥0.01" },
-    { id: "r-5aef", t: "13:22", sess: "周报生成", user: "cat", tenant: "hz-research", mode: "verifier", status: "completed", turn: 5, tokens: "9.8k", cache: "54%", cost: "¥0.06" },
-    { id: "r-5ae8", t: "11:05", sess: "MiniMax vs DeepSeek 对比", user: "alice", tenant: "hz-research", mode: "general", status: "completed", turn: 5, tokens: "9.8k", cache: "54%", cost: "¥0.06" },
-    { id: "r-5ae0", t: "09:12", sess: "代码审查 · github MCP", user: "cat", tenant: "hz-research", mode: "coordinator", status: "completed", turn: 7, tokens: "14.1k", cache: "68%", cost: "¥0.11" },
-  ];
   return (
     <div>
-      <div className="page-head"><div className="page-title">全局 Runs</div><div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>所有租户的所有运行,按时间流过。可以重放、分叉、或者强制停掉。</div></div>
-      <div className="panel">
-        <div className="panel-head" style={{ gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "var(--bg)", borderRadius: 999, fontSize: 12, color: "var(--ink-3)", flex: 1 }}>
-            <Icon name="search" size={12}/>
-            <span>按 run id、会话标题、用户、prompt 片段搜索…</span>
-            <span className="kbd" style={{ fontFamily: "var(--mono)", fontSize: 10, padding: "1px 5px", background: "var(--paper)", borderRadius: 3 }}>⌘ K</span>
-          </div>
-          <button className="btn sm ghost"><Icon name="filter" size={11}/> 租户</button>
-          <button className="btn sm ghost"><Icon name="filter" size={11}/> 状态</button>
-          <button className="btn sm ghost"><Icon name="filter" size={11}/> 时间</button>
+      <div className="page-head">
+        <div className="page-title">全局 Runs</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>所有运行，按时间流过。</div>
+      </div>
+      <div className="panel" style={{ padding: 48, textAlign: "center" }}>
+        <div style={{ display: "inline-flex", color: "var(--ink-4)", marginBottom: 18 }}><PrismMark size={48}/></div>
+        <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 16, color: "var(--ink)", marginBottom: 8 }}>本页需 Session 维度 Drill-down</div>
+        <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6, maxWidth: 480, margin: "0 auto" }}>
+          后端没有全量 <code>GET /runs</code> 端点（ADR-060 设计）。
+          须从 <code>GET /sessions/{'{id}'}/runs</code> 按 Session 查询。
+          在用户端的 Chat 页进入某个 Session，可以看到该 Session 下所有 Run。
         </div>
-        <div className="panel-body tight">
-          <table className="table">
-            <thead><tr><th>Run</th><th>会话</th><th>用户</th><th>租户</th><th>模式</th><th>状态</th><th>回合</th><th>Tokens</th><th>缓存</th><th>花费</th><th>开始</th><th></th></tr></thead>
-            <tbody>
-              {RUNS.map(r => (
-                <tr key={r.id}>
-                  <td className="mono" style={{ color: "var(--ink)", fontWeight: 500 }}>{r.id}</td>
-                  <td style={{ color: "var(--ink-2)" }}>{r.sess}</td>
-                  <td className="mono" style={{ color: "var(--ink-3)", fontSize: 11.5 }}>{r.user}</td>
-                  <td className="mono" style={{ color: "var(--ink-3)", fontSize: 11.5 }}>{r.tenant}</td>
-                  <td><span className="badge">{r.mode}</span></td>
-                  <td><span className={`st ${r.status === "completed" ? "ok" : r.status === "failed" ? "err" : r.status === "running" ? "warn" : "idle"}`}>{r.status === "completed" ? "完成" : r.status === "failed" ? "失败" : "进行中"}</span></td>
-                  <td className="mono">{r.turn}</td>
-                  <td className="mono">{r.tokens}</td>
-                  <td className="mono" style={{ color: r.cache.includes("%") && parseInt(r.cache) > 60 ? "var(--teal)" : "var(--ink-3)" }}>{r.cache}</td>
-                  <td className="mono">{r.cost}</td>
-                  <td style={{ color: "var(--ink-3)", fontFamily: "var(--mono)", fontSize: 11.5 }}>{r.t}</td>
-                  <td>
-                    <div style={{ display: "flex", gap: 2 }}>
-                      <button className="icon-btn" title="看 trace"><Icon name="eye" size={12}/></button>
-                      <button className="icon-btn" title="重放"><Icon name="refresh" size={12}/></button>
-                      <button className="icon-btn" title="分叉"><Icon name="fork" size={12}/></button>
-                      {r.status === "running" && <button className="icon-btn" title="终止" style={{ color: "var(--rust)" }}><Icon name="x" size={12}/></button>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <button className="btn sm" style={{ marginTop: 18 }} onClick={() => location.href = 'Prism.html'}>
+          → 去 Chat 页查看 Runs
+        </button>
       </div>
     </div>
   );
 }
 
 function Audit() {
-  const [filt, setFilt] = useState("all");
+  const [auditData, setAuditData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filt, setFilt] = useState('all');
+  const [exporting, setExporting] = useState(false);
+  const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    PrismAPI.admin.listAuditLogs({ limit: 100 })
+      .then(data => {
+        const items = data?.items || [];
+        setTotal(data?.total || items.length);
+        // Group by date
+        const byDate = {};
+        items.forEach(item => {
+          const d = new Date(item.created_at);
+          const dateKey = d.toISOString().split('T')[0];
+          if (!byDate[dateKey]) byDate[dateKey] = [];
+          byDate[dateKey].push(item);
+        });
+        const grouped = Object.entries(byDate)
+          .sort(([a], [b]) => b.localeCompare(a))
+          .map(([d, rows]) => ({
+            d,
+            wkd: new Date(d).toLocaleDateString('zh-CN', { weekday: 'long' }),
+            rows,
+          }));
+        setAuditData(grouped);
+      })
+      .catch(e => toast('加载审计日志失败: ' + e.message, 'err'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function exportCSV() {
+    setExporting(true);
+    try {
+      await PrismAPI.admin.exportAuditLogsCSV({});
+      toast('CSV 已下载', 'ok');
+    } catch (e) {
+      toast('导出失败: ' + e.message, 'err');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // Map action → kind for styling
+  function actionKind(action) {
+    if (!action) return '';
+    if (action.includes('deny') || action.includes('reject')) return 'deny';
+    if (action.includes('permission')) return 'permission';
+    if (action.includes('config') || action.includes('update') || action.includes('create') || action.includes('delete')) return 'config';
+    return '';
+  }
+
+  function actionIcon(action) {
+    const k = actionKind(action);
+    if (k === 'deny') return 'x';
+    if (k === 'permission') return 'shield';
+    return 'flow';
+  }
+
+  function filterRow(item) {
+    if (filt === 'all') return true;
+    const k = actionKind(item.action);
+    return k === filt;
+  }
+
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
         <div>
           <div className="page-title">审计流</div>
-          <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>每一次 ask、每一次 deny、每一次 config 变更 —— 都在这里排成一列,永久保存。</div>
+          <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>每一次操作 —— 都在这里排成一列，永久保存。</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn sm ghost"><Icon name="filter" size={11}/> 自定义过滤</button>
-          <button className="btn sm"><Icon name="download" size={11}/> CSV</button>
-          <button className="btn sm primary"><Icon name="download" size={11}/> 合规导出 (SOC2)</button>
+          <button className="btn sm" onClick={exportCSV} disabled={exporting}>
+            <Icon name="download" size={11}/> {exporting ? '导出中…' : 'CSV 导出'}
+          </button>
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
         {[
-          { id: "all", label: "全部", c: 428 },
-          { id: "permission", label: "权限", c: 142 },
-          { id: "deny", label: "拦截", c: 14 },
-          { id: "config", label: "配置变更", c: 38 },
-          { id: "key", label: "密钥", c: 6 },
+          { id: "all", label: "全部" },
+          { id: "permission", label: "权限" },
+          { id: "deny", label: "拦截" },
+          { id: "config", label: "配置变更" },
         ].map(x => (
           <button key={x.id} onClick={() => setFilt(x.id)} className={`btn sm ${filt === x.id ? "primary" : "ghost"}`}>
             {x.label}
-            <span style={{ marginLeft: 4, opacity: 0.6, fontFamily: "var(--mono)", fontSize: 10 }}>{x.c}</span>
           </button>
         ))}
       </div>
@@ -865,58 +1291,67 @@ function Audit() {
       <div className="two-col" style={{ gridTemplateColumns: "1fr 260px" }}>
         <div className="panel">
           <div className="panel-body">
-            <div className="audit-stream">
-              {AUDIT.map((day, i) => (
-                <div key={i} className="audit-day">
-                  <div className="audit-day-head">
-                    <div className="d">{day.d}</div>
-                    <div className="w">· {day.wkd}</div>
-                    <div className="c">{day.rows.length} 条</div>
-                  </div>
-                  {day.rows.filter(r => filt === "all" || r.kind === filt).map((r, j) => (
-                    <div key={j} className={`audit-row ${r.kind}`}>
-                      <div className="t">{r.t}</div>
-                      <div className="glyph">
-                        <Icon name={r.kind === "permission" ? "shield" : r.kind === "deny" ? "x" : "flow"} size={12}/>
+            {loading ? <Spinner/> : auditData.length === 0 ? <EmptyState msg="暂无审计记录"/> : (
+              <div className="audit-stream">
+                {auditData.map((day, i) => {
+                  const filtered = day.rows.filter(r => filterRow(r));
+                  if (filtered.length === 0) return null;
+                  return (
+                    <div key={i} className="audit-day">
+                      <div className="audit-day-head">
+                        <div className="d">{day.d}</div>
+                        <div className="w">· {day.wkd}</div>
+                        <div className="c">{filtered.length} 条</div>
                       </div>
-                      <div className="txt">{r.txt}</div>
-                      <div className="who">{r.who}</div>
-                      <div className="tenant">{r.tenant}</div>
-                      <div className="act"><button className="btn sm ghost" style={{ padding: "3px 8px" }}>详情 →</button></div>
+                      {filtered.map((r, j) => {
+                        const kind = actionKind(r.action);
+                        const t = new Date(r.created_at).toLocaleTimeString('zh-CN', { hour12: false });
+                        return (
+                          <div key={j} className={`audit-row ${kind}`}>
+                            <div className="t">{t}</div>
+                            <div className="glyph"><Icon name={actionIcon(r.action)} size={12}/></div>
+                            <div className="txt">
+                              {r.action}
+                              {r.details && Object.keys(r.details).length > 0 && (
+                                <em style={{ marginLeft: 8 }}>{JSON.stringify(r.details).substring(0, 60)}</em>
+                              )}
+                            </div>
+                            <div className="who">{r.user_id ? r.user_id.substring(0, 12) + '…' : 'system'}</div>
+                            <div className="tenant">{r.resource_type || '—'}</div>
+                            <div className="act">
+                              <span className={`badge ${r.severity === 'warn' ? '' : ''}`}>{r.severity || 'info'}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  );
+                })}
+                <div style={{ textAlign: "center", padding: 18, fontSize: 12, color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic" }}>
+                  共 {total} 条审计记录（显示最近 100 条）
                 </div>
-              ))}
-              <div style={{ textAlign: "center", padding: 18, fontSize: 12, color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic" }}>
-                往上还有 24,982 条 · 默认保留 90 天 · 合规归档永久
               </div>
-            </div>
+            )}
           </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="panel">
-            <div className="panel-head"><Icon name="clock" size={13}/><h3>30 天概览</h3></div>
+            <div className="panel-head"><Icon name="clock" size={13}/><h3>审计概览</h3></div>
             <div className="panel-body">
-              <div style={{ fontFamily: "var(--serif)", fontSize: 26, color: "var(--ink)", letterSpacing: "-0.01em" }}>18,420</div>
+              <div style={{ fontFamily: "var(--serif)", fontSize: 26, color: "var(--ink)", letterSpacing: "-0.01em" }}>{total}</div>
               <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)", marginBottom: 12 }}>全部审计事件</div>
               <div className="kv-grid" style={{ gridTemplateColumns: "1fr auto", fontSize: 12 }}>
-                <div className="k">权限 ask</div><div className="v" style={{ color: "var(--ink)" }}>7,104</div>
-                <div className="k">被拦下 (deny)</div><div className="v" style={{ color: "var(--rust)" }}>142</div>
-                <div className="k">配置变更</div><div className="v" style={{ color: "var(--ink)" }}>612</div>
-                <div className="k">密钥事件</div><div className="v" style={{ color: "var(--ink)" }}>48</div>
-                <div className="k">登录</div><div className="v" style={{ color: "var(--ink)" }}>1,284</div>
+                <div className="k">当前页</div><div className="v" style={{ color: "var(--ink)" }}>{auditData.reduce((s, d) => s + d.rows.length, 0)}</div>
+                <div className="k">分组天数</div><div className="v">{auditData.length}</div>
               </div>
             </div>
           </div>
-
           <div className="panel">
-            <div className="panel-head"><Icon name="alert" size={13} style={{ color: "var(--amber)" }}/><h3>合规钩子</h3></div>
+            <div className="panel-head"><Icon name="alert" size={13} style={{ color: "var(--amber)" }}/><h3>保留策略</h3></div>
             <div className="panel-body" style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--ink-2)" }}>
-              <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", color: "var(--ink)", marginBottom: 6 }}>保留策略</div>
-              <div style={{ color: "var(--ink-3)", marginBottom: 14 }}>审计流 90 天热 · 归档 S3 Glacier 永久 · SOC 2 报告季度出一次。</div>
-              <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", color: "var(--ink)", marginBottom: 6 }}>下次导出</div>
-              <div style={{ color: "var(--ink-3)" }}>2026-06-30 · 自动发送给 compliance@</div>
+              <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", color: "var(--ink)", marginBottom: 6 }}>存储</div>
+              <div style={{ color: "var(--ink-3)" }}>审计日志持久化到 PostgreSQL audit_logs 表，无自动清理。</div>
             </div>
           </div>
         </div>
@@ -935,7 +1370,7 @@ function Placeholder({ title, sub }) {
       <div className="panel" style={{ padding: 60, textAlign: "center", color: "var(--ink-3)" }}>
         <div style={{ display: "inline-flex", color: "var(--ink-4)", marginBottom: 18 }}><PrismMark size={48}/></div>
         <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 16, color: "var(--ink)" }}>这一页还在草稿里</div>
-        <div style={{ marginTop: 8, fontSize: 13, color: "var(--ink-3)" }}>Overview、租户、用户、Providers、Runs、审计这几页已经能走通了。</div>
+        <div style={{ marginTop: 8, fontSize: 13, color: "var(--ink-3)" }}>Overview、IM 频道、用户、Providers、审计这几页已经能走通了。</div>
         <button className="btn sm" style={{ marginTop: 14 }} onClick={() => window.__setPage?.("overview")}>回到总览</button>
       </div>
     </div>
@@ -943,36 +1378,124 @@ function Placeholder({ title, sub }) {
 }
 
 const PAGES = {
-  overview: { r: () => <Overview/>, title: "总览" },
-  tenants: { r: () => <Tenants/>, title: "租户" },
-  users: { r: () => <Users/>, title: "用户" },
-  providers: { r: () => <Providers/>, title: "Providers" },
-  runs: { r: () => <Runs/>, title: "Runs" },
-  guardrails: { r: () => <Placeholder title="护栏编辑器" sub="写规则、绑 Skill、按租户分发。编辑器形态跟 Monaco 类似,会落到另一轮设计。"/>, title: "护栏" },
+  overview: { r: (props) => <Overview {...props}/>, title: "总览" },
+  tenants: { r: (props) => <IMChannels {...props}/>, title: "IM 频道" },
+  users: { r: (props) => <Users {...props}/>, title: "用户" },
+  providers: { r: (props) => <Providers {...props}/>, title: "Providers" },
+  runs: { r: (props) => <Runs {...props}/>, title: "Runs" },
+  guardrails: { r: () => <Placeholder title="护栏编辑器" sub="写规则、绑 Skill、按租户分发。"/>, title: "护栏" },
   plugins: { r: () => <Placeholder title="Skills 与插件审核" sub="私有 registry、待审核队列、签名密钥管理。"/>, title: "Skills" },
-  billing: { r: () => <Placeholder title="账务" sub="租户配额、月度账单、导出到飞书财务 / Stripe。"/>, title: "账务" },
-  audit: { r: () => <Audit/>, title: "审计" },
+  billing: { r: () => <Placeholder title="账务" sub="Provider 用量、月度花费、导出。"/>, title: "账务" },
+  audit: { r: (props) => <Audit {...props}/>, title: "审计" },
   infra: { r: () => <Placeholder title="基础设施" sub="Postgres、Redis、OTel、备份、子进程池。"/>, title: "基础设施" },
   observability: { r: () => <Placeholder title="可观测性" sub="Trace 瓀布图在用户端的 Observability 页。"/>, title: "可观测" },
   security: { r: () => <Placeholder title="安全" sub="API Key、IP 白名单、SSO、密钥轮换。"/>, title: "安全" },
 };
 
-function App() {
-  const [page, setPage] = useState(localStorage.getItem("prism-admin-page") || "overview");
-  useEffect(() => { localStorage.setItem("prism-admin-page", page); window.__setPage = setPage; }, [page]);
-  const cur = PAGES[page];
+/* ================== AUTH GATE ================== */
+function NotAdmin({ onLogout }) {
+  return (
+    <div className="gate-wrap">
+      <div className="gate-card">
+        <div style={{ marginBottom: 24 }}><PrismMark size={48}/></div>
+        <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 20, color: "var(--ink)", marginBottom: 12 }}>需要管理员权限</div>
+        <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6, marginBottom: 24 }}>
+          当前账户角色不是 admin，无法访问控制台。请联系平台管理员开通权限。
+        </div>
+        <button className="btn sm ghost" onClick={onLogout}>登出 → 返回登录页</button>
+      </div>
+    </div>
+  );
+}
 
-  // Sub-tabs for the current section (overview is alone; others could have tabs)
-  const tabsFor = {
-    overview: [{ id: "live", label: "此刻" }, { id: "24h", label: "过去 24 小时" }, { id: "7d", label: "过去 7 天" }, { id: "30d", label: "过去 30 天" }],
-    tenants: [{ id: "all", label: "全部" }, { id: "team", label: "Team" }, { id: "enterprise", label: "Enterprise" }, { id: "starter", label: "Starter" }],
-    users: [{ id: "all", label: "全部" }, { id: "admins", label: "管理员" }, { id: "visitors", label: "访客" }, { id: "invited", label: "待激活" }],
-    providers: [{ id: "all", label: "全部" }, { id: "anthropic", label: "Anthropic 协议" }, { id: "openai", label: "OpenAI 协议" }, { id: "routing", label: "路由" }],
-    runs: [{ id: "live", label: "正在跑的" }, { id: "all", label: "全部" }, { id: "failed", label: "失败" }, { id: "archived", label: "归档" }],
-    audit: [{ id: "stream", label: "事件流" }, { id: "reports", label: "合规报表" }, { id: "retention", label: "保留策略" }],
-  };
+/* ================== APP ================== */
+function App() {
+  const [screen, setScreen] = useState('loading'); // loading | gate-nologin | gate-noadmin | app
+  const [currentUserData, setCurrentUserData] = useState(null);
+  const [page, setPage] = useState(localStorage.getItem("prism-admin-page") || "overview");
+  const [dashData, setDashData] = useState(null);
+  const [healthData, setHealthData] = useState(null);
+  const [showAlerts, setShowAlerts] = useState(false);
+  // tab must be at top level (Rules of Hooks — no conditional hooks)
   const [tab, setTab] = useState(0);
+
+  useEffect(() => { localStorage.setItem("prism-admin-page", page); window.__setPage = setPage; }, [page]);
   useEffect(() => { setTab(0); }, [page]);
+
+  // Auth gate on mount
+  useEffect(() => {
+    async function init() {
+      try {
+        if (!PrismAPI.isAuthenticated()) {
+          // Try to restore via refresh cookie
+          const ok = await PrismAPI.refresh();
+          if (!ok) { setScreen('gate-nologin'); return; }
+        }
+        const user = await PrismAPI.me();
+        if (user.role !== 'admin') { setCurrentUserData(user); setScreen('gate-noadmin'); return; }
+        setCurrentUserData(user);
+        setScreen('app');
+        // Load dashboard data
+        PrismAPI.admin.getDashboard().then(setDashData).catch(() => {});
+        PrismAPI.healthDetailed().then(setHealthData).catch(() => {});
+      } catch (e) {
+        setScreen('gate-nologin');
+      }
+    }
+    init();
+
+    const handler = () => setScreen('gate-nologin');
+    window.addEventListener('prism:unauthorized', handler);
+    return () => window.removeEventListener('prism:unauthorized', handler);
+  }, []);
+
+  async function doLogout() {
+    await PrismAPI.logout().catch(() => {});
+    window.location.href = '/Prism.html';
+  }
+
+  if (screen === 'loading') {
+    return (
+      <div className="gate-wrap">
+        <div style={{ textAlign: "center" }}>
+          <PrismMark size={48}/>
+          <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 14, color: "var(--ink-3)", marginTop: 16 }}>验证身份中…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'gate-nologin') {
+    return (
+      <div className="gate-wrap">
+        <div className="gate-card">
+          <div style={{ marginBottom: 24 }}><PrismMark size={48}/></div>
+          <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 20, color: "var(--ink)", marginBottom: 12 }}>请先登录</div>
+          <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6, marginBottom: 24 }}>
+            需要 admin 账号才能访问控制台。
+          </div>
+          <button className="btn sm primary" onClick={() => window.location.href = '/Prism.html'}>
+            → 前往登录页
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (screen === 'gate-noadmin') {
+    return <NotAdmin onLogout={doLogout}/>;
+  }
+
+  const cur = PAGES[page];
+  const tabsFor = {
+    overview: [{ id: "live", label: "此刻" }],
+    tenants: [{ id: "all", label: "IM 频道" }],
+    users: [{ id: "all", label: "全部" }, { id: "admins", label: "管理员" }],
+    providers: [{ id: "all", label: "全部" }, { id: "anthropic", label: "Anthropic 协议" }, { id: "openai", label: "OpenAI 协议" }],
+    runs: [{ id: "live", label: "按 Session 查" }],
+    audit: [{ id: "stream", label: "事件流" }, { id: "retention", label: "保留策略" }],
+  };
+  const userInitial = (currentUserData?.username || currentUserData?.email || 'A')[0].toUpperCase();
 
   return (
     <div className="admin-app">
@@ -987,6 +1510,7 @@ function App() {
         <div style={{ flex: 1 }}/>
         <div className="rail-item" title="回到用户端" onClick={() => location.href = "Prism.html"}>
           <Icon name="arrowRight" size={16}/>
+          <span className="lbl">用户端</span>
         </div>
       </aside>
 
@@ -997,15 +1521,22 @@ function App() {
             <div className="sub">· prism control room</div>
           </div>
           <div className="spacer"/>
-          <div className="env-chip"><span className="dot"/> prod · hangzhou-1</div>
-          <div className="search">
-            <Icon name="search" size={12}/>
-            <span>搜索 runs、租户、user…</span>
-            <span className="kbd">⌘ K</span>
+          <div className="env-chip"><span className="dot"/> prod · single-tenant</div>
+          <button className="btn sm ghost" onClick={() => setShowAlerts(true)}>
+            <Icon name="bell" size={12}/> 告警配置
+          </button>
+          <button className="icon-btn" title="刷新" onClick={() => {
+            PrismAPI.admin.getDashboard().then(setDashData).catch(() => {});
+            PrismAPI.healthDetailed().then(setHealthData).catch(() => {});
+            toast('已刷新', 'ok');
+          }}>
+            <Icon name="refresh" size={14}/>
+          </button>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 13, cursor: "pointer" }}
+            title={`${currentUserData?.email} — 点击登出`}
+            onClick={doLogout}>
+            {userInitial}
           </div>
-          <button className="icon-btn"><Icon name="bell" size={14}/></button>
-          <button className="icon-btn"><Icon name="refresh" size={14}/></button>
-          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 13 }}>I</div>
         </div>
 
         {tabsFor[page] && (
@@ -1016,8 +1547,13 @@ function App() {
           </div>
         )}
 
-        <div className="admin-body">{cur.r()}</div>
+        <div className="admin-body">
+          {cur.r({ dashData, healthData, currentUser: currentUserData })}
+        </div>
       </main>
+
+      {showAlerts && <AlertConfigModal onClose={() => setShowAlerts(false)}/>}
+      <ToastContainer/>
     </div>
   );
 }

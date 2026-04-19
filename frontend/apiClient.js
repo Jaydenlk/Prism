@@ -6,6 +6,9 @@
  *   - access_token stored in sessionStorage (cleared on tab close)
  *   - refresh_token is HttpOnly cookie managed by browser
  *   - 401 → auto-refresh → retry; still 401 → emit prism:unauthorized
+ *
+ * Envelope: backend wraps all responses as { data: <payload>, error: null }
+ *   request() unwraps to .data automatically.
  */
 (function () {
   'use strict';
@@ -98,8 +101,10 @@
         headers: { 'Content-Type': 'application/json' },
       });
       if (!res.ok) return false;
-      const data = await res.json();
-      if (data.access_token) {
+      const body = await res.json();
+      // unwrap envelope { data: { access_token }, error }
+      const data = body && body.data !== undefined ? body.data : body;
+      if (data && data.access_token) {
         _storeToken(data.access_token);
         return true;
       }
@@ -111,7 +116,7 @@
 
   /**
    * General-purpose fetch wrapper.
-   * Returns parsed JSON body, or null for 204.
+   * Returns unwrapped payload (body.data when envelope present), or null for 204.
    * Throws on non-2xx (after refresh attempt).
    */
   async function request(method, path, opts = {}) {
@@ -120,10 +125,13 @@
       let detail = `HTTP ${res.status}`;
       try {
         const body = await res.json();
+        // backend error shape: { detail: string } or envelope { data, error }
         if (body && body.detail) {
           detail = typeof body.detail === 'string'
             ? body.detail
             : JSON.stringify(body.detail);
+        } else if (body && body.error) {
+          detail = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
         }
       } catch { /* non-JSON error body */ }
       const err = new Error(detail);
@@ -131,7 +139,36 @@
       throw err;
     }
     if (res.status === 204) return null;
-    try { return await res.json(); } catch { return null; }
+    try {
+      const body = await res.json();
+      // Unwrap { data: <payload>, error: null } envelope automatically
+      if (body && typeof body === 'object' && 'data' in body && 'error' in body) {
+        return body.data;
+      }
+      return body;
+    } catch { return null; }
+  }
+
+  /**
+   * Like request() but returns a Blob (for CSV/file downloads).
+   * Triggers browser download via hidden anchor.
+   */
+  async function requestBlob(method, path, opts = {}, filename = 'download') {
+    const res = await _fetchRaw(method, path, opts);
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+    return blob;
   }
 
   /* ── Auth ─────────────────────────────────────────────────────── */
@@ -168,6 +205,13 @@
 
   async function createSSETicket(session_id) {
     return request('POST', '/auth/sse-ticket', { json: { session_id } });
+  }
+
+  /* ── Health ───────────────────────────────────────────────────── */
+  async function healthDetailed() {
+    // GET /health/detailed — admin only; note: NOT under /api/v1 path prefix
+    // Actually it IS under /api/v1 per the manual
+    return request('GET', '/health/detailed');
   }
 
   /* ── SSE helper ───────────────────────────────────────────────── */
@@ -273,6 +317,111 @@
     },
   };
 
+  /* ── Admin ────────────────────────────────────────────────────── */
+  const admin = {
+    // Users
+    listUsers({ page = 1, search } = {}) {
+      return request('GET', '/admin/users', { query: { page, search } });
+    },
+    updateUser(userId, body) {
+      return request('PATCH', `/admin/users/${userId}`, { json: body });
+    },
+    changeUserRole(userId, role) {
+      return request('PATCH', `/admin/users/${userId}/role`, { json: { role } });
+    },
+    disableUser(userId) {
+      return request('DELETE', `/admin/users/${userId}`);
+    },
+
+    // Invite codes
+    listInviteCodes() {
+      return request('GET', '/admin/invite-codes');
+    },
+    createInviteCode({ max_uses, expires_at } = {}) {
+      return request('POST', '/admin/invite-codes', { json: { max_uses, expires_at } });
+    },
+    revokeInviteCode(inviteId) {
+      return request('DELETE', `/admin/invite-codes/${inviteId}`);
+    },
+
+    // Audit logs
+    listAuditLogs({ action, user_id, start_date, end_date, limit = 100, page = 1 } = {}) {
+      return request('GET', '/admin/audit-logs', {
+        query: { action, user_id, start_date, end_date, limit, page },
+      });
+    },
+    exportAuditLogsCSV({ action, user_id, start_date, end_date } = {}) {
+      const q = new URLSearchParams(
+        Object.fromEntries(
+          Object.entries({ action, user_id, start_date, end_date })
+            .filter(([, v]) => v !== undefined && v !== null)
+        )
+      );
+      const path = '/admin/audit-logs/export' + (q.toString() ? '?' + q.toString() : '');
+      return requestBlob('GET', path, {}, 'audit-logs.csv');
+    },
+
+    // Stats
+    getDashboard() {
+      return request('GET', '/admin/stats/dashboard');
+    },
+    getUsage({ group_by = 'day', start_date, end_date } = {}) {
+      return request('GET', '/admin/usage', { query: { group_by, start_date, end_date } });
+    },
+
+    // Alert config
+    getAlertConfig() {
+      return request('GET', '/admin/alerts/config');
+    },
+    updateAlertConfig(body) {
+      return request('PATCH', '/admin/alerts/config', { json: body });
+    },
+  };
+
+  /* ── Providers ────────────────────────────────────────────────── */
+  const providers = {
+    list() {
+      return request('GET', '/providers');
+    },
+    get(id) {
+      return request('GET', `/providers/${id}`);
+    },
+    create(body) {
+      return request('POST', '/providers', { json: body });
+    },
+    update(id, body) {
+      return request('PUT', `/providers/${id}`, { json: body });
+    },
+    delete_(id) {
+      return request('DELETE', `/providers/${id}`);
+    },
+    test(id) {
+      return request('POST', `/providers/${id}/test`);
+    },
+    usage({ group_by = 'day', start_date, end_date } = {}) {
+      return request('GET', '/providers/usage', { query: { group_by, start_date, end_date } });
+    },
+    presets() {
+      return request('GET', '/providers/presets');
+    },
+  };
+
+  /* ── Harness ──────────────────────────────────────────────────── */
+  const harness = {
+    config() {
+      return request('GET', '/harness/config');
+    },
+    analytics({ window: w = '7d' } = {}) {
+      return request('GET', '/harness/analytics', { query: { window: w } });
+    },
+    entropyCheck(body) {
+      return request('POST', '/harness/entropy-check', { json: body });
+    },
+    thresholdCalibrate(body) {
+      return request('POST', '/harness/threshold-calibrate', { json: body });
+    },
+  };
+
   /* ── Frontend error reporting (no-auth) ───────────────────────── */
   async function reportError({ message, stack, name, url, context, severity = 'error' }) {
     try {
@@ -313,14 +462,21 @@
 
     // Core request
     request,
+    requestBlob,
 
     // SSE
     openStream,
+
+    // Health
+    healthDetailed,
 
     // Domain helpers
     sessions,
     tasks,
     runs,
+    admin,
+    providers,
+    harness,
 
     auth: {
       me,
