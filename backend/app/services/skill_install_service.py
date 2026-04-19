@@ -74,6 +74,7 @@ class SkillInstallService:
         install_path: str,
         has_hooks: bool,
         has_mcp: bool,
+        marketplace_id: str | None = None,
     ) -> "SkillInstall":
         """写入或更新 skill_installs 表（ADR-053）。
 
@@ -82,12 +83,13 @@ class SkillInstallService:
         Args:
             user_id: 操作用户 ID
             skill_name: Skill 名称（如 "web-researcher"）
-            source: 来源（"local" | "github"）
-            source_url: 源地址（本地路径或 GitHub URL）
+            source: 来源（"local" | "github" | "marketplace"）
+            source_url: 源地址（本地路径 / GitHub URL / marketplace.json URL）
             version: 版本号
             install_path: 本地安装路径（.prism/skills/@source/name/）
             has_hooks: 是否含 hooks
             has_mcp: 是否含 MCP 配置
+            marketplace_id: 当 source='marketplace' 时关联的 marketplace_registry.id（DOC-SK R1, ADR-086）
 
         Returns:
             SkillInstall ORM 对象（已持久化）
@@ -118,6 +120,7 @@ class SkillInstallService:
             existing.installed_at = now
             existing.updated_at = now
             existing.metadata_ = metadata_payload
+            existing.marketplace_id = marketplace_id
             skill_install = existing
             logger.info(
                 "skill_install_service.install.update",
@@ -137,6 +140,7 @@ class SkillInstallService:
                 installed_at=now,
                 updated_at=now,
                 metadata_=metadata_payload,
+                marketplace_id=marketplace_id,
             )
             self._db.add(skill_install)
             logger.info(

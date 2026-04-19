@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -59,6 +60,15 @@ class PluginLibrary(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     manifest_yaml: Mapped[str] = mapped_column(Text, nullable=False, default="")
     manifest_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    plugin_type: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="tool", server_default="tool"
+    )
+    permissions_json: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

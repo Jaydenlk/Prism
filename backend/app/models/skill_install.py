@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, generate_uuid
 
 if TYPE_CHECKING:
+    from app.models.marketplace import MarketplaceRegistry
     from app.models.user import User
 
 
@@ -65,6 +66,14 @@ class SkillInstall(Base):
     metadata_: Mapped[dict] = mapped_column(
         "metadata", JSONB, nullable=False, default=dict
     )
+    marketplace_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("marketplace_registry.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
-    # Relationship
+    # Relationships
     user: Mapped["User"] = relationship("User", back_populates="skill_installs")
+    marketplace: Mapped["MarketplaceRegistry | None"] = relationship(
+        "MarketplaceRegistry", foreign_keys=[marketplace_id]
+    )

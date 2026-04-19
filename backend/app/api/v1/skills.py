@@ -102,14 +102,16 @@ class SkillPackageResponse(BaseModel):
 class SkillInstallRequest(BaseModel):
     """安装 Skill 请求体（来自 CLI 或 UI）"""
 
-    skill_name: str = Field(description="Skill 名称（如 'web-researcher'）")
-    source: Literal["local", "github"] = Field(description="来源")
-    source_url: str | None = Field(default=None, description="源地址（本地路径或 GitHub URL）；local+content_base64 时可省略")
+    skill_name: str | None = Field(default=None, description="Skill 名称（如 'web-researcher'）；source='marketplace' 时可省略，将以 plugin_name 为准")
+    source: Literal["local", "github", "marketplace"] = Field(description="来源")
+    source_url: str | None = Field(default=None, description="源地址（本地路径 / GitHub URL / marketplace 时可省略）；local+content_base64 时可省略")
     version: str | None = Field(default=None, description="版本号（如 '1.0.0'）；local+content_base64 时可省略，默认 '1.0.0'")
     install_path: str | None = Field(default=None, description="本地安装路径；local+content_base64 时由服务端自动推导")
     has_hooks: bool = Field(default=False, description="是否含 hooks")
     has_mcp: bool = Field(default=False, description="是否含 MCP 配置")
-    content_base64: str | None = Field(default=None, description="Skill SKILL.md 内容 base64（source='local' 时用于直接上传内容）")
+    content_base64: str | None = Field(default=None, description="Skill SKILL.md 内容 base64（source='local' 或 'marketplace' 时直接上传内容）")
+    marketplace_id: str | None = Field(default=None, description="当 source='marketplace' 时关联的 marketplace_registry.id（DOC-SK R1, ADR-086）")
+    plugin_name: str | None = Field(default=None, description="当 source='marketplace' 时在 catalog 中查找的 plugin entry name（v1：plugin = 单 skill 包装）")
 
 
 class SkillInstallResponse(BaseModel):
@@ -124,6 +126,7 @@ class SkillInstallResponse(BaseModel):
     installed_at: str  # ISO 8601
     updated_at: str    # ISO 8601
     metadata: dict     # has_hooks / has_mcp / status / install_path
+    marketplace_id: str | None = None  # DOC-SK R1, ADR-086
 
 
 class SkillUpdateRequest(BaseModel):
@@ -252,13 +255,31 @@ async def install_skill(
 
     local + content_base64: 将 base64 内容写入 .prism/skills/@local/<name>/SKILL.md。
     github: source_url 和 version 必填。
+    marketplace: marketplace_id + plugin_name 必填；v1 也接受 content_base64
+      作为 catalog 下载的 SKILL.md（DOC-SK R1, ADR-086）。
     """
-    # ── 本地 content_base64 路径 ────────────────────────────────────────────
+    # ── resolve effective skill_name for marketplace source ──
+    effective_skill_name = request.skill_name or request.plugin_name
+    if request.source == "marketplace":
+        if not request.marketplace_id or not request.plugin_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="source='marketplace' 时 marketplace_id 和 plugin_name 为必填",
+            )
+        effective_skill_name = request.plugin_name
+    if not effective_skill_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="skill_name (或 marketplace 下的 plugin_name) 为必填",
+        )
+
+    # ── 本地/marketplace content_base64 路径 ────────────────────────────────
     resolved_source_url = request.source_url
     resolved_version = request.version or "1.0.0"
     resolved_install_path = request.install_path
+    resolved_marketplace_id: str | None = None
 
-    if request.source == "local" and request.content_base64:
+    if request.source in ("local", "marketplace") and request.content_base64:
         try:
             md_bytes = base64.b64decode(request.content_base64)
             md_text = md_bytes.decode("utf-8")
@@ -269,7 +290,8 @@ async def install_skill(
             )
 
         workspace = os.environ.get("PRISM_WORKSPACE", os.getcwd())
-        skill_dir = os.path.join(workspace, ".prism", "skills", "@local", request.skill_name)
+        ns = "@marketplace" if request.source == "marketplace" else "@local"
+        skill_dir = os.path.join(workspace, ".prism", "skills", ns, effective_skill_name)
         os.makedirs(skill_dir, exist_ok=True)
         skill_md_path = os.path.join(skill_dir, "SKILL.md")
         with open(skill_md_path, "w", encoding="utf-8") as f:
@@ -278,10 +300,14 @@ async def install_skill(
         resolved_source_url = resolved_source_url or skill_md_path
         resolved_install_path = resolved_install_path or skill_dir
 
+        if request.source == "marketplace":
+            resolved_marketplace_id = request.marketplace_id
+
         logger.info(
-            "skills_api.install.local_content_written",
-            skill_name=request.skill_name,
+            "skills_api.install.content_written",
+            skill_name=effective_skill_name,
             path=skill_md_path,
+            source=request.source,
             user_id=str(current_user.id),
         )
 
@@ -290,6 +316,13 @@ async def install_skill(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="source='github' 时 source_url 为必填",
         )
+    elif request.source == "marketplace" and not request.content_base64:
+        # v1 accepts content_base64 uploads as the catalog-download substitute.
+        # Fetching from marketplace.json `source` field is future work.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="source='marketplace' 时 content_base64 为必填（v1 直接上传；catalog 自动下载延后）",
+        )
 
     try:
         # 懒加载 Redis（DOC-07 Task 7.1 之前占位）
@@ -297,13 +330,14 @@ async def install_skill(
         svc = SkillInstallService(db=db, redis_client=redis_client)
         install_record = svc.install(
             user_id=current_user.id,
-            skill_name=request.skill_name,
+            skill_name=effective_skill_name,
             source=request.source,
             source_url=resolved_source_url,
             version=resolved_version,
             install_path=resolved_install_path or "",
             has_hooks=request.has_hooks,
             has_mcp=request.has_mcp,
+            marketplace_id=resolved_marketplace_id,
         )
     except Exception as exc:
         logger.error(
@@ -322,9 +356,10 @@ async def install_skill(
     logger.info(
         "skills_api.install",
         user_id=current_user.id,
-        skill_name=request.skill_name,
+        skill_name=effective_skill_name,
         version=request.version,
         source=request.source,
+        marketplace_id=resolved_marketplace_id,
     )
 
     return ApiResponse(data=_skill_install_to_response(install_record))
@@ -616,4 +651,5 @@ def _skill_install_to_response(install) -> SkillInstallResponse:
         installed_at=install.installed_at.isoformat() if install.installed_at else "",
         updated_at=install.updated_at.isoformat() if install.updated_at else "",
         metadata=install.metadata_ or {},
+        marketplace_id=install.marketplace_id,
     )

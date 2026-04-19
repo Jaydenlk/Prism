@@ -6,6 +6,16 @@
 
 ---
 
+## 🟡 2026-04-20 Session 3 Phase B Task 1 — 执行策略备忘(spec 修正,分支 `redesign/doc-sk`)
+
+**Schema correction from primary source**:spec `docs/superpowers/specs/2026-04-20-session3-sk-im2-redesign-design.md` §5.1 的 `marketplace.json` catalog shape(`{name, version, skills[{name, description, download_url, author}]}`) 基于 Session 2 调研二手信息写就。2026-04-20 WebFetched `https://code.claude.com/docs/en/plugin-marketplaces`(primary source)后确认实际 Claude Code 格式为:**`.claude-plugin/marketplace.json`** 文件,顶层 `{name, owner:{name,email?}, plugins:[...], metadata?}`,plugin entry 用 **`source`**(string 相对路径 或 object `{source:"github"|"url"|"git-subdir"|"npm", ...}`)而非 `download_url`;数组 key 是 **`plugins`** 不是 `skills`。
+
+**决定**:超越 spec §5.1,所有 Task 3-6 代码(M1 `catalog_json` 形状、4 个 endpoint 响应、前端 `marketplace.json` parser、install payload)采用 CC 官方格式。理由:用户硬规则"绝不基于调研二手总结写代码,官方文档每个 API 必须 WebFetch 一次"直接适用;spec 位于 `docs/superpowers/specs/` 不在 `PRD_V4/` 冻结区;实施代码须与 primary source 一致。spec 原文保留作历史记录。v1 假设每个 marketplace plugin entry = 单个 skill(CC plugin 可 bundle skills+agents+hooks,多组件延后)。install payload 改为 `{source:"marketplace", marketplace_id, plugin_name}`(不是 `skill_name`)。
+
+**Baseline 确认**:worktree `.worktrees/redesign-doc-sk` 已建(branch `redesign/doc-sk` off `develop`),e2e 基线 desktop-chromium 15p/4s/0f(比 Session 1 的 14p/4s/0f 多 1 个——catch-branch XSS 断言,commit f67d24c)。
+
+---
+
 ## 模板(每次 session 末尾按此格式追加到顶部)
 
 ```markdown

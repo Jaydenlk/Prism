@@ -524,8 +524,8 @@
     get(name) {
       return request('GET', `/skills/${name}`);
     },
-    install({ skill_name, source, source_url, version, install_path, content_base64, has_hooks, has_mcp } = {}) {
-      return request('POST', '/skills/install', { json: { skill_name, source, source_url, version, install_path, content_base64, has_hooks, has_mcp } });
+    install({ skill_name, source, source_url, version, install_path, content_base64, has_hooks, has_mcp, marketplace_id, plugin_name } = {}) {
+      return request('POST', '/skills/install', { json: { skill_name, source, source_url, version, install_path, content_base64, has_hooks, has_mcp, marketplace_id, plugin_name } });
     },
     patch(name, { enabled }) {
       return request('PATCH', `/skills/${name}`, { json: { enabled } });
@@ -546,14 +546,30 @@
     listLibrary() {
       return request('GET', '/plugins/library');
     },
-    save({ name, version, description, manifest_yaml, manifest_json } = {}) {
-      return request('POST', '/plugins/save', { json: { name, version, description, manifest_yaml, manifest_json } });
+    save({ name, version, description, manifest_yaml, manifest_json, type, permissions } = {}) {
+      return request('POST', '/plugins/save', { json: { name, version, description, manifest_yaml, manifest_json, type, permissions } });
     },
     patch(pluginId, { enabled }) {
       return request('PATCH', `/plugins/library/${pluginId}`, { json: { enabled } });
     },
     delete(pluginId) {
       return request('DELETE', `/plugins/library/${pluginId}`);
+    },
+  };
+
+  /* ── Marketplaces (DOC-SK R1, ADR-086) ──────────────────────── */
+  const marketplaces = {
+    list() {
+      return request('GET', '/marketplaces');
+    },
+    create({ url, name } = {}) {
+      return request('POST', '/marketplaces', { json: { url, name } });
+    },
+    sync(marketplaceId) {
+      return request('POST', `/marketplaces/${marketplaceId}/sync`);
+    },
+    delete(marketplaceId) {
+      return request('DELETE', `/marketplaces/${marketplaceId}`);
     },
   };
 
@@ -650,6 +666,7 @@
     mcp,
     skills,
     plugins,
+    marketplaces,
     im,
     harness,
 

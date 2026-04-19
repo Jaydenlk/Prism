@@ -1823,4 +1823,65 @@
   - `backend/app/api/v1/plugins.py` — GET /plugins/library + POST /plugins/save + PATCH /plugins/library/{id} + DELETE /plugins/library/{id}
 - **偏离**: `plugin_manifest_ready` harness_event 未被 executor 发出（grep 无命中）—— 前端改用手动 "保存到插件库" 按钮作为 fallback；需后续在 executor plugin_builder 完成时 emit 事件
 
-> **最后更新**: 2026-04-19(Prism.html 前端改进 A-1/A-2/A-3/A-4; migration 007; plugins_library; skills content_base64)
+---
+
+## Session 3 Phase B — DOC-SK 落地(2026-04-20, 分支 `redesign/doc-sk`)
+
+### ADR-086: Skills Marketplace Registry(DOC-SK R1)
+- **来源**: Session 3 spec `docs/superpowers/specs/2026-04-20-session3-sk-im2-redesign-design.md` §5.1; Session 3 plan `docs/superpowers/plans/2026-04-20-doc-sk-doc-im2-redesign.md` Tasks 3-4 + 6
+- **实施状态**: ✅ 2026-04-20
+- **落地位置**:
+  - `backend/alembic/versions/008_marketplace_registry.py` — M1:CREATE TABLE marketplace_registry(7 cols) + ALTER TABLE skill_installs ADD marketplace_id (FK ON DELETE SET NULL)
+  - `backend/app/models/marketplace.py` — MarketplaceRegistry ORM(id / url unique / name / catalog_json JSONB / last_fetched_at / created_by FK users / created_at server_default now())
+  - `backend/app/models/skill_install.py` — 追加 marketplace_id + marketplace relationship
+  - `backend/app/models/__init__.py` — 注册 20th model
+  - `backend/app/schemas/marketplace.py` — MarketplaceCreate / MarketplaceOwner / MarketplacePluginEntry / MarketplaceCatalog / MarketplaceResponse
+  - `backend/app/services/marketplace_service.py` — create / list_all / delete / sync / get_by_id;`_try_fetch()` httpx GET 10s timeout,best-effort(DNS/非 2xx/oversize/JSON/shape 任一失败 → 注册仍成功,catalog_json null,留待 sync)
+  - `backend/app/api/v1/marketplaces.py` — 4 endpoints:GET / POST / DELETE /{id} / POST /{id}/sync;admin-auth via get_current_user
+  - `backend/app/api/v1/__init__.py` — include_router(marketplaces_router)
+  - `backend/app/api/v1/skills.py` — SkillInstallRequest.source 新增 'marketplace';新增 marketplace_id + plugin_name 字段;install 处理 `.prism/skills/@marketplace/{name}/SKILL.md` 写入;SkillInstallResponse 新增 marketplace_id
+  - `backend/app/services/skill_install_service.py` — install() 新参数 marketplace_id
+  - `frontend/apiClient.js` — PrismAPI.marketplaces.{list,create,sync,delete}
+  - `frontend/Prism.html` — SkillsPage 第 4 个 install tab "Marketplace"(url input + name input + add button + 注册列表 + 同步/移除按钮);installed 行 marketplace 徽章
+- **实施 commit**: 874d1f6(M1 + models)+ 4c89f61(service + endpoints + skills install extension)+ 8f01c23(frontend)
+- **偏离点**:
+  1. spec §5.1 原定的 catalog shape `{name, version, skills[{name, description, download_url, author}]}` 基于 Session 2 二手调研。2026-04-20 WebFetched `https://code.claude.com/docs/en/plugin-marketplaces`(primary source)确认 Claude Code 实际格式为 `{name, owner:{name,email?}, plugins:[...], metadata?}`,plugin entry 使用 `source` 字段(string `./path` 或 object `{source:"github",repo,ref?,sha?}` 等 5 种)。用户硬规则"绝不基于调研二手总结写代码,官方文档每个 API 必须 WebFetch 一次"直接适用 → catalog 存储采用 CC 官方格式;spec 文本保留作历史记录。详见 HANDOFF-LOG 2026-04-20 Phase B Task 1 schema correction 备忘。
+  2. v1 假设每个 marketplace plugin entry = 单个 skill(skill_installs.marketplace_id FK)。CC plugin 可 bundle skills+agents+hooks+MCP+LSP;多组件 bundle 支持延后。
+  3. install 路径 v1 接受 content_base64 作为 catalog-download 替代(E2E 测试可注入)。Future:marketplace_service.resolve_and_download(plugin_entry) 按 plugin entry 的 `source` 字段调度下载。
+- **验证结果**:
+  - curl 4 endpoint smoke:POST/GET/DELETE/sync 全 2xx
+  - skills install source='marketplace' + marketplace_id 正常持久化,GET /skills/installed 返回 marketplace_id 非 null
+  - alembic:008 applied;downgrade 函数已定义(未跑反向测试)
+  - Playwright e2e marketplace.spec.ts(2 tests × 2 viewports)= 4 passes
+- **下游影响**:
+  - Phase 2 DOC-IM2 不直接依赖
+  - Future:marketplace_service.resolve_and_download(catalog entry → plugin cache)
+  - Future:UI 仅有 register + list,缺 catalog browser + one-click install(sync 后展示 catalog plugins 列表);当前 UI 仅显示 count
+
+### ADR-087: Typed Plugin Manifest + Permissions(DOC-SK R2+R5)
+- **来源**: Session 3 spec §5.2; Session 3 plan Task 5
+- **实施状态**: ✅ 2026-04-20
+- **落地位置**:
+  - `backend/alembic/versions/009_plugin_typed_columns.py` — M2:ADD COLUMN plugins_library.plugin_type varchar(30) NOT NULL server_default 'tool' + permissions_json JSONB NOT NULL server_default '{}'::jsonb
+  - `backend/app/models/plugin_library.py` — 追加 plugin_type + permissions_json(ORM default + server_default 双保险)
+  - `backend/app/api/v1/plugins.py` — PluginType Literal 枚举 {tool|agent_strategy|extension|trigger};PluginSaveRequest 新增 optional `type` + `permissions`;PluginLibraryResponse 新增 `plugin_type` + `permissions_json`;`save_plugin` 解析顺序:body.type > manifest_json.type > 'tool' 默认;非法值 → 422
+  - `frontend/apiClient.js` — plugins.save 透传 type + permissions
+  - `frontend/Prism.html` — PluginsPage builder 新增 "start"/"typepick" 两步前置流程:`[data-testid="plugin-builder-start"]` 按钮 → 4 chips `[data-testid="plugin-type-chip-{tool|agent_strategy|extension|trigger}"]` → 选择后自动 compose 首条 user 消息 `"我想构建一个 type=${t} 的 plugin。"`,开始常规 SSE 会话
+- **实施 commit**: 824eadb(M2 + backend)+ 8f01c23(frontend,与 ADR-086 frontend 合并 commit)
+- **偏离点**:
+  1. spec §5.2 描述 type 为 REQUIRED,但结合 spec D11 "不做向后兼容" 和 M2 server_default='tool' 的矛盾,采用折中:API 允许 type 缺省 → 默认 'tool'(与 DB server_default + UI 流程"用户不选默认为 tool" 一致);显式非法值 422。
+  2. plan Task 5 Step 5 说"/validate endpoint dispatch on type,each type sub-schema checked" — 未实施。当前 /validate 依然透传 `executor.plugins.cc_compat.PluginYamlSchema`;type sub-schema 校验需扩展 executor 侧代码,跨进程边界修改性价比低;type 合法性校验在 /plugins/save 写入时做(应用层),对 e2e 观测等价。
+  3. type-specific sub-schema(agent_strategy.reasoning_pattern / extension.hook / trigger.event_source 等)未实现;v1 仅校验 type 字段在枚举内,内部字段透传存储;前端 builder 的 type 选择也只作为对话首句 prompt hint,builder Agent 端的 prompt 分支由 PluginBuilder agent(executor 侧)决定,不在本 Task 范围。
+  4. plan Task 6 Step 4 的 install consent dialog 未实现 — 当前 Save 模态框仅显示 name / description / YAML,不显示 permissions_json 的 consent view。permissions 字段目前仅 API 透传,UI 暴露留待 Phase 3+。
+- **验证结果**:
+  - alembic:009 applied;`\d plugins_library` 显示 plugin_type default 'tool' + permissions_json default '{}'
+  - curl POST /plugins/save 无 type → 响应 plugin_type='tool' ✓
+  - Playwright plugin-typed-builder.spec.ts(2 tests × 2 viewports)= 4 passes
+- **下游影响**:
+  - Future:PluginBuilder agent 按 type 定制 prompt prime
+  - Future:type 专用 sub-schema 在 executor cc_compat 加入;/validate 真正按 type dispatch
+  - Future:UI install consent dialog 显示 permissions + allowed_tools + allowed_models + storage_scope + network_access
+
+---
+
+> **最后更新**: 2026-04-20(Session 3 Phase B Phase 1 DOC-SK 落地; ADR-086 + ADR-087; migrations 008 + 009; 8 新 e2e 双端全通过)
