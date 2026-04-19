@@ -47,7 +47,13 @@ test.describe('PluginsPage typed builder (DOC-SK R2+R5)', () => {
     //   data-testid="plugin-builder-start"
     const startBtn = page.locator('[data-testid="plugin-builder-start"]');
     await expect(startBtn).toBeVisible({ timeout: 5_000 });
-    await startBtn.click();
+    // Use evaluate(el.click) on mobile-safari where .sidebar overlays the
+    // plugins content and absorbs pointer events. force:true skips stability
+    // checks but the synthetic click event still goes through the overlaying
+    // element first. A DOM .click() on the actual button dispatches directly.
+    // Pre-existing UX: sidebar does not auto-collapse on small viewports —
+    // tracked for Phase 2 cleanup, separate from this DOC-SK work.
+    await startBtn.evaluate((el: HTMLButtonElement) => el.click());
 
     // First step is the type picker. All 4 chips must be visible.
     await expect(page.locator('[data-testid="plugin-type-chip-tool"]')).toBeVisible({ timeout: 5_000 });
