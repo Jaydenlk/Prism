@@ -207,6 +207,57 @@
     return request('POST', '/auth/sse-ticket', { json: { session_id } });
   }
 
+  // Multi-channel auth helpers
+  async function authProviders() {
+    return request('GET', '/auth/providers');
+  }
+
+  async function emailMagicRequest({ email }) {
+    return request('POST', '/auth/email-magic/request', { json: { email } });
+  }
+
+  async function emailMagicVerify({ challenge_id, token }) {
+    const data = await request('POST', '/auth/email-magic/verify', { json: { challenge_id, token } });
+    if (data && data.access_token) _storeToken(data.access_token);
+    return data;
+  }
+
+  async function emailOtpRequest({ email }) {
+    return request('POST', '/auth/email-otp/request', { json: { email } });
+  }
+
+  async function emailOtpVerify({ email, code }) {
+    const data = await request('POST', '/auth/email-otp/verify', { json: { email, code } });
+    if (data && data.access_token) _storeToken(data.access_token);
+    return data;
+  }
+
+  async function forgotPassword({ email }) {
+    return request('POST', '/auth/forgot-password', { json: { email } });
+  }
+
+  async function resetPassword({ challenge_id, token, new_password }) {
+    return request('POST', '/auth/reset-password', { json: { challenge_id, token, new_password } });
+  }
+
+  async function phoneRegister({ phone, password, invite_code }) {
+    const data = await request('POST', '/auth/phone-register', { json: { phone, password, invite_code } });
+    if (data && data.access_token) _storeToken(data.access_token);
+    return data;
+  }
+
+  async function phoneLogin({ phone, password }) {
+    const data = await request('POST', '/auth/phone-login', { json: { phone, password } });
+    if (data && data.access_token) _storeToken(data.access_token);
+    return data;
+  }
+
+  async function googleComplete({ tmp_token, invite_code }) {
+    const data = await request('POST', '/auth/google/complete', { json: { tmp_token, invite_code } });
+    if (data && data.access_token) _storeToken(data.access_token);
+    return data;
+  }
+
   /* ── Health ───────────────────────────────────────────────────── */
   async function healthDetailed() {
     // GET /health/detailed — admin only; note: NOT under /api/v1 path prefix
@@ -559,6 +610,16 @@
     auth: {
       me,
       createSSETicket,
+      providers: authProviders,
+      emailMagicRequest,
+      emailMagicVerify,
+      emailOtpRequest,
+      emailOtpVerify,
+      forgotPassword,
+      resetPassword,
+      phoneRegister,
+      phoneLogin,
+      googleComplete,
     },
 
     // Error reporting

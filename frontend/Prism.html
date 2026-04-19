@@ -602,6 +602,8 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
   const streamBuf = useRef({});
   // RAF handle for throttled flush
   const rafHandle = useRef(null);
+  // Polling fallback timer handle
+  const pollTimerRef = useRef(null);
 
   // Scroll ref
   const bottomRef = useRef(null);
@@ -619,6 +621,10 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
     if (rafHandle.current) {
       cancelAnimationFrame(rafHandle.current);
       rafHandle.current = null;
+    }
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
   }
 
@@ -765,17 +771,46 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         break;
       }
       case "run_complete": {
+        clearPollFallback();
         setRunActive(false);
         closeStream();
+        // Refresh history from DB to ensure we have the authoritative final state
+        window.PrismAPI.sessions.listMessages(sid, { limit: 50 }).then(historyRes => {
+          const rawMsgs = Array.isArray(historyRes) ? historyRes : (historyRes?.messages || historyRes?.items || []);
+          if (rawMsgs.length > 0) {
+            const displayMsgs = [];
+            let i = 0;
+            while (i < rawMsgs.length) {
+              const m = rawMsgs[i];
+              if (m.role === "user") {
+                const textBlocks = (m.content || []).filter(b => b.type === "text");
+                displayMsgs.push({ role: "user", at: formatTime(m.created_at), content: textBlocks.map(b => b.text).join("\n") || m.text_preview || "" });
+                i++;
+              } else if (m.role === "assistant") {
+                let toolResults = [];
+                if (i + 1 < rawMsgs.length && rawMsgs[i + 1].role === "tool_result") { toolResults = rawMsgs[i + 1].content || []; }
+                const { text, tools } = renderContentBlocks(m.content, toolResults);
+                displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || m.text_preview || "", tools, streaming: false });
+                i++;
+                if (toolResults.length > 0) i++;
+              } else { i++; }
+            }
+            setMsgs(displayMsgs);
+            streamBuf.current = {};
+            scrollToBottom();
+          }
+        }).catch(err => console.warn("[ChatPage] post-run history refresh failed:", err));
         break;
       }
       case "run_error": {
+        clearPollFallback();
         addToast({ id: Date.now(), kind: "danger", title: "Run 失败", body: evt.error || "未知错误" });
         setRunActive(false);
         closeStream();
         break;
       }
       case "run_crashed": {
+        clearPollFallback();
         addToast({ id: Date.now(), kind: "danger", title: "Run 崩溃", body: evt.reason || "进程崩溃,可尝试恢复" });
         setRunActive(false);
         closeStream();
@@ -910,27 +945,81 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
     return () => { cancelled = true; closeStream(); };
   }, [sessionId]);
 
+  // Polling fallback: if no SSE message_complete in N seconds, fetch history
+  const lastSeqRef = useRef(0);
+
+  function startPollFallback(sid) {
+    clearPollFallback();
+    pollTimerRef.current = setTimeout(async () => {
+      console.log("[ChatPage] SSE fallback: fetching messages from DB", sid);
+      try {
+        const historyRes = await window.PrismAPI.sessions.listMessages(sid, { limit: 20 });
+        const rawMsgs = Array.isArray(historyRes) ? historyRes : (historyRes?.messages || historyRes?.items || []);
+        if (rawMsgs.length > 0) {
+          const displayMsgs = [];
+          let i = 0;
+          while (i < rawMsgs.length) {
+            const m = rawMsgs[i];
+            if (m.role === "user") {
+              const textBlocks = (m.content || []).filter(b => b.type === "text");
+              displayMsgs.push({ role: "user", at: formatTime(m.created_at), content: textBlocks.map(b => b.text).join("\n") || m.text_preview || "" });
+              i++;
+            } else if (m.role === "assistant") {
+              let toolResults = [];
+              if (i + 1 < rawMsgs.length && rawMsgs[i + 1].role === "tool_result") { toolResults = rawMsgs[i + 1].content || []; }
+              const { text, tools } = renderContentBlocks(m.content, toolResults);
+              displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || m.text_preview || "", tools, streaming: false });
+              i++;
+              if (toolResults.length > 0) i++;
+            } else { i++; }
+          }
+          setMsgs(displayMsgs);
+          // Clear any streaming placeholders
+          streamBuf.current = {};
+          scrollToBottom();
+        }
+        setRunActive(false);
+      } catch (err) {
+        console.warn("[ChatPage] poll fallback failed:", err);
+        setRunActive(false);
+      }
+    }, 6000); // wait 6s for SSE, then fallback
+  }
+
+  function clearPollFallback() {
+    if (pollTimerRef.current) { clearTimeout(pollTimerRef.current); pollTimerRef.current = null; }
+  }
+
   async function handleSend(prompt) {
     if (!sessionId) return;
     // Optimistic: push user message immediately
     const optMsg = { role: "user", at: "now", content: prompt };
     setMsgs(prev => [...prev, optMsg]);
+    setRunActive(true); // show "thinking" state immediately
     scrollToBottom();
+
+    // PRE-SUBSCRIBE SSE before submitting task (fixes race condition where
+    // backend completes run before frontend opens EventSource)
+    if (!esRef.current || esRef.current.sessionId !== sessionId) {
+      openSSE(sessionId);
+    }
 
     try {
       const res = await window.PrismAPI.tasks.submit({ session_id: sessionId, prompt });
+      console.log("[ChatPage] task submitted:", res);
       if (res.accepted_type === "immediate") {
-        // Subscribe SSE immediately if not already open
-        if (!esRef.current || esRef.current.sessionId !== sessionId) {
-          openSSE(sessionId);
-        }
+        // SSE already pre-subscribed above; start poll fallback as defense-in-depth
+        startPollFallback(sessionId);
       } else if (res.accepted_type === "queued_query") {
         addToast({ id: Date.now(), title: "已排队", body: `第 ${res.queue_position || "?"} 位` });
+        setRunActive(false);
       }
     } catch (err) {
       addToast({ id: Date.now(), kind: "danger", title: "发送失败", body: err.message });
       // Remove optimistic message on failure
       setMsgs(prev => prev.filter(m => m !== optMsg));
+      setRunActive(false);
+      clearPollFallback();
     }
   }
 
@@ -971,6 +1060,13 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
           const first = m.role === "agent" && (!prev || prev.role !== "agent");
           return <Msg key={i} m={m} first={first}/>;
         })}
+        {/* "Agent thinking" placeholder when run is active but no streaming yet */}
+        {runActive && !msgs.some(m => m.streaming) && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>
+            <PrismMark size={14}/>
+            <span>Agent 在思考…</span>
+          </div>
+        )}
         <div ref={bottomRef}/>
       </div>
       <Composer t={t} onSend={handleSend} disabled={runActive}/>
@@ -1079,56 +1175,187 @@ function UsagePage() {
 }
 
 function SkillsPage() {
+  const [skills, setSkills] = useState([]);
+  const [installed, setInstalled] = useState([]);
+  const [q, setQ] = useState("");
+  const [source, setSource] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
+  const [expandedReadme, setExpandedReadme] = useState(null); // skill name
+  const [actionLoading, setActionLoading] = useState(null); // skill name
+  const [toasts, setToasts] = useState([]);
+
+  function addLocalToast(t) {
+    setToasts(prev => [...prev, t]);
+    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), 5000);
+  }
+
+  async function loadInstalled() {
+    try {
+      const list = await PrismAPI.skills.listInstalled();
+      setInstalled(Array.isArray(list) ? list : []);
+    } catch { /* non-fatal */ }
+  }
+
+  async function loadSkills(searchQ, searchSource) {
+    setLoading(true);
+    setErrMsg("");
+    try {
+      const results = await PrismAPI.skills.search({ q: searchQ || undefined, source: searchSource !== "all" ? searchSource : undefined, limit: 50 });
+      setSkills(Array.isArray(results) ? results : []);
+    } catch (err) {
+      setErrMsg(err.message || "加载失败");
+      setSkills([]);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadInstalled();
+    loadSkills("", "all");
+  }, []);
+
+  function isInstalled(skName) {
+    return installed.some(s => (s.skill_name || s.name) === skName);
+  }
+
+  async function handleSearch() {
+    setSearching(true);
+    await loadSkills(q, source);
+    setSearching(false);
+  }
+
+  async function handleInstall(sk) {
+    const name = sk.skill_name || sk.name;
+    setActionLoading(name);
+    try {
+      await PrismAPI.skills.install({ skill_name: name, source: sk.source || "local" });
+      addLocalToast({ id: Date.now(), kind: "success", title: "已安装", body: name });
+      await loadInstalled();
+    } catch (err) {
+      addLocalToast({ id: Date.now(), kind: "danger", title: "安装失败", body: err.message });
+    }
+    setActionLoading(null);
+  }
+
+  async function handleUninstall(sk) {
+    const name = sk.skill_name || sk.name;
+    if (!confirm(`卸载 ${name}？`)) return;
+    setActionLoading(name);
+    try {
+      await PrismAPI.skills.uninstall(name);
+      addLocalToast({ id: Date.now(), kind: "success", title: "已卸载", body: name });
+      await loadInstalled();
+    } catch (err) {
+      addLocalToast({ id: Date.now(), kind: "danger", title: "卸载失败", body: err.message });
+    }
+    setActionLoading(null);
+  }
+
   return (
     <div className="page">
       <div className="page-head">
         <div className="page-title">技能市场</div>
         <div className="page-sub">Skill 就是一份 Markdown 加可选的钩子。本地装、GitHub 装、签过名的 registry 装都行。</div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
-        {SKILLS.map(sk => (
-          <div key={sk.id} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{sk.name}</div>
-                <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 3, fontFamily: "var(--mono)" }}>{sk.author} · v{sk.version}</div>
-              </div>
-              {sk.installed && <span className="badge teal">装了</span>}
+
+      {/* Toast stack local */}
+      {toasts.length > 0 && (
+        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 200, display: "flex", flexDirection: "column", gap: 8 }}>
+          {toasts.map(t => (
+            <div key={t.id} className={`toast ${t.kind || ""}`} style={{ minWidth: 240 }} onClick={() => setToasts(p => p.filter(x => x.id !== t.id))}>
+              <div style={{ flex: 1 }}><div className="title">{t.title}</div><div>{t.body}</div></div>
             </div>
-            <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6, minHeight: 42, fontFamily: "var(--serif)", fontStyle: "italic" }}>{sk.desc}</div>
-            <div style={{ display: "flex", gap: 6, marginTop: "auto", paddingTop: 10 }}>
-              {sk.installed ? <><button className="btn sm ghost"><Icon name="eye" size={11}/> 看看</button><button className="btn sm danger" style={{ marginLeft: "auto" }}>关掉</button></> :
-                <><button className="btn sm ghost"><Icon name="book" size={11}/> 读</button><button className="btn sm primary" style={{ marginLeft: "auto" }}>装</button></>}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      )}
+
+      {/* Search bar */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        <input className="input" style={{ flex: 1, minWidth: 180 }} placeholder="搜索技能名…" value={q}
+          onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()}/>
+        <select className="input" style={{ width: 120 }} value={source} onChange={e => setSource(e.target.value)}>
+          <option value="all">全部来源</option>
+          <option value="local">本地</option>
+          <option value="github">GitHub</option>
+        </select>
+        <button className="btn" onClick={handleSearch} disabled={searching}>{searching ? "搜索中…" : "搜索"}</button>
       </div>
+
+      {errMsg && <div style={{ color: "var(--danger)", marginBottom: 16, fontSize: 13 }}>{errMsg}</div>}
+
+      {loading ? (
+        <div style={{ color: "var(--ink-3)", padding: 20 }}>加载中…</div>
+      ) : skills.length === 0 ? (
+        <div style={{ color: "var(--ink-3)", padding: 20, fontFamily: "var(--serif)", fontStyle: "italic" }}>
+          {q ? `没有找到匹配 "${q}" 的技能` : "暂无可用技能"}
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+          {skills.map((sk, idx) => {
+            const name = sk.skill_name || sk.name;
+            const inst = isInstalled(name);
+            const acting = actionLoading === name;
+            const readmeOpen = expandedReadme === name;
+            return (
+              <div key={name || idx} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{name}</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 3, fontFamily: "var(--mono)" }}>
+                      {sk.author || sk.source || "local"}{sk.version ? ` · v${sk.version}` : ""}
+                    </div>
+                  </div>
+                  {inst && <span className="badge teal">装了</span>}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6, minHeight: 36, fontFamily: "var(--serif)", fontStyle: "italic" }}>
+                  {sk.description || sk.desc || "暂无描述"}
+                </div>
+                {readmeOpen && sk.readme_preview && (
+                  <div style={{ fontSize: 12, color: "var(--ink-2)", background: "var(--bg)", borderRadius: 8, padding: "10px 12px", maxHeight: 160, overflow: "auto", fontFamily: "var(--mono)", lineHeight: 1.6 }}>
+                    {sk.readme_preview}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 6, marginTop: "auto", paddingTop: 10 }}>
+                  {inst ? (
+                    <>
+                      <button className="btn sm ghost" onClick={() => setExpandedReadme(readmeOpen ? null : name)}>
+                        <Icon name="eye" size={11}/> 看看
+                      </button>
+                      <button className="btn sm danger" style={{ marginLeft: "auto" }} onClick={() => handleUninstall(sk)} disabled={acting}>
+                        {acting ? "…" : "关掉"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn sm ghost" onClick={() => setExpandedReadme(readmeOpen ? null : name)}>
+                        <Icon name="book" size={11}/> 读
+                      </button>
+                      <button className="btn sm primary" style={{ marginLeft: "auto" }} onClick={() => handleInstall(sk)} disabled={acting}>
+                        {acting ? "…" : "装"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 function PluginsPage() {
-  return (
-    <div className="page">
-      <div className="page-head">
-        <div className="page-title">插件构建</div>
-        <div className="page-sub">把 MCP、Skill、Agent 捏成一个包发出去。Prism 会帮你签名。</div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 20 }}>
-        <div className="card" style={{ padding: 22 }}>
-          <div className="eyebrow" style={{ marginBottom: 14 }}>Manifest</div>
-          <label><div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>名字</div><input className="input" defaultValue="finance-ops-pack"/></label>
-          <label style={{ display: "block", marginTop: 10 }}><div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>描述</div><textarea className="textarea" defaultValue="给投研团队的一揽子能力:finance-data MCP + 合规护栏 Skill + 只读 shell。"/></label>
-          <div className="eyebrow" style={{ marginTop: 20, marginBottom: 10 }}>里面有什么</div>
-          {["finance-data MCP (22 tools)", "Skill · finance-compliance", "Skill · readonly-shell", "Agent · equity-researcher"].map((l, i) => (
-            <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", borderRadius: 10, background: "var(--bg)", marginBottom: 6, fontSize: 13, color: "var(--ink-2)" }}>
-              <Icon name="plugin" size={13} style={{ color: "var(--ink-3)" }}/>{l}
-            </div>
-          ))}
-        </div>
-        <div className="card" style={{ padding: 22 }}>
-          <div className="eyebrow" style={{ marginBottom: 10 }}>生成的 manifest</div>
-          <pre className="tool-code" style={{ maxHeight: 360 }}>{`name: finance-ops-pack
+  const [tab, setTab] = useState("build"); // "build" | "installed"
+  const [manifest, setManifest] = useState({
+    name: "finance-ops-pack",
+    description: "给投研团队的一揽子能力:finance-data MCP + 合规护栏 Skill + 只读 shell。",
+    version: "0.3.1",
+    author: "@prism-finance",
+  });
+  const [yamlPreview, setYamlPreview] = useState(`name: finance-ops-pack
 version: 0.3.1
 license: Apache-2.0
 author: "@prism-finance"
@@ -1149,13 +1376,197 @@ guardrails:
 
 budget:
   per_run_tokens: 60000
-  per_run_cost_rmb: 1.50`}</pre>
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button className="btn"><Icon name="flask" size={12}/> 预演</button>
-            <button className="btn primary" style={{ marginLeft: "auto" }}><Icon name="upload" size={12}/> 发布 v0.3.1</button>
+  per_run_cost_rmb: 1.50`);
+  const [installed, setInstalled] = useState([]);
+  const [installedLoading, setInstalledLoading] = useState(false);
+  const [installedErr, setInstalledErr] = useState("");
+  const [validateLoading, setValidateLoading] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [validateResult, setValidateResult] = useState(null); // { ok, detail }
+  const [toasts, setToasts] = useState([]);
+
+  function addLocalToast(t) {
+    setToasts(prev => [...prev, t]);
+    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), 5000);
+  }
+
+  useEffect(() => {
+    // Regenerate YAML when form fields change
+    setYamlPreview(`name: ${manifest.name || "my-plugin"}
+version: ${manifest.version || "0.1.0"}
+license: Apache-2.0
+author: "${manifest.author || ""}"
+description: "${(manifest.description || "").replace(/"/g, "'")}"
+
+components:
+  mcp:
+    - id: finance-data
+      command: prism-finance-mcp
+  skills:
+    - finance-compliance@2.0.0
+    - readonly-shell@1.2.0
+  agents:
+    - file: agents/equity-researcher.md
+
+budget:
+  per_run_tokens: 60000
+  per_run_cost_rmb: 1.50`);
+  }, [manifest]);
+
+  async function loadInstalled() {
+    setInstalledLoading(true);
+    setInstalledErr("");
+    try {
+      const list = await PrismAPI.request('GET', '/plugins/installed');
+      setInstalled(Array.isArray(list) ? list : []);
+    } catch (err) {
+      if (err.status === 404) {
+        setInstalledErr("插件已安装列表功能后续实现");
+        setInstalled([]);
+      } else {
+        setInstalledErr(err.message || "加载失败");
+      }
+    }
+    setInstalledLoading(false);
+  }
+
+  useEffect(() => {
+    if (tab === "installed") loadInstalled();
+  }, [tab]);
+
+  async function handleValidate() {
+    setValidateLoading(true);
+    setValidateResult(null);
+    try {
+      const res = await PrismAPI.request('POST', '/plugins/validate', { json: { yaml: yamlPreview } });
+      setValidateResult({ ok: true, detail: res?.message || "Manifest 格式正确，可以发布。" });
+    } catch (err) {
+      if (err.status === 404) {
+        setValidateResult({ ok: null, detail: "后端 /plugins/validate 端点尚未实现，请继续。" });
+      } else {
+        setValidateResult({ ok: false, detail: err.message || "Manifest 验证失败" });
+      }
+    }
+    setValidateLoading(false);
+  }
+
+  async function handlePublish() {
+    if (!confirm(`确认发布插件 ${manifest.name} v${manifest.version}？`)) return;
+    setPublishLoading(true);
+    try {
+      await PrismAPI.request('POST', '/plugins/load', { json: { yaml: yamlPreview } });
+      addLocalToast({ id: Date.now(), kind: "success", title: "发布成功", body: `${manifest.name} v${manifest.version}` });
+    } catch (err) {
+      if (err.status === 404) {
+        addLocalToast({ id: Date.now(), kind: "warning", title: "端点未实现", body: "后端 /plugins/load 后续实现" });
+      } else {
+        addLocalToast({ id: Date.now(), kind: "danger", title: "发布失败", body: err.message });
+      }
+    }
+    setPublishLoading(false);
+  }
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">插件构建</div>
+        <div className="page-sub">把 MCP、Skill、Agent 捏成一个包发出去。Prism 会帮你签名。</div>
+      </div>
+
+      {/* Toast stack local */}
+      {toasts.length > 0 && (
+        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 200, display: "flex", flexDirection: "column", gap: 8 }}>
+          {toasts.map(t => (
+            <div key={t.id} className={`toast ${t.kind || ""}`} style={{ minWidth: 240 }} onClick={() => setToasts(p => p.filter(x => x.id !== t.id))}>
+              <div style={{ flex: 1 }}><div className="title">{t.title}</div><div>{t.body}</div></div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tab bar */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--line)", paddingBottom: 0 }}>
+        {[["build", "构建"], ["installed", "已安装"]].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            padding: "8px 16px", fontSize: 13, fontFamily: "var(--serif)", background: "none", border: "none",
+            borderBottom: tab === id ? "2px solid var(--ink)" : "2px solid transparent",
+            color: tab === id ? "var(--ink)" : "var(--ink-3)", cursor: "pointer", marginBottom: -1,
+          }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "installed" && (
+        <div>
+          {installedLoading ? (
+            <div style={{ color: "var(--ink-3)" }}>加载中…</div>
+          ) : installedErr ? (
+            <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 20 }}>{installedErr}</div>
+          ) : installed.length === 0 ? (
+            <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 20 }}>暂无已安装插件</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {installed.map((p, i) => (
+                <div key={p.id || i} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{p.name}</div>
+                    {p.version && <div style={{ fontSize: 11.5, color: "var(--ink-4)", fontFamily: "var(--mono)", marginTop: 3 }}>v{p.version}</div>}
+                  </div>
+                  <span className="badge teal">已安装</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "build" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 20 }}>
+          <div className="card" style={{ padding: 22 }}>
+            <div className="eyebrow" style={{ marginBottom: 14 }}>Manifest</div>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>名字</div>
+              <input className="input" value={manifest.name} onChange={e => setManifest(m => ({ ...m, name: e.target.value }))}/>
+            </label>
+            <label style={{ display: "block", marginTop: 10 }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>版本</div>
+              <input className="input" value={manifest.version} onChange={e => setManifest(m => ({ ...m, version: e.target.value }))}/>
+            </label>
+            <label style={{ display: "block", marginTop: 10 }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>作者</div>
+              <input className="input" value={manifest.author} onChange={e => setManifest(m => ({ ...m, author: e.target.value }))}/>
+            </label>
+            <label style={{ display: "block", marginTop: 10 }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>描述</div>
+              <textarea className="textarea" value={manifest.description} onChange={e => setManifest(m => ({ ...m, description: e.target.value }))}/>
+            </label>
+            <div className="eyebrow" style={{ marginTop: 20, marginBottom: 10 }}>里面有什么</div>
+            {["finance-data MCP (22 tools)", "Skill · finance-compliance", "Skill · readonly-shell", "Agent · equity-researcher"].map((l, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", borderRadius: 10, background: "var(--bg)", marginBottom: 6, fontSize: 13, color: "var(--ink-2)" }}>
+                <Icon name="plugin" size={13} style={{ color: "var(--ink-3)" }}/>{l}
+              </div>
+            ))}
+          </div>
+          <div className="card" style={{ padding: 22 }}>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>生成的 manifest</div>
+            <pre className="tool-code" style={{ maxHeight: 320 }}>{yamlPreview}</pre>
+            {validateResult && (
+              <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, fontSize: 12.5, background: validateResult.ok === true ? "var(--teal-soft, rgba(78,124,110,0.1))" : validateResult.ok === false ? "var(--rust-soft)" : "var(--bg)", color: validateResult.ok === true ? "var(--teal)" : validateResult.ok === false ? "var(--rust)" : "var(--ink-3)" }}>
+                {validateResult.detail}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button className="btn" onClick={handleValidate} disabled={validateLoading}>
+                <Icon name="flask" size={12}/> {validateLoading ? "验证中…" : "预演"}
+              </button>
+              <button className="btn primary" style={{ marginLeft: "auto" }} onClick={handlePublish} disabled={publishLoading}>
+                <Icon name="upload" size={12}/> {publishLoading ? "发布中…" : `发布 v${manifest.version}`}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -1924,145 +2335,510 @@ function SettingsPage({ onToast }) {
 }
 
 /* ============ LOGIN ============ */
-function LoginScreen({ onSignIn, onToast, t }) {
-  const [mode, setMode]         = useState("login");
-  const [email, setEmail]       = useState("alice@example.com");
-  const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [errMsg, setErrMsg]     = useState("");
+
+// Left panel - shared between login and register
+function LoginLeft() {
+  return (
+    <div className="login-left">
+      <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.28 }} viewBox="0 0 800 900" preserveAspectRatio="xMidYMid slice">
+        <line x1="-50" y1="440" x2="300" y2="440" stroke="#E8E4DB" strokeWidth="0.8" opacity="0.7"/>
+        <path d="M300 440 L460 180 L620 440 Z" stroke="#E8E4DB" strokeWidth="1" fill="none" strokeLinejoin="round"/>
+        {[-120, -70, -20, 30, 80, 130].map((y, i) => {
+          const cs = ["#9B4A35", "#B8803A", "#6B7A4A", "#4E7C6E", "#7A4E58", "#AE8690"];
+          return <line key={i} x1="620" y1="440" x2="900" y2={440 + y} stroke={cs[i]} strokeWidth="0.9" opacity="0.75"/>;
+        })}
+        <circle cx="-50" cy="440" r="3" fill="#E8E4DB"/>
+      </svg>
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <div className="logo" style={{ color: "var(--paper)" }}><PrismMark size={26}/><span style={{ fontSize: 20 }}>Prism · 棱镜</span></div>
+      </div>
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <div className="eyebrow" style={{ color: "rgba(232,228,219,0.55)", marginBottom: 12 }}>No. 04 · 2026</div>
+        <h1 style={{ fontFamily: "var(--serif)", fontSize: 48, fontWeight: 400, lineHeight: 1.15, margin: 0, letterSpacing: "-0.02em", color: "var(--paper)", maxWidth: 520 }}>
+          <em style={{ fontStyle: "italic" }}>Harness</em> 不是胶水,<br/>它是操作系统。
+        </h1>
+        <p style={{ fontFamily: "var(--serif)", fontSize: 16, color: "rgba(232,228,219,0.75)", maxWidth: 460, marginTop: 20, lineHeight: 1.65 }}>
+          把大模型变成可靠、可治理、可扩展的协作者。自托管,协议原生,对每一家 provider 开放。
+        </p>
+        <div style={{ display: "flex", gap: 30, marginTop: 40 }}>
+          {[["412", "每月 runs"], ["72%", "缓存命中"], ["18k", "每天审计事件"]].map(([k, v]) => (
+            <div key={k}>
+              <div style={{ fontFamily: "var(--serif)", fontSize: 28, color: "var(--paper)" }}>{k}</div>
+              <div style={{ fontSize: 11, color: "rgba(232,228,219,0.55)", textTransform: "uppercase", letterSpacing: "0.14em", marginTop: 3 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ position: "relative", zIndex: 1, fontSize: 11.5, color: "rgba(232,228,219,0.5)", fontFamily: "var(--mono)" }}>prism v0.4.2 · self-hosted · hangzhou-prod</div>
+    </div>
+  );
+}
+
+function ErrBox({ msg }) {
+  if (!msg) return null;
+  return <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--rust-soft)", borderRadius: 8, fontSize: 12.5, color: "var(--rust)", border: "1px solid rgba(155,74,53,0.25)" }}>{msg}</div>;
+}
+
+function OkBox({ msg }) {
+  if (!msg) return null;
+  return <div style={{ marginTop: 10, padding: "8px 12px", background: "rgba(78,124,110,0.1)", borderRadius: 8, fontSize: 12.5, color: "var(--teal)", border: "1px solid rgba(78,124,110,0.25)" }}>{msg}</div>;
+}
+
+function ForgotPasswordModal({ onClose, onToast }) {
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
 
   async function handleSubmit() {
     setErrMsg("");
+    if (!email.trim()) { setErrMsg("请输入邮箱"); return; }
+    setLoading(true);
+    try {
+      await window.PrismAPI.auth.forgotPassword({ email: email.trim() });
+      setSent(true);
+    } catch (err) {
+      setErrMsg(err.message || "请求失败");
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div className="card" style={{ padding: 28, width: 360, maxWidth: "90vw" }}>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>忘记密码</div>
+        {sent ? (
+          <div>
+            <OkBox msg="如果该邮箱已注册，重置链接已发出。请查收邮件。"/>
+            <button className="btn" style={{ marginTop: 16, width: "100%", justifyContent: "center" }} onClick={onClose}>关闭</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <label>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>邮箱</div>
+              <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} autoFocus/>
+            </label>
+            <ErrBox msg={errMsg}/>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button className="btn primary" style={{ flex: 1, justifyContent: "center" }} onClick={handleSubmit} disabled={loading}>{loading ? "发送中…" : "发送重置链接"}</button>
+              <button className="btn ghost" onClick={onClose}>取消</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({ onSignIn, onToast, t }) {
+  // "login" | "register"
+  const [screen, setScreen] = useState("login");
+  // Login sub-mode: "email_pw" | "magic" | "otp" | "phone"
+  const [loginMode, setLoginMode] = useState("email_pw");
+  // Register sub-tab: "email" | "phone"
+  const [regTab, setRegTab] = useState("email");
+
+  const [email, setEmail]       = useState("admin@prism.dev");
+  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [phone, setPhone]       = useState("");
+  const [otpCode, setOtpCode]   = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [errMsg, setErrMsg]     = useState("");
+  const [okMsg, setOkMsg]       = useState("");
+  const [otpRequested, setOtpRequested] = useState(false);
+  const [magicRequested, setMagicRequested] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [phoneEnabled, setPhoneEnabled] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+
+  useEffect(() => {
+    // Probe which login methods are available
+    window.PrismAPI.auth.providers().then(p => {
+      setGoogleEnabled(!!p.google);
+      setPhoneEnabled(!!p.phone_password);
+    }).catch(() => {});
+  }, []);
+
+  function clearMessages() { setErrMsg(""); setOkMsg(""); }
+
+  // ── Login handlers ─────────────────────────────────────────────
+  async function handleEmailPwLogin() {
+    clearMessages();
     if (!email.trim() || !password.trim()) { setErrMsg("邮箱和密码不能为空"); return; }
     setLoading(true);
     try {
-      if (mode === "login") {
-        await window.PrismAPI.login(email, password);
-        onSignIn();
-      } else {
-        if (!username.trim()) { setErrMsg("用户名不能为空"); setLoading(false); return; }
-        await window.PrismAPI.register({ email, username, password, invite_code: inviteCode || undefined });
-        await window.PrismAPI.login(email, password);
-        onSignIn();
-      }
+      await window.PrismAPI.login(email, password);
+      onSignIn();
     } catch (err) {
-      const status = err.status;
-      if (status === 401) setErrMsg("邮箱或密码错误");
-      else if (status === 422) setErrMsg("输入格式有问题,请检查邮箱和密码");
-      else setErrMsg(err.message || "登录失败,请重试");
-    } finally {
-      setLoading(false);
+      if (err.status === 401) setErrMsg("邮箱或密码错误");
+      else setErrMsg(err.message || "登录失败");
     }
+    setLoading(false);
   }
 
-  function handleForgot(e) {
-    e.preventDefault();
-    if (onToast) onToast({ id: Date.now(), title: "还没做", body: "忘记密码功能还没实现,请联系管理员重置。" });
+  async function handleMagicRequest() {
+    clearMessages();
+    if (!email.trim()) { setErrMsg("请输入邮箱"); return; }
+    setLoading(true);
+    try {
+      await window.PrismAPI.auth.emailMagicRequest({ email: email.trim() });
+      setMagicRequested(true);
+      setOkMsg("如果邮箱已注册，Magic Link 已发出，请查收邮件（dev 模式可在 docker logs 里看 URL）");
+    } catch (err) {
+      setErrMsg(err.message || "请求失败");
+    }
+    setLoading(false);
+  }
+
+  async function handleOtpRequest() {
+    clearMessages();
+    if (!email.trim()) { setErrMsg("请输入邮箱"); return; }
+    setLoading(true);
+    try {
+      await window.PrismAPI.auth.emailOtpRequest({ email: email.trim() });
+      setOtpRequested(true);
+      setOkMsg("OTP 已发出，请查收邮件（dev 模式可在 docker logs 看 6 位码）");
+    } catch (err) {
+      setErrMsg(err.message || "请求失败");
+    }
+    setLoading(false);
+  }
+
+  async function handleOtpVerify() {
+    clearMessages();
+    if (!otpCode.trim()) { setErrMsg("请输入 6 位验证码"); return; }
+    setLoading(true);
+    try {
+      await window.PrismAPI.auth.emailOtpVerify({ email: email.trim(), code: otpCode.trim() });
+      await window.PrismAPI.me();
+      onSignIn();
+    } catch (err) {
+      if (err.status === 401) setErrMsg("验证码错误或已过期");
+      else setErrMsg(err.message || "验证失败");
+    }
+    setLoading(false);
+  }
+
+  async function handlePhoneLogin() {
+    clearMessages();
+    if (!phone.trim() || !password.trim()) { setErrMsg("手机号和密码不能为空"); return; }
+    setLoading(true);
+    try {
+      await window.PrismAPI.auth.phoneLogin({ phone: phone.trim(), password });
+      await window.PrismAPI.me();
+      onSignIn();
+    } catch (err) {
+      if (err.status === 401) setErrMsg("手机号或密码错误");
+      else setErrMsg(err.message || "登录失败");
+    }
+    setLoading(false);
+  }
+
+  // ── Register handlers ──────────────────────────────────────────
+  async function handleEmailRegister() {
+    clearMessages();
+    if (!email.trim() || !password.trim()) { setErrMsg("邮箱和密码不能为空"); return; }
+    if (!username.trim()) { setErrMsg("用户名不能为空"); return; }
+    if (!inviteCode.trim()) { setErrMsg("邀请码不能为空"); return; }
+    setLoading(true);
+    try {
+      await window.PrismAPI.register({ email: email.trim(), username: username.trim(), password, invite_code: inviteCode.trim() });
+      await window.PrismAPI.login(email.trim(), password);
+      onSignIn();
+    } catch (err) {
+      if (err.status === 409) setErrMsg("邮箱或用户名已注册");
+      else if (err.status === 400) setErrMsg(err.message || "邀请码无效");
+      else setErrMsg(err.message || "注册失败");
+    }
+    setLoading(false);
+  }
+
+  async function handlePhoneRegister() {
+    clearMessages();
+    if (!phone.trim() || !password.trim()) { setErrMsg("手机号和密码不能为空"); return; }
+    if (!inviteCode.trim()) { setErrMsg("邀请码不能为空"); return; }
+    setLoading(true);
+    try {
+      await window.PrismAPI.auth.phoneRegister({ phone: phone.trim(), password, invite_code: inviteCode.trim() });
+      await window.PrismAPI.me();
+      onSignIn();
+    } catch (err) {
+      if (err.status === 400) setErrMsg(err.message || "邀请码无效或手机号格式错误");
+      else setErrMsg(err.message || "注册失败");
+    }
+    setLoading(false);
+  }
+
+  function handleGoogleLogin() {
+    window.location.href = "/api/v1/auth/google/authorize";
+  }
+
+  // ── Sub-tab style helper ───────────────────────────────────────
+  function tabStyle(active) {
+    return {
+      padding: "6px 14px", fontSize: 12.5, background: "none", border: "none",
+      borderBottom: active ? "2px solid var(--ink)" : "2px solid transparent",
+      color: active ? "var(--ink)" : "var(--ink-3)", cursor: "pointer", marginBottom: -1,
+    };
+  }
+
+  // ── Render ─────────────────────────────────────────────────────
+  return (
+    <div className="login-wrap">
+      <LoginLeft/>
+      <div className="login-right">
+        <div style={{ maxWidth: 380, width: "100%", margin: "0 auto" }}>
+          {/* ── Login ─────────────────────────────── */}
+          {screen === "login" && (
+            <>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>登录</div>
+              <h2 style={{ fontFamily: "var(--serif)", fontSize: 30, color: "var(--ink)", fontWeight: 400, margin: 0, letterSpacing: "-0.015em" }}>{t.loginTitle}</h2>
+              <p style={{ fontSize: 14, color: "var(--ink-3)", marginTop: 10, lineHeight: 1.6, fontFamily: "var(--serif)", fontStyle: "italic" }}>{t.loginSub}</p>
+
+              {/* Login method tabs */}
+              <div style={{ display: "flex", gap: 0, marginTop: 22, borderBottom: "1px solid var(--line)" }}>
+                <button style={tabStyle(loginMode === "email_pw")} onClick={() => { setLoginMode("email_pw"); clearMessages(); setOtpRequested(false); setMagicRequested(false); }}>邮箱密码</button>
+                <button style={tabStyle(loginMode === "magic")} onClick={() => { setLoginMode("magic"); clearMessages(); setMagicRequested(false); }}>Magic Link</button>
+                <button style={tabStyle(loginMode === "otp")} onClick={() => { setLoginMode("otp"); clearMessages(); setOtpRequested(false); }}>验证码</button>
+                {phoneEnabled && <button style={tabStyle(loginMode === "phone")} onClick={() => { setLoginMode("phone"); clearMessages(); }}>手机</button>}
+              </div>
+
+              <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+
+                {/* Email + Password */}
+                {loginMode === "email_pw" && (
+                  <>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.email}</div>
+                      <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleEmailPwLogin()}/>
+                    </label>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.password}</div>
+                      <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleEmailPwLogin()}/>
+                    </label>
+                    <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 12 }}>
+                      <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)" }} onClick={e => { e.preventDefault(); setShowForgot(true); }}>忘了密码?</a>
+                    </div>
+                    <ErrBox msg={errMsg}/>
+                    <button className="btn primary" style={{ justifyContent: "center", padding: "11px" }} onClick={handleEmailPwLogin} disabled={loading}>
+                      {loading ? "请稍等…" : <><Icon name="arrowRight" size={12}/> {t.signIn}</>}
+                    </button>
+                  </>
+                )}
+
+                {/* Magic Link */}
+                {loginMode === "magic" && (
+                  <>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.email}</div>
+                      <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleMagicRequest()} disabled={magicRequested}/>
+                    </label>
+                    <ErrBox msg={errMsg}/>
+                    <OkBox msg={okMsg}/>
+                    {!magicRequested ? (
+                      <button className="btn primary" style={{ justifyContent: "center", padding: "11px" }} onClick={handleMagicRequest} disabled={loading}>
+                        {loading ? "发送中…" : "发送 Magic Link"}
+                      </button>
+                    ) : (
+                      <button className="btn ghost" style={{ justifyContent: "center" }} onClick={() => { setMagicRequested(false); clearMessages(); }}>重新发送</button>
+                    )}
+                    <p style={{ fontSize: 12, color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", marginTop: 4 }}>
+                      链接发到邮箱，点击后自动登录。Dev 模式下可在 docker logs 里看到链接。
+                    </p>
+                  </>
+                )}
+
+                {/* OTP */}
+                {loginMode === "otp" && (
+                  <>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.email}</div>
+                      <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} disabled={otpRequested}/>
+                    </label>
+                    {otpRequested && (
+                      <label>
+                        <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>6 位验证码</div>
+                        <input className="input" value={otpCode} onChange={e => setOtpCode(e.target.value)} maxLength={6} placeholder="123456" onKeyDown={e => e.key === "Enter" && handleOtpVerify()} autoFocus/>
+                      </label>
+                    )}
+                    <ErrBox msg={errMsg}/>
+                    <OkBox msg={okMsg}/>
+                    {!otpRequested ? (
+                      <button className="btn primary" style={{ justifyContent: "center", padding: "11px" }} onClick={handleOtpRequest} disabled={loading}>
+                        {loading ? "发送中…" : "发送验证码"}
+                      </button>
+                    ) : (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button className="btn primary" style={{ flex: 1, justifyContent: "center" }} onClick={handleOtpVerify} disabled={loading}>{loading ? "验证中…" : "验证登录"}</button>
+                        <button className="btn ghost" onClick={() => { setOtpRequested(false); clearMessages(); }}>重发</button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Phone + Password */}
+                {loginMode === "phone" && (
+                  <>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>手机号</div>
+                      <input className="input" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+8613800138000" onKeyDown={e => e.key === "Enter" && handlePhoneLogin()}/>
+                    </label>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.password}</div>
+                      <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handlePhoneLogin()}/>
+                    </label>
+                    <ErrBox msg={errMsg}/>
+                    <button className="btn primary" style={{ justifyContent: "center", padding: "11px" }} onClick={handlePhoneLogin} disabled={loading}>
+                      {loading ? "登录中…" : <><Icon name="arrowRight" size={12}/> 登录</>}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Google SSO */}
+              {googleEnabled && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0 14px", color: "var(--ink-4)", fontSize: 11 }}>
+                    <div className="hr" style={{ flex: 1 }}/><span>或者</span><div className="hr" style={{ flex: 1 }}/>
+                  </div>
+                  <button className="btn" style={{ width: "100%", justifyContent: "center" }} onClick={handleGoogleLogin}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" style={{ marginRight: 6 }}>
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                    用 Google 登录
+                  </button>
+                </>
+              )}
+
+              <div style={{ marginTop: 24, fontSize: 12.5, color: "var(--ink-3)", textAlign: "center" }}>
+                还没有账号?{" "}
+                <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)", marginLeft: 4 }} onClick={e => { e.preventDefault(); setScreen("register"); clearMessages(); }}>
+                  {t.signUp}
+                </a>
+              </div>
+            </>
+          )}
+
+          {/* ── Register ───────────────────────────── */}
+          {screen === "register" && (
+            <>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>创建账号</div>
+              <h2 style={{ fontFamily: "var(--serif)", fontSize: 30, color: "var(--ink)", fontWeight: 400, margin: 0, letterSpacing: "-0.015em" }}>加入 Prism</h2>
+              <p style={{ fontSize: 14, color: "var(--ink-3)", marginTop: 10, lineHeight: 1.6, fontFamily: "var(--serif)", fontStyle: "italic" }}>注册需要邀请码。</p>
+
+              {/* Register sub-tabs */}
+              <div style={{ display: "flex", gap: 0, marginTop: 18, borderBottom: "1px solid var(--line)" }}>
+                <button style={tabStyle(regTab === "email")} onClick={() => { setRegTab("email"); clearMessages(); }}>邮箱注册</button>
+                <button style={tabStyle(regTab === "phone")} onClick={() => { setRegTab("phone"); clearMessages(); }}>手机注册</button>
+              </div>
+
+              <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+                {regTab === "email" && (
+                  <>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.email}</div>
+                      <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)}/>
+                    </label>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>用户名</div>
+                      <input className="input" value={username} onChange={e => setUsername(e.target.value)}/>
+                    </label>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.password}</div>
+                      <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)}/>
+                    </label>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>邀请码</div>
+                      <input className="input" placeholder="PRISM-XXXXXXXX" value={inviteCode} onChange={e => setInviteCode(e.target.value)}/>
+                    </label>
+                    <ErrBox msg={errMsg}/>
+                    <button className="btn primary" style={{ justifyContent: "center", padding: "11px" }} onClick={handleEmailRegister} disabled={loading}>
+                      {loading ? "注册中…" : <><Icon name="arrowRight" size={12}/> {t.signUp}</>}
+                    </button>
+                  </>
+                )}
+                {regTab === "phone" && (
+                  <>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>手机号</div>
+                      <input className="input" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+8613800138000"/>
+                    </label>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.password}</div>
+                      <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)}/>
+                    </label>
+                    <label>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>邀请码</div>
+                      <input className="input" placeholder="PRISM-XXXXXXXX" value={inviteCode} onChange={e => setInviteCode(e.target.value)}/>
+                    </label>
+                    <ErrBox msg={errMsg}/>
+                    <button className="btn primary" style={{ justifyContent: "center", padding: "11px" }} onClick={handlePhoneRegister} disabled={loading}>
+                      {loading ? "注册中…" : <><Icon name="arrowRight" size={12}/> 注册</>}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <div style={{ marginTop: 24, fontSize: 12.5, color: "var(--ink-3)", textAlign: "center" }}>
+                已有账号?{" "}
+                <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)", marginLeft: 4 }} onClick={e => { e.preventDefault(); setScreen("login"); clearMessages(); }}>
+                  回去登录
+                </a>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)} onToast={onToast}/>}
+    </div>
+  );
+}
+
+/* Google OAuth pending: new user needs invite code */
+function GooglePendingScreen({ tmpToken, onSignIn, onToast }) {
+  const [inviteCode, setInviteCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
+
+  async function handleComplete() {
+    if (!inviteCode.trim()) { setErrMsg("请输入邀请码"); return; }
+    setLoading(true);
+    try {
+      await window.PrismAPI.auth.googleComplete({ tmp_token: tmpToken, invite_code: inviteCode.trim() });
+      await window.PrismAPI.me();
+      onSignIn();
+    } catch (err) {
+      if (err.status === 400) setErrMsg(err.message || "邀请码无效");
+      else setErrMsg(err.message || "完成注册失败");
+    }
+    setLoading(false);
   }
 
   return (
     <div className="login-wrap">
-      <div className="login-left">
-        <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.28 }} viewBox="0 0 800 900" preserveAspectRatio="xMidYMid slice">
-          <line x1="-50" y1="440" x2="300" y2="440" stroke="#E8E4DB" strokeWidth="0.8" opacity="0.7"/>
-          <path d="M300 440 L460 180 L620 440 Z" stroke="#E8E4DB" strokeWidth="1" fill="none" strokeLinejoin="round"/>
-          {[-120, -70, -20, 30, 80, 130].map((y, i) => {
-            const cs = ["#9B4A35", "#B8803A", "#6B7A4A", "#4E7C6E", "#7A4E58", "#AE8690"];
-            return <line key={i} x1="620" y1="440" x2="900" y2={440 + y} stroke={cs[i]} strokeWidth="0.9" opacity="0.75"/>;
-          })}
-          <circle cx="-50" cy="440" r="3" fill="#E8E4DB"/>
-        </svg>
-        <div style={{ position: "relative", zIndex: 1 }}>
-          <div className="logo" style={{ color: "var(--paper)" }}><PrismMark size={26}/><span style={{ fontSize: 20 }}>Prism · 棱镜</span></div>
-        </div>
-        <div style={{ position: "relative", zIndex: 1 }}>
-          <div className="eyebrow" style={{ color: "rgba(232,228,219,0.55)", marginBottom: 12 }}>No. 04 · 2026</div>
-          <h1 style={{ fontFamily: "var(--serif)", fontSize: 48, fontWeight: 400, lineHeight: 1.15, margin: 0, letterSpacing: "-0.02em", color: "var(--paper)", maxWidth: 520 }}>
-            <em style={{ fontStyle: "italic" }}>Harness</em> 不是胶水,<br/>它是操作系统。
-          </h1>
-          <p style={{ fontFamily: "var(--serif)", fontSize: 16, color: "rgba(232,228,219,0.75)", maxWidth: 460, marginTop: 20, lineHeight: 1.65 }}>
-            把大模型变成可靠、可治理、可扩展的协作者。自托管,协议原生,对每一家 provider 开放。
-          </p>
-          <div style={{ display: "flex", gap: 30, marginTop: 40 }}>
-            {[["412", "每月 runs"], ["72%", "缓存命中"], ["18k", "每天审计事件"]].map(([k, v]) => (
-              <div key={k}>
-                <div style={{ fontFamily: "var(--serif)", fontSize: 28, color: "var(--paper)" }}>{k}</div>
-                <div style={{ fontSize: 11, color: "rgba(232,228,219,0.55)", textTransform: "uppercase", letterSpacing: "0.14em", marginTop: 3 }}>{v}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ position: "relative", zIndex: 1, fontSize: 11.5, color: "rgba(232,228,219,0.5)", fontFamily: "var(--mono)" }}>prism v0.4.2 · self-hosted · hangzhou-prod</div>
-      </div>
+      <LoginLeft/>
       <div className="login-right">
         <div style={{ maxWidth: 380, width: "100%", margin: "0 auto" }}>
-          <div className="eyebrow" style={{ marginBottom: 10 }}>{mode === "login" ? "登录" : "创建账号"}</div>
-          <h2 style={{ fontFamily: "var(--serif)", fontSize: 30, color: "var(--ink)", fontWeight: 400, margin: 0, letterSpacing: "-0.015em" }}>{t.loginTitle}</h2>
-          <p style={{ fontSize: 14, color: "var(--ink-3)", marginTop: 10, lineHeight: 1.6, fontFamily: "var(--serif)", fontStyle: "italic" }}>{t.loginSub}</p>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 26 }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>Google 登录</div>
+          <h2 style={{ fontFamily: "var(--serif)", fontSize: 30, color: "var(--ink)", fontWeight: 400, margin: 0 }}>填写邀请码</h2>
+          <p style={{ fontSize: 14, color: "var(--ink-3)", marginTop: 10, fontFamily: "var(--serif)", fontStyle: "italic" }}>
+            你的 Google 账号尚未注册 Prism。请填写邀请码以完成注册。
+          </p>
+          <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 12 }}>
             <label>
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.email}</div>
-              <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>邀请码</div>
+              <input className="input" placeholder="PRISM-XXXXXXXX" value={inviteCode} onChange={e => setInviteCode(e.target.value)} onKeyDown={e => e.key === "Enter" && handleComplete()} autoFocus/>
             </label>
-            {mode === "register" && (
-              <label>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>用户名</div>
-                <input className="input" value={username} onChange={e => setUsername(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
-              </label>
-            )}
-            <label>
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.password}</div>
-              <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
-            </label>
-            {mode === "register" && (
-              <label>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>邀请码 <span style={{ color: "var(--ink-4)" }}>(选填)</span></div>
-                <input className="input" placeholder="PRISM-XXXXXXXX" value={inviteCode} onChange={e => setInviteCode(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
-              </label>
-            )}
-            {mode === "login" && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
-                <label style={{ display: "flex", gap: 6, color: "var(--ink-3)", cursor: "pointer" }}>
-                  <input type="checkbox" defaultChecked style={{ accentColor: "var(--ink)" }}/>保持登录
-                </label>
-                <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)" }} onClick={handleForgot}>忘了?</a>
-              </div>
-            )}
-          </div>
-
-          {errMsg && (
-            <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--rust-soft)", borderRadius: 8, fontSize: 12.5, color: "var(--rust)", border: "1px solid rgba(155,74,53,0.25)" }}>
-              {errMsg}
-            </div>
-          )}
-
-          <button className="btn primary" style={{ width: "100%", justifyContent: "center", padding: "11px", marginTop: 18 }}
-            onClick={handleSubmit} disabled={loading}>
-            {loading
-              ? <span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>请稍等…</span>
-              : <><Icon name="arrowRight" size={12}/> {mode === "login" ? t.signIn : t.signUp}</>}
-          </button>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0", color: "var(--ink-4)", fontSize: 11 }}>
-            <div className="hr" style={{ flex: 1 }}/><span>或者</span><div className="hr" style={{ flex: 1 }}/>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn" style={{ flex: 1, justifyContent: "center" }}>飞书 SSO</button>
-            <button className="btn" style={{ flex: 1, justifyContent: "center" }}>OIDC</button>
-          </div>
-
-          <div style={{ marginTop: 28, fontSize: 12.5, color: "var(--ink-3)", textAlign: "center" }}>
-            {mode === "login"
-              ? <>还没有工作区? <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)", marginLeft: 4 }} onClick={e => { e.preventDefault(); setMode("register"); setErrMsg(""); }}>{t.signUp}</a></>
-              : <>已有账号? <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)", marginLeft: 4 }} onClick={e => { e.preventDefault(); setMode("login"); setErrMsg(""); }}>回去登录</a></>
-            }
+            <ErrBox msg={errMsg}/>
+            <button className="btn primary" style={{ justifyContent: "center", padding: "11px" }} onClick={handleComplete} disabled={loading}>
+              {loading ? "完成中…" : <><Icon name="arrowRight" size={12}/> 完成注册</>}
+            </button>
           </div>
         </div>
       </div>
@@ -2119,8 +2895,9 @@ function Tweaks({ tweaks, setTweaks }) {
 function App() {
   const [tweaks, setTweaks] = useState({ theme: "light", density: "comfortable", bubble: "soft", tone: "同事", layout: "split" });
   const [lang, setLang] = useState("zh");
-  // screen: "loading" | "login" | "app"
+  // screen: "loading" | "login" | "app" | "google_pending"
   const [screen, setScreen] = useState("loading");
+  const [googlePendingToken, setGooglePendingToken] = useState("");
   const [page, setPage] = useState("chat");
   const [showPlan, setShowPlan] = useState(true);
   const [perm, setPerm] = useState(false);
@@ -2132,6 +2909,65 @@ function App() {
   // Auto-restore login from sessionStorage token
   useEffect(() => {
     async function bootstrap() {
+      // 1. Handle magic link callback: ?challenge_id=...&token=...
+      //    Backend email sends: {FRONT_URL}/auth/magic?challenge_id=...&token=...
+      //    We also handle the page being loaded at Prism.html with those params.
+      const params = new URLSearchParams(window.location.search);
+      const challengeId = params.get("challenge_id");
+      const magicToken = params.get("token");
+      if (challengeId && magicToken) {
+        try {
+          const data = await window.PrismAPI.auth.emailMagicVerify({ challenge_id: challengeId, token: magicToken });
+          if (data && data.access_token) {
+            // Clean URL
+            window.history.replaceState({}, "", window.location.pathname);
+            await window.PrismAPI.me();
+            setScreen("app");
+            return;
+          }
+        } catch (err) {
+          console.warn("[App] magic link verify failed:", err.message);
+          // Fall through to normal login
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+      }
+
+      // 2. Handle Google OAuth callback: #access_token=...&expires_in=...
+      const hash = window.location.hash;
+      if (hash && hash.includes("access_token=")) {
+        const hashParams = new URLSearchParams(hash.slice(1));
+        const accessToken = hashParams.get("access_token");
+        if (accessToken) {
+          window.history.replaceState({}, "", window.location.pathname);
+          window.PrismAPI._storeTokenPublic && window.PrismAPI._storeTokenPublic(accessToken);
+          // Use sessionStorage directly since storeToken is private
+          sessionStorage.setItem("prism_access_token", accessToken);
+          try {
+            await window.PrismAPI.me();
+            setScreen("app");
+            return;
+          } catch { /* fall through */ }
+        }
+      }
+
+      // 3. Handle Google OAuth pending (new user needs invite code): ?auth_pending=<tmp_token>
+      const authPending = params.get("auth_pending");
+      if (authPending) {
+        window.history.replaceState({}, "", window.location.pathname);
+        setScreen("google_pending");
+        setGooglePendingToken(authPending);
+        return;
+      }
+
+      // 4. Handle auth error from OAuth: ?auth_error=...
+      const authError = params.get("auth_error");
+      if (authError) {
+        window.history.replaceState({}, "", window.location.pathname);
+        setScreen("login");
+        return;
+      }
+
+      // 5. Normal: restore from sessionStorage
       if (window.PrismAPI && window.PrismAPI.isAuthenticated()) {
         try {
           await window.PrismAPI.me();
@@ -2179,6 +3015,10 @@ function App() {
 
   if (screen === "login") {
     return (<><LoginScreen t={t} onSignIn={() => setScreen("app")} onToast={addToast}/><Tweaks tweaks={tweaks} setTweaks={setTweaks}/></>);
+  }
+
+  if (screen === "google_pending") {
+    return (<><GooglePendingScreen tmpToken={googlePendingToken} onSignIn={() => setScreen("app")} onToast={addToast}/><Tweaks tweaks={tweaks} setTweaks={setTweaks}/></>);
   }
 
   const sidebarMode = tweaks.layout === "split" && page === "chat" && showPlan && planState ? "split" : "normal";
