@@ -30,7 +30,7 @@ except ImportError:
 # override env seeds because bootstrap skips existing rows.
 # ---------------------------------------------------------------------------
 PRESET_ENV_MAP: dict[str, dict[str, str]] = {
-    "Anthropic Claude":  {"api_key": "ANTHROPIC_API_KEY",  "base_url": "ANTHROPIC_BASE_URL"},
+    "Anthropic Claude":  {"api_key": "ANTHROPIC_API_KEY",  "base_url": "ANTHROPIC_BASE_URL",  "model_id": "ANTHROPIC_MODEL_ID"},
     "OpenAI GPT":        {"api_key": "OPENAI_API_KEY",     "base_url": "OPENAI_BASE_URL"},
     "MiniMax":           {"api_key": "MINIMAX_API_KEY",    "base_url": "MINIMAX_BASE_URL"},
     "DeepSeek":          {"api_key": "DEEPSEEK_API_KEY",   "base_url": "DEEPSEEK_BASE_URL"},

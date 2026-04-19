@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     # 空值 → 留 SYSTEM_PRESET_NO_KEY 占位，需要手动配置才能使用该 Provider。
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_BASE_URL: str = "https://api.anthropic.com"
+    ANTHROPIC_MODEL_ID: str = ""    # optional override; empty → preset's default model_id
+    LLM_REQUEST_TIMEOUT_SECONDS: int = 300  # upstream model HTTP timeout
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     DEEPSEEK_API_KEY: str = ""

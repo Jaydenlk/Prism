@@ -39,8 +39,9 @@ from executor.adapters.stream_parser import parse_sse_lines
 logger = logging.getLogger(__name__)
 
 # HTTP 超时
+import os as _os
 _CONNECT_TIMEOUT = 30.0
-_READ_TIMEOUT = 300.0
+_READ_TIMEOUT = float(_os.environ.get("LLM_REQUEST_TIMEOUT_SECONDS", "300"))
 
 # per-message token overhead(OpenAI tiktoken 约定)
 _TOKENS_PER_MESSAGE = 4

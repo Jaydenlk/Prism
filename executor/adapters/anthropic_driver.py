@@ -39,8 +39,9 @@ logger = logging.getLogger(__name__)
 _ANTHROPIC_API_VERSION = "2023-06-01"
 
 # HTTP 超时:30s 连接,300s 读取(长流式响应)
+import os as _os
 _CONNECT_TIMEOUT = 30.0
-_READ_TIMEOUT = 300.0
+_READ_TIMEOUT = float(_os.environ.get("LLM_REQUEST_TIMEOUT_SECONDS", "300"))
 
 
 class AnthropicDriver(ModelAdapter):

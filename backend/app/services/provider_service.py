@@ -367,10 +367,12 @@ class ProviderService:
             env_map = PRESET_ENV_MAP.get(preset.name, {})
             env_api_key = getattr(settings, env_map.get("api_key", ""), "") if env_map else ""
             env_base_url = getattr(settings, env_map.get("base_url", ""), "") if env_map else ""
+            env_model_id = getattr(settings, env_map.get("model_id", ""), "") if env_map else ""
             real_key = env_api_key.strip() if env_api_key else ""
             key_value = real_key if real_key else "SYSTEM_PRESET_NO_KEY"
             api_key_encrypted = encrypt_value(key_value, settings.ENCRYPTION_KEY)
             base_url_final = (env_base_url or preset.base_url).rstrip("/")
+            model_id_final = (env_model_id.strip() if env_model_id else "") or preset.model_id
 
             provider = Provider(
                 scope="system",
@@ -379,7 +381,7 @@ class ProviderService:
                 protocol=preset.protocol,
                 base_url=base_url_final,
                 api_key_encrypted=api_key_encrypted,
-                model_id=preset.model_id,
+                model_id=model_id_final,
                 is_default=False,
                 priority=0,
                 is_healthy=bool(real_key),
