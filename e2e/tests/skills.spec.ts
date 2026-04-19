@@ -144,6 +144,12 @@ author: e2e
     await page.locator('[data-testid="skill-install-textarea"]').fill(skillMd);
     await page.locator('[data-testid="skill-install-submit"]').click();
 
-    await expect(page.locator('text=e2e-local-skill')).toBeVisible({ timeout: 8_000 });
+    // Scope to the installed list — the textarea still contains `e2e-local-skill`
+    // after submit (handleCustomMdInstall does not clear inputs), so `text=…`
+    // alone hits 2 elements (textarea + installed div). `exact: true` matches the
+    // div-only text node, not the multi-line YAML inside textarea.
+    await expect(
+      page.getByText('e2e-local-skill', { exact: true }).first()
+    ).toBeVisible({ timeout: 8_000 });
   });
 });

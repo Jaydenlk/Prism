@@ -1,25 +1,13 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
 import { loginAsAdmin, BASE } from '../fixtures/auth';
+import { startNewChatSession } from '../fixtures/chat';
 
 /**
  * chat.spec.ts — Core chat flow tests
  *
  * Requires CloudDream provider to have a valid API key and credit.
  * Sends "reply OK only" → expects "OK" text within 20s via SSE stream.
- *
- * NOTE: After login, the chat page shows EmptyNoSession (no composer) until
- * a session is selected or created. The test creates a session first.
  */
-
-async function startNewChatSession(page: any) {
-  // Click "新对话" button in the sidebar to create a session
-  const newChatBtn = page.locator('button:has-text("新对话")').first();
-  await expect(newChatBtn).toBeVisible({ timeout: 8_000 });
-  await newChatBtn.click();
-
-  // Wait for the composer (textarea) to appear
-  await expect(page.locator('.composer-wrap textarea, .composer textarea')).toBeVisible({ timeout: 8_000 });
-}
 
 test.describe('Chat flow', () => {
   test.beforeEach(async ({ page }) => {

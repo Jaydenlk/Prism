@@ -175,12 +175,16 @@ class QueryEngine:
             prompt_preview=user_prompt[:50],
         )
 
-        # 初始消息
+        # 初始消息:in-memory 追加 + message_complete 回调持久化到 messages 表
+        # （否则 user prompt 仅存 Run.prompt 列,messages 表缺 user row,
+        #  前端 run_complete 后 history refresh 会看不到用户的提问)
+        init_user_block = TextBlock(text=user_prompt)
         self._messages.append(
-            PrismMessage(
-                role="user",
-                content=[TextBlock(text=user_prompt)],
-            )
+            PrismMessage(role="user", content=[init_user_block])
+        )
+        await self._callback.message_complete(
+            role="user",
+            content=[_block_to_dict(init_user_block)],
         )
 
         try:

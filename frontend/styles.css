@@ -1228,3 +1228,105 @@ html, body {
 [data-theme="light"] {
   color-scheme: light;
 }
+
+/* ── Markdown body (assistant messages) ───────────────────── */
+/* Uses Prism's paper/ink/amber editorial palette.
+   Tokens referenced: --serif / --mono / --ink / --ink-2 / --ink-3 /
+   --paper / --panel / --amber / --amber-soft / --line.
+   All already defined in :root (L11-49). No new tokens needed. */
+
+.content.md > div > :first-child { margin-top: 0; }
+.content.md > div > :last-child  { margin-bottom: 0; }
+
+.content.md h1,
+.content.md h2,
+.content.md h3,
+.content.md h4 {
+  font-family: var(--serif);
+  color: var(--ink);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  margin: 20px 0 10px;
+}
+.content.md h1 { font-size: 1.55em; }
+.content.md h2 { font-size: 1.3em;  }
+.content.md h3 { font-size: 1.12em; }
+.content.md h4 { font-size: 1em; color: var(--ink-2); }
+
+.content.md p       { margin: 0 0 14px; line-height: 1.7; }
+.content.md p:last-child { margin-bottom: 0; }
+
+.content.md ul,
+.content.md ol      { margin: 8px 0 14px; padding-left: 22px; }
+.content.md li      { margin: 4px 0; line-height: 1.6; }
+.content.md ul li::marker { color: var(--ink-3); }
+
+.content.md code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--amber-soft);
+  color: var(--ink);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.content.md pre {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.content.md pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.content.md blockquote {
+  border-left: 3px solid var(--amber);
+  padding: 4px 14px;
+  margin: 12px 0;
+  color: var(--ink-2);
+  background: transparent;
+}
+
+.content.md table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.95em;
+  width: 100%;
+}
+.content.md th,
+.content.md td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+}
+.content.md th {
+  font-weight: 600;
+  background: var(--amber-soft);
+  color: var(--ink);
+}
+
+.content.md a {
+  color: var(--amber);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.content.md a:hover { border-bottom-color: var(--amber); }
+
+.content.md hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 18px 0;
+}
+
+.content.md strong { font-weight: 600; color: var(--ink); }
+.content.md em     { font-style: italic; }
