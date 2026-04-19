@@ -1102,73 +1102,142 @@ function EmptyChat({ t, onPick }) {
   );
 }
 
-/* ============ SECONDARY PAGES (lean - still hardcoded) ============ */
-function SessionsPage() {
+/* ============ SECONDARY PAGES — LIVE DATA ============ */
+function SessionsPage({ setPage, setCurrentSession }) {
+  const { PrismAPI } = window;
+  const [rows, setRows] = useState(null);  // null = loading, [] = empty
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await PrismAPI.sessions.list();
+        if (cancelled) return;
+        const items = Array.isArray(list) ? list : (list?.items || []);
+        setRows(items);
+      } catch (e) {
+        if (!cancelled) setErr(e.message || String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const statusColor = (s) => s === "running" ? "var(--amber)" : s === "idle" ? "var(--teal)" : "var(--ink-3)";
+
   return (
     <div className="page">
       <div className="page-head">
         <div className="page-title">会话</div>
-        <div className="page-sub">每一次对话都是一次 Run,都能随时回来看、分叉、或者把 trace 打开。</div>
+        <div className="page-sub">每一次对话都是一次 Run,点击任一行可回到对话。</div>
       </div>
-      <table className="table">
-        <thead><tr><th></th><th>会话</th><th>模式</th><th>状态</th><th>Tokens</th><th>缓存</th><th>花费</th><th>回合</th><th>最后</th></tr></thead>
-        <tbody>
-          {RECENT_RUNS.concat(RECENT_RUNS).map((r, i) => (
-            <tr key={i}>
-              <td>{i % 3 === 0 && <Icon name="pin" size={11} style={{ color: "var(--amber)" }}/>}</td>
-              <td style={{ color: "var(--ink)", fontWeight: 500 }}>{r.session}</td>
-              <td><span className="badge">{r.mode}</span></td>
-              <td>{r.status === "completed" ? <span style={{ color: "var(--teal)" }}>● 完成</span> : <span style={{ color: "var(--danger)" }}>● 失败</span>}</td>
-              <td className="mono">{r.tokens}</td>
-              <td className="mono" style={{ color: parseInt(r.cache) > 60 ? "var(--teal)" : "var(--ink-3)" }}>{r.cache}</td>
-              <td className="mono">{r.cost}</td>
-              <td className="mono" style={{ color: "var(--ink-3)" }}>{r.turn}</td>
-              <td style={{ color: "var(--ink-3)" }}>{r.at}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {err && <div className="harness-notice danger" style={{ marginBottom: 14 }}>加载失败: {err}</div>}
+      {rows === null ? (
+        <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>正在加载会话…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>暂无会话。回到对话页新建一个。</div>
+      ) : (
+        <table className="table">
+          <thead><tr><th></th><th>标题</th><th>状态</th><th>最近一条</th><th>更新时间</th></tr></thead>
+          <tbody>
+            {rows.map(s => (
+              <tr key={s.id} style={{ cursor: "pointer" }}
+                  onClick={() => { setCurrentSession && setCurrentSession(s.id); setPage && setPage("chat"); }}>
+                <td>{s.is_pinned && <Icon name="pin" size={11} style={{ color: "var(--amber)" }}/>}</td>
+                <td style={{ color: "var(--ink)", fontWeight: 500 }}>{s.title || "(未命名)"}</td>
+                <td><span style={{ color: statusColor(s.status) }}>● {s.status}</span></td>
+                <td style={{ color: "var(--ink-3)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.last_message_preview || ""}</td>
+                <td className="mono" style={{ color: "var(--ink-3)" }}>{s.updated_at?.slice(0, 16).replace("T", " ") || ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
 
 function UsagePage() {
+  const { PrismAPI } = window;
+  const [data, setData] = useState(null);  // null = loading, {} = empty
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const end = new Date();
+        const start = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+        const fmt = (d) => d.toISOString().slice(0, 10);
+        const resp = await PrismAPI.providers.usage({ group_by: "day", start_date: fmt(start), end_date: fmt(end) });
+        if (cancelled) return;
+        setData(resp || {});
+      } catch (e) {
+        if (!cancelled) setErr(e.message || String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (err) return (
+    <div className="page">
+      <div className="page-head"><div className="page-title">用量</div></div>
+      <div className="harness-notice danger">加载失败: {err}</div>
+    </div>
+  );
+  if (data === null) return (
+    <div className="page">
+      <div className="page-head"><div className="page-title">用量</div></div>
+      <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>正在加载…</div>
+    </div>
+  );
+
+  const summary = data.summary || {};
+  const byProvider = data.by_provider || [];
+  const totalIn  = summary.total_input_tokens  ?? 0;
+  const totalOut = summary.total_output_tokens ?? 0;
+  const cacheHit = summary.cache_hit_ratio ?? 0;
+  const savings  = summary.estimated_cache_savings_usd ?? 0;
+  const runs     = summary.total_runs ?? 0;
+  const fmtTok = (n) => n >= 1e6 ? `${(n/1e6).toFixed(2)}M` : n >= 1e3 ? `${(n/1e3).toFixed(1)}k` : String(n ?? 0);
+
   return (
     <div className="page">
       <div className="page-head">
         <div className="page-title">用量</div>
-        <div className="page-sub">Prompt cache 帮你省钱。你真正该盯的数字是 <em className="serif-italic">缓存命中率</em>。</div>
+        <div className="page-sub">7 天窗口 · Prompt cache 命中率越高，省越多。</div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
         <div className="stat-card feature">
           <div className="label">缓存命中</div>
-          <div className="val">72.4<span style={{ fontSize: 20, color: "var(--ink-4)" }}>%</span></div>
-          <div className="trend">+6.1 vs 上周</div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 3, marginTop: 16, height: 40 }}>
-            {[62, 58, 64, 71, 68, 72, 74].map((v, i) => <div key={i} style={{ flex: 1, background: i === 6 ? "var(--amber)" : "var(--ink-3)", height: `${v}%`, borderRadius: 2 }}/>)}
-          </div>
+          <div className="val">{(cacheHit * 100).toFixed(1)}<span style={{ fontSize: 20, color: "var(--ink-4)" }}>%</span></div>
+          <div className="trend" style={{ color: "var(--ink-3)" }}>cache_hit_tokens / input</div>
         </div>
-        <div className="stat-card"><div className="label">7 天 tokens</div><div className="val">8.42M</div><div className="trend down">+18%</div></div>
-        <div className="stat-card"><div className="label">省下的</div><div className="val">6.10M</div><div className="trend">≈ ¥318</div></div>
-        <div className="stat-card"><div className="label">活跃 runs</div><div className="val">3</div><div className="trend" style={{ color: "var(--ink-3)" }}>本月 412</div></div>
+        <div className="stat-card"><div className="label">7 天 input</div><div className="val">{fmtTok(totalIn)}</div></div>
+        <div className="stat-card"><div className="label">7 天 output</div><div className="val">{fmtTok(totalOut)}</div></div>
+        <div className="stat-card"><div className="label">省下估算</div><div className="val">${savings.toFixed(2)}</div><div className="trend" style={{ color: "var(--ink-3)" }}>runs: {runs}</div></div>
       </div>
-      <div className="section-title">分模型看</div>
-      <table className="table">
-        <thead><tr><th>Provider</th><th>模型</th><th>输入</th><th>输出</th><th>命中</th><th>花费</th><th>状态</th></tr></thead>
-        <tbody>
-          {PROVIDERS.map(p => (
-            <tr key={p.id}>
-              <td style={{ color: "var(--ink)", fontWeight: 500 }}>{p.name}{p.default && <span className="badge ink" style={{ marginLeft: 8, fontSize: 10 }}>默认</span>}</td>
-              <td className="mono">{p.model}</td>
-              <td className="mono">{Math.floor(Math.random()*900+100)}k</td>
-              <td className="mono">{Math.floor(Math.random()*90+20)}k</td>
-              <td className="mono">{p.cache ? `${Math.floor(Math.random()*30+50)}%` : <span style={{ color: "var(--ink-4)" }}>—</span>}</td>
-              <td className="mono">{p.cost}</td>
-              <td><span className={`dot ${p.health === "ok" ? "live" : "warn"}`}/> <span style={{ marginLeft: 6, fontSize: 12, color: p.health === "ok" ? "var(--teal)" : "var(--amber)" }}>{p.health}</span></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="section-title">分 Provider</div>
+      {byProvider.length === 0 ? (
+        <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 20 }}>这 7 天还没有任何 run 消耗 tokens。</div>
+      ) : (
+        <table className="table">
+          <thead><tr><th>Provider</th><th>输入</th><th>输出</th><th>缓存命中</th><th>缓存创建</th><th>花费(USD)</th><th>Runs</th></tr></thead>
+          <tbody>
+            {byProvider.map((p, i) => (
+              <tr key={p.provider_id || p.provider_name || i}>
+                <td style={{ color: "var(--ink)", fontWeight: 500 }}>{p.provider_name || "(unknown)"}</td>
+                <td className="mono">{fmtTok(p.input_tokens ?? 0)}</td>
+                <td className="mono">{fmtTok(p.output_tokens ?? 0)}</td>
+                <td className="mono" style={{ color: "var(--teal)" }}>{fmtTok(p.cache_hit_tokens ?? 0)}</td>
+                <td className="mono">{fmtTok(p.cache_creation_tokens ?? 0)}</td>
+                <td className="mono">${(p.cost_usd ?? 0).toFixed(4)}</td>
+                <td className="mono" style={{ color: "var(--ink-3)" }}>{p.runs ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -3488,7 +3557,7 @@ function App() {
               setPlanState={setPlanState}
             />
           )}
-          {page === "sessions" && <SessionsPage/>}
+          {page === "sessions" && <SessionsPage setPage={setPage} setCurrentSession={setCurrentSessionId}/>}
           {page === "usage" && <UsagePage/>}
           {page === "skills" && <SkillsPage/>}
           {page === "plugins" && <PluginsPage/>}
