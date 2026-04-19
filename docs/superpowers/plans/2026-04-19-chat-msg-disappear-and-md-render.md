@@ -128,11 +128,12 @@ test.describe('Chat message rendering fixes (Session 1)', () => {
     await expect(userBubbleWithToken).toContainText(token);
   });
 
-  test('Bug 2: markdown renders as formatted HTML in assistant reply', async ({ loggedInPage: page }) => {
-    await openFreshChat(page);
-    const prompt = [
-      '请用 markdown 回复以下内容原样结构（不要翻译、不要总结、不要加前缀）:',
-      '',
+  test('Bug 2: MarkdownBody renders markdown primitives as sanitized HTML', async ({ loggedInPage: page }) => {
+    // Decoupled renderer test — mount MarkdownBody with fixed input, do not rely on LLM fidelity
+    await page.goto('/?__e2e=1');
+    await page.waitForFunction(() => typeof (window as any).__e2e_mountMarkdown === 'function', null, { timeout: 15_000 });
+
+    const fixtureMd = [
       '## 标题 H2',
       '',
       '- 列表项 A',
@@ -150,16 +151,10 @@ test.describe('Chat message rendering fixes (Session 1)', () => {
       '|---|---|',
       '| 1 | 2 |',
     ].join('\n');
-    const composer = page.locator('textarea').first();
-    await composer.fill(prompt);
-    await composer.press('Enter');
 
-    await expect(page.locator('.agent-msg .content').first()).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('.agent-msg .caret')).toHaveCount(0, { timeout: 30_000 });
-    await page.waitForTimeout(1000);
+    await page.evaluate((md) => (window as any).__e2e_mountMarkdown(md), fixtureMd);
 
-    const mdRoot = page.locator('.agent-msg .content.md').first();
-    // Structural assertions — every markdown element must become an HTML element, not text
+    const mdRoot = page.locator('#e2e-md-root .content.md');
     await expect(mdRoot.locator('h2', { hasText: '标题 H2' })).toBeVisible();
     await expect(mdRoot.locator('ul li')).toHaveCount(3);
     await expect(mdRoot.locator('strong', { hasText: '粗体文本' })).toBeVisible();
@@ -169,8 +164,14 @@ test.describe('Chat message rendering fixes (Session 1)', () => {
     await expect(mdRoot.locator('table thead th')).toHaveCount(2);
     await expect(mdRoot.locator('table tbody tr')).toHaveCount(1);
 
-    // Screenshot evidence for manual review
-    await page.locator('.agent-msg').last().screenshot({ path: `test-results/md-${test.info().project.name}.png` });
+    await mdRoot.screenshot({ path: `test-results/md-${test.info().project.name}.png` });
+
+    // XSS regression — raw <script> in input must NOT execute after render
+    const xssInput = '<script>window.__xss_hit = 1</script>ok';
+    await page.evaluate((md) => (window as any).__e2e_mountMarkdown(md), xssInput);
+    await page.waitForTimeout(300);
+    const xssFired = await page.evaluate(() => (window as any).__xss_hit === 1);
+    expect(xssFired).toBe(false);
   });
 });
 ```
@@ -457,11 +458,12 @@ function MarkdownBody({ content, streaming }) {
   const html = React.useMemo(() => {
     if (!content) return "";
     try {
-      return window.DOMPurify.sanitize(window.marked.parse(content, {
-        gfm: true, breaks: false, headerIds: false, mangle: false,
-      }));
+      return window.DOMPurify.sanitize(window.marked.parse(content, { gfm: true, breaks: false }));
     } catch (e) {
-      return "";
+      console.warn("[MarkdownBody] parse/sanitize failed, escaping as text", e);
+      const div = document.createElement("div");
+      div.textContent = content;
+      return div.innerHTML;
     }
   }, [content]);
   return (
@@ -472,6 +474,8 @@ function MarkdownBody({ content, streaming }) {
   );
 }
 ```
+
+Notes on the `marked.parse` options: only `gfm: true` and `breaks: false` are passed. `headerIds: false` and `mangle: false` are deprecated in marked v12 and would log warnings to console — we drop them. Defaults for both (now handled via extensions) are fine for our use case. Catch branch escapes via `textContent` → `innerHTML` so a malformed parse never lets raw HTML through `dangerouslySetInnerHTML`.
 
 - [ ] **Step 2: Replace the assistant content render call site at line 436**
 
@@ -489,15 +493,40 @@ New:
           )}
 ```
 
-- [ ] **Step 3: Smoke check in browser (pre-typography)**
+- [ ] **Step 3: Add E2E test-only mount helper**
 
-Reload app, send a prompt with markdown (e.g. `## Hi\n\n- one\n- two`). The assistant reply should now contain `<h2>` and `<ul>` in DOM but with no specific styling — raw browser defaults are acceptable at this step. `document.querySelectorAll('.agent-msg .content.md h2').length` in devtools should be `≥ 1`.
+Locate the main app mount block in `Prism.html` — search for `ReactDOM.createRoot(` followed by the `<App/>` render call. Immediately AFTER that block, append:
 
-- [ ] **Step 4: Commit**
+```jsx
+if (window.location.search.includes('__e2e=1')) {
+  window.__e2e_mountMarkdown = (content) => {
+    let root = document.getElementById('e2e-md-root');
+    if (!root) { root = document.createElement('div'); root.id = 'e2e-md-root'; document.body.appendChild(root); }
+    if (!window.__e2e_root) window.__e2e_root = ReactDOM.createRoot(root);
+    window.__e2e_root.render(<MarkdownBody content={content} streaming={false}/>);
+  };
+}
+```
+
+Guard: the `__e2e=1` query flag is never passed by real users; the helper is inert in production. Reuses the single `ReactDOM.createRoot` instance per mount point (avoids the "already rendered" warning on repeat calls).
+
+- [ ] **Step 4: Smoke check in browser (pre-typography)**
+
+Reload app at `http://localhost:8080/?__e2e=1` (adding the flag). In devtools console:
+```js
+window.__e2e_mountMarkdown('## Hi\n\n- one\n- two');
+document.querySelectorAll('#e2e-md-root .content.md h2').length; // >= 1
+document.querySelectorAll('#e2e-md-root .content.md ul li').length; // 2
+```
+Also reload WITHOUT the flag (`http://localhost:8080/`) and confirm `typeof window.__e2e_mountMarkdown === 'undefined'` — the helper must stay out of production.
+
+Then send a real prompt with markdown through the chat; the assistant reply should contain `<h2>`, `<ul>` etc in DOM (unstyled — typography lands in Task 7).
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add frontend/Prism.html
-git commit -m "feat(frontend): MarkdownBody component renders assistant content as sanitized HTML"
+git commit -m "feat(frontend): MarkdownBody renders sanitized HTML + test-only mount helper"
 ```
 
 ---
@@ -507,16 +536,22 @@ git commit -m "feat(frontend): MarkdownBody component renders assistant content 
 **Files:**
 - Modify: `frontend/styles.css`
 
-- [ ] **Step 1: Verify existing token palette**
+- [ ] **Step 1: Verify existing token palette — REQUIRED before Step 2**
 
 ```bash
-grep -E "^\s*--(serif|ink|bg|line|accent|mono)" frontend/styles.css | head -20
+grep -nE "^\s*--[a-z]" frontend/styles.css | head -40
 ```
-Note which tokens exist. If `--mono` is absent, include its definition in Step 2.
+List every `--<name>` defined. Compare to the set this task assumes: `--serif`, `--ink`, `--ink-2`, `--ink-3`, `--bg`, `--bg-2`, `--bg-3`, `--line`, `--accent`, `--mono`.
+
+**If the real names differ** (e.g., the file uses `--bg-soft` instead of `--bg-2`, or `--text` instead of `--ink`), rename every token reference in the Step 2 CSS block to match the real names. Do NOT ship the fallback values as the primary — they approximate dark-neutral but they are NOT the Prism palette. The fallbacks in `var(--foo, fallback)` are only for safety layering, not the design intent.
+
+Write the actual token mapping you'll use as a comment at the top of the block in Step 2.
+
+If `--mono` is absent, add it via Step 3.
 
 - [ ] **Step 2: Append `.content.md` typography block to styles.css**
 
-Append at end of `frontend/styles.css` (add `--mono` in `:root` only if not present):
+Before appending: reconcile the CSS below against the actual tokens enumerated in Step 1. Replace `--bg-2`, `--bg-3`, `--ink-2`, `--ink-3` with the real names if they differ. Append at end of `frontend/styles.css`:
 
 ```css
 /* ---- Markdown rendering in assistant messages ---- */

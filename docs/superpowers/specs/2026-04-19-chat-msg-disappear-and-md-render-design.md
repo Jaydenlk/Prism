@@ -115,10 +115,13 @@ function MarkdownBody({ content, streaming }) {
   const html = React.useMemo(() => {
     if (!content) return "";
     try {
-      return window.DOMPurify.sanitize(window.marked.parse(content, {
-        gfm: true, breaks: false, headerIds: false, mangle: false,
-      }));
-    } catch (e) { return content; }
+      return window.DOMPurify.sanitize(window.marked.parse(content, { gfm: true, breaks: false }));
+    } catch (e) {
+      console.warn("[MarkdownBody] parse/sanitize failed, escaping as text", e);
+      const div = document.createElement("div");
+      div.textContent = content;
+      return div.innerHTML;
+    }
   }, [content]);
   return (
     <div className="content md">
@@ -132,6 +135,29 @@ function MarkdownBody({ content, streaming }) {
 In `Msg` (line 436), replace `<div className="content">{m.content}{m.streaming && <span className="caret"/>}</div>` with `<MarkdownBody content={m.content} streaming={m.streaming}/>`. User bubbles (`isUser === true`) remain plain text — do not wrap them.
 
 **Streaming consideration**: During streaming, `content` arrives incrementally. `marked.parse` is idempotent on partial markdown — worst case an unclosed fence renders as plain text until the closing fence arrives, then snaps to a code block. Acceptable; matches ChatGPT UX.
+
+**Error handling rationale**: `marked.parse` can throw on malformed input (regex edge cases, null-byte content). The catch branch escapes `content` via `document.createElement('div').textContent = content; return div.innerHTML;` — this returns HTML-safe text, never raw user-controlled HTML into `dangerouslySetInnerHTML`. Returning raw `content` would be an XSS vector; returning `""` would silently eat the message. Escape-and-render is the only safe + observable option.
+
+### E2E test mount path (renderer decoupling)
+
+The LLM cannot be relied on to echo markdown verbatim for E2E assertions — preambles, rephrasing, and skipped table rows would flake the test. Add a test-only mount helper inside `Prism.html`, guarded by a query flag, that mounts `MarkdownBody` directly with fixture input:
+
+```js
+if (window.location.search.includes('__e2e=1')) {
+  window.__e2e_mountMarkdown = (content) => {
+    let root = document.getElementById('e2e-md-root');
+    if (!root) { root = document.createElement('div'); root.id = 'e2e-md-root'; document.body.appendChild(root); }
+    if (!window.__e2e_root) window.__e2e_root = ReactDOM.createRoot(root);
+    window.__e2e_root.render(<MarkdownBody content={content} streaming={false}/>);
+  };
+}
+```
+
+Placement: inline in the same `<script type="text/babel">` block that mounts the app, AFTER the `ReactDOM.createRoot(document.getElementById(...)).render(<App/>)` call. Guard prevents the helper from being exposed in production (`/?__e2e=1` is never passed by real users). Playwright tests navigate to `/?__e2e=1`, await `window.__e2e_mountMarkdown` existence, then call it with a fixed markdown string and assert on `#e2e-md-root .content.md`. This tests MarkdownBody rendering, not LLM fidelity.
+
+The two E2E tests become:
+- Bug 1 test: real chat flow (user bubble persists) — still uses live LLM since the bug is in the chat page lifecycle, not renderer.
+- Bug 2 test: mount helper + fixed markdown + DOM assertions + XSS regression (`<script>` tag in input must NOT execute).
 
 ### Typography spec
 
