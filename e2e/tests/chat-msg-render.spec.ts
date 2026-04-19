@@ -83,11 +83,39 @@ test.describe('Bug 2: MarkdownBody renders markdown primitives as sanitized HTML
 
     await mdRoot.screenshot({ path: `test-results/md-${test.info().project.name}.png` });
 
-    // XSS regression: raw <script> in input must NOT execute. DOMPurify + escaped fallback both block.
+    // XSS regression (DOMPurify success path): raw <script> in input must NOT execute.
     const xssInput = '<script>window.__xss_hit = 1</script>ok';
     await page.evaluate((md) => (window as any).__e2e_mountMarkdown(md), xssInput);
     await page.waitForTimeout(300);
     const xssFired = await page.evaluate(() => (window as any).__xss_hit === 1);
     expect(xssFired).toBe(false);
+  });
+
+  test('catch-branch: marked throws → textContent escape fallback, still no XSS', async ({ page }) => {
+    // Covers the catch-branch in MarkdownBody when marked.parse raises.
+    // The fallback must escape raw HTML via textContent/innerHTML — never passes a raw string
+    // through dangerouslySetInnerHTML.
+    await page.goto('/?__e2e=1');
+    await page.waitForFunction(() => typeof (window as any).__e2e_mountMarkdown === 'function', null, { timeout: 15_000 });
+
+    // Force marked.parse to throw so the catch branch is exercised.
+    await page.evaluate(() => {
+      (window as any).marked = { parse: () => { throw new Error('simulated parse failure'); } };
+    });
+
+    const payload = '<script>window.__xss_catch_hit = 1</script>raw & <b>unsafe</b>';
+    await page.evaluate((p) => (window as any).__e2e_mountMarkdown(p), payload);
+    await page.waitForTimeout(300);
+
+    const xssFired = await page.evaluate(() => (window as any).__xss_catch_hit === 1);
+    expect(xssFired).toBe(false);
+
+    const mdRoot = page.locator('#e2e-md-root .content.md');
+    // No raw script/b elements in the DOM — content is text, not tags.
+    await expect(mdRoot.locator('script')).toHaveCount(0);
+    await expect(mdRoot.locator('b')).toHaveCount(0);
+    // The payload's literal characters appear as escaped text.
+    await expect(mdRoot).toContainText('<script>');
+    await expect(mdRoot).toContainText('<b>unsafe</b>');
   });
 });
