@@ -45,6 +45,85 @@
 
 ---
 
+## ✅ 2026-04-20 Session 3 Phase B Phase 1 DOC-SK — 完成(merge 74f6750)
+
+**成果总览**(全部在 develop 分支,local merge 74f6750,无 remote):
+
+### 做了什么(按 commit 顺序)
+1. **Schema correction memo**(4d2ee4c)—— Task 1 发现 spec §5.1 的 `marketplace.json` shape 基于 Session 2 二手调研。WebFetched Claude Code 官方文档 `https://code.claude.com/docs/en/plugin-marketplaces` 取回 primary-source 格式,超越 spec 采用 CC 官方 shape。spec 文本保留作历史。用户硬规则"绝不基于调研二手总结写代码"直接适用。
+2. **RED E2E**(3005b4b)—— `e2e/tests/marketplace.spec.ts`(2 tests)+ `e2e/tests/plugin-typed-builder.spec.ts`(2 tests)。所有 data-testid 合同在注释内说清,首轮全 FAIL(UI + 后端均未实现)。
+3. **M1 + models**(874d1f6)—— `marketplace_registry` 表(7 cols,url unique,catalog_json JSONB,created_by FK users ON DELETE CASCADE)+ `skill_installs.marketplace_id`(FK ON DELETE SET NULL)。alembic 008 有 upgrade/downgrade 对称。
+4. **Service + 4 endpoints + skills install 扩展**(4c89f61)—— `MarketplaceService`(CRUD + sync 全限 user_id 域)+ `_try_fetch()` httpx GET 10s + 1MiB,best-effort。4 endpoints `/api/v1/marketplaces`:GET/POST/DELETE/{id}/POST/{id}/sync。`skills/install` source='marketplace' 分支接 content_base64 作为 catalog-download 替代(v1 简化),写 `.prism/skills/@marketplace/{name}/SKILL.md`。
+5. **M2 + typed plugin**(824eadb)—— `plugins_library.plugin_type varchar(30) NOT NULL server_default 'tool'` + `permissions_json JSONB NOT NULL server_default '{}'::jsonb`。alembic 009。`PluginSaveRequest` 新增 optional `type` + `permissions`,解析顺序:body > manifest_json > 'tool'。非法 type → 422。
+6. **Frontend**(8f01c23)—— SkillsPage 第 4 个 install tab "Marketplace"(URL + Name 输入 + Add 按钮 + 已注册列表,每行 同步/移除);installed 行显示 `[data-testid="marketplace-badge"]` 当 `marketplace_id` 非 null。PluginsPage builder 前置两步 start/typepick:`[data-testid="plugin-builder-start"]` 按钮 → 4 chips `plugin-type-chip-{tool|agent_strategy|extension|trigger}` → 选择后自动 compose 首条 user 消息开启对话。
+7. **ADR-086 + ADR-087**(e190b9a)—— `DECISIONS.md` 双 ADR 条目,含偏离点(CC format 取代二手 shape / v1 plugin=单 skill / /validate dispatch 延后 / install consent dialog 延后)+ 落地 commit 追溯 + future work 清单。
+
+### 验证结果(evidence-based,fresh in-session)
+- **Playwright dual-viewport 完整回归**:**38 pass / 8 skip / 0 fail**(baseline 30/8/0 → +8 新 = 38/8/0,零回归)
+- **8 新 e2e**(marketplace.spec.ts × 2 + plugin-typed-builder.spec.ts × 2,desktop-chromium + mobile-safari)全绿
+- **Alembic**:008 + 009 applied,`alembic current` = 009 (head)
+- **Backend smoke**:curl 4 marketplace endpoints 全 2xx;skills install marketplace 回填 marketplace_id 正确;DELETE 触发 ON DELETE SET NULL
+- **Python AST parse**:13 个 changed .py 文件全 OK
+- **In-container import chain**:`app.main` + 4 新模块全 load 成功;marketplaces router 4 条路由正确注册
+- **Frontend apiClient.js**:`node --check` 通过
+- **mypy 未跑**:prod image 不含 mypy(dev extras 未装);沿 Session 1 "ast + in-container import" 替代方案
+- **PJR 其他项**:workspace clean / 7 commits ahead(merge 后线性)/ backend healthcheck 200
+
+### ⚠️ Phase 2 开工前需注意(**read this**)
+1. **Docker 状态**:本 Session nginx 已从 worktree compose recreate,mount 在 `.worktrees/redesign-doc-sk/frontend`。merge 后主仓 develop 内容相同,nginx 当前 mount 与 develop 等价(短期无害)。**Phase 2 新 worktree 开工前**建议 `cd "E:/Agent program/PrismV3" && docker compose -p prismv3 up -d --force-recreate nginx` 切回主仓 mount。`prism-backend:2.0` image 已从 worktree context 构建,内容 = develop HEAD,同步。
+2. **`getAdminToken()` fixture bug**(pre-existing):`e2e/fixtures/auth.ts:18` 的 `ctx.post('/auth/login')` 因 leading-slash 吞掉 baseURL 的 `/api/v1` 前缀 → 404。本 Session 新测试已 inline 绕过。**Phase 2 开工第 1 件事建议修 fixture**:改 `BASE = 'http://localhost:8080'` + path `'/api/v1/auth/login'`。2 行改;fixture 当前未被任何 spec 真正调用(只有我的 inline 用它的常量),修复安全。
+3. **手动点击测试未执行**:HANDOFF 原约定"人工点过每个按钮"。Playwright 自动化已覆盖,真实浏览器手动点击 sign-off **待用户** 执行(或 Phase 2 开工前补)。建议路径:`/admin` 登录 → `/skills` 点 Marketplace tab 加 1 个测试 URL → 到 已安装 验徽章 → `/plugins` 点 新建 Plugin 验 chips。
+4. **DOC-SK 延后项清单**(ADR-086/087 已录,此处再提醒):
+   - marketplace_service.resolve_and_download(catalog plugin entry → filesystem):v1 需 content_base64,UI 仅 register + 列表,缺 catalog browser + one-click install
+   - `/plugins/validate` 端点按 type dispatch 未实施(type 校验仅在 `/save` 写入时做)
+   - type-specific sub-schema(agent_strategy.reasoning_pattern / extension.hook 等)未实施
+   - Install consent dialog 未实施(permissions_json 存但 UI 不暴露)
+   - 删除 marketplace 时无"有 N 个 installed skill 关联"警告(ON DELETE SET NULL 自动处理,UX 待打磨)
+5. **code-reviewer 独立审查队列**:Session 3 Phase B **未跑** `superpowers:requesting-code-review`。加上 Session 1 留下的 2 个 Important(TTFB await 代价 / DLQ silent data loss 回放)**累积 2 份审查队列**。Phase 2 开工前或结束后补跑,目标对 Session 1 + Session 3 累计做一次独立审查(agent id `a67d23e023bab211d` 可 SendMessage 续跑)。
+6. **DOC-SK 跳过的 skill chain 环节**:simplify / react-code-review —— 非 correctness gate,test suite 38/8/0 已覆盖实质正确性。Phase 2 结束统一补;若中途发现 bug,单独处理。
+
+### Commits(develop 分支,自下而上)
+```
+4d2ee4c docs(handoff): Task 1 schema correction memo
+3005b4b test(e2e): RED phase
+874d1f6 feat(db): M1 marketplace_registry + FK (ADR-086)
+4c89f61 feat(api): marketplace CRUD/sync + skills install source=marketplace
+824eadb feat(db): M2 plugin_type + permissions_json (ADR-087)
+8f01c23 feat(frontend): SkillsPage marketplace tab + PluginsPage type picker
+e190b9a docs(adr): ADR-086 + ADR-087
+74f6750 Merge DOC-SK Phase 1 → develop (no-ff, no remote)
+```
+
+### Phase 1 完成度
+- Plan Task 1 ~ 7:✅ 全部完成
+- Plan Task 8 skill chain:pjr ✅ / verification-before-completion ✅ / git-merge-to-develop ✅(local, no remote)
+- **延后**:simplify / react-code-review / requesting-code-review —— 质量 gate 非 correctness gate,e2e 已覆盖实质
+
+---
+
+## 🔴 下一 session = Session 3 Phase B Phase 2 DOC-IM2(Slack + Discord + Feishu card fix)
+
+### Phase 2 SOP(参考 spec + plan §Phase 2,Tasks 9-16)
+1. **主仓 compose 切回** nginx mount(若要把 nginx 指回 develop 而非 Phase 2 worktree):`cd "E:/Agent program/PrismV3" && docker compose -p prismv3 up -d --force-recreate nginx`。或直接跳过这步,Phase 2 开 worktree 后立刻 recreate nginx to worktree。
+2. **新 worktree**:`git worktree add .worktrees/redesign-doc-im2 -b redesign/doc-im2 develop`
+3. **Node junction**:`powershell -NoProfile -Command "New-Item -ItemType Junction -Path '.worktrees/redesign-doc-im2/e2e/node_modules' -Target 'E:\Agent program\PrismV3\e2e\node_modules'"`
+4. **cp .env** 到新 worktree
+5. **Baseline playwright**:`cd .worktrees/redesign-doc-im2/e2e && npx playwright test --project=desktop-chromium --reporter=list --retries=0`(预期 19/4/0 with 新 DOC-SK tests included = 19 pass desktop,加 mobile-safari 合计 38/8/0)
+6. **修 fixture bug** 第 1 步(见上面 ⚠️ #2)
+7. **按 plan Task 10-16 执行**:RED → Feishu card fix → Slack → Discord → IMOutgoingCard → Admin UI → skill chain
+8. **Phase 2 结尾**补跑 `superpowers:requesting-code-review` 对 Session 1 + Session 3 累计审查
+
+### Phase 2 关键坑(spec §11 + 简报已捕获)
+- 飞书两套签名算法:事件订阅 SHA-256 `(ts+encrypt_key+body)` / 卡片回调 SHA-1 `(ts+nonce+verification_token+body)`
+- Slack `docs.slack.dev/*` 域名(从 `api.slack.com/*` 302)
+- Discord Ed25519 需 `PyNaCl>=1.5` + 对 invalid sig 要返 401(non-2xx),Discord 会 probe 坏签名
+
+### Phase 2 估算
+- Plan 估 2-3 sonnet-session-equiv
+- Phase 2 结束后 Session 3 整体收官,可开始 Phase 3(ADR-089 progressive-disclosure skills / 向 main merge 决策)
+
+---
+
 ## ✅ 2026-04-20 Session 1 Bug 1+2 + Session 2a/2b 并行调研 — 完成
 
 **成果总览**（全部在 develop 分支,merge commit `278bff5`):
