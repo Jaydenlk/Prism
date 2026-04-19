@@ -73,7 +73,7 @@
 - phone 用户的 email 字段是占位 `phone_{digits}@phone.prism.local`，Task C 前端注册需知道这个
 
 ### Commit
-- TBD after commit
+- `b1d4b05` — feat(auth): multi-channel auth backend — migration 006 + challenge/email services + 9 new endpoints
 
 ---
 
