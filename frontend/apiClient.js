@@ -282,17 +282,40 @@
     const MAX_RETRIES = 5;
     const BASE_DELAY_MS = 1000;
 
-    es.onmessage = (e) => {
-      retries = 0; // reset on successful message
-      if (onEvent) {
-        try {
-          const parsed = JSON.parse(e.data);
-          onEvent(parsed);
-        } catch {
-          onEvent(e.data);
-        }
+    // SSE backend emits named events (event: message_complete, event: run_complete, ...).
+    // W3C EventSource: onmessage only fires for default `event: message`; named events
+    // REQUIRE addEventListener per type. We enumerate the full backend event inventory
+    // and merge { type } into the parsed payload so callers can dispatch on evt.type.
+    const SSE_EVENT_TYPES = [
+      'text_delta', 'tool_use_delta',
+      'tool_start', 'tool_end',
+      'message_complete',
+      'run_complete', 'run_error', 'run_crashed',
+      'permission_ask',
+      'harness_event',
+      'coordinator_plan_update',
+      'session_title',
+      'queue_update',
+      'compaction',
+    ];
+
+    const dispatch = (type) => (e) => {
+      retries = 0;
+      if (!onEvent) return;
+      try {
+        const parsed = e.data ? JSON.parse(e.data) : {};
+        onEvent({ type, ...parsed });
+      } catch {
+        onEvent({ type, raw: e.data });
       }
     };
+
+    for (const t of SSE_EVENT_TYPES) {
+      es.addEventListener(t, dispatch(t));
+    }
+
+    // Fallback for any unnamed default event (e.g. keepalive).
+    es.onmessage = dispatch('message');
 
     es.onerror = (e) => {
       if (es.readyState === EventSource.CLOSED) {
