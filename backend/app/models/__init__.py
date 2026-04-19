@@ -47,9 +47,10 @@ from app.models.im_dedup import ImMessageDedup  # noqa: F401  # v4 新增
 # --- 审计域 (1) ---
 from app.models.audit import AuditLog  # noqa: F401
 
-# --- 插件 & Skill 域 (2) ---
+# --- 插件 & Skill 域 (3) ---
 from app.models.skill_install import SkillInstall  # noqa: F401  # v4 新增
 from app.models.plugin_library import PluginLibrary  # noqa: F401  # Task A-3
+from app.models.marketplace import MarketplaceRegistry  # noqa: F401  # DOC-SK R1 (ADR-086)
 
 # --- 执行恢复域 (1) ---
 from app.models.permission_request import PermissionRequest  # noqa: F401  # v4 新增
@@ -85,6 +86,7 @@ __all__ = [
     # Skill & Plugin Library
     "SkillInstall",
     "PluginLibrary",
+    "MarketplaceRegistry",
     # 执行恢复
     "PermissionRequest",
     # Memory
