@@ -35,7 +35,160 @@
 
 ---
 
-## 🔴 下一 session 续作指引（Opus/Sonnet 开工先读）
+## ✅ 2026-04-20 Session 1 Bug 1+2 + Session 2a/2b 并行调研 — 完成
+
+**成果总览**（全部在 develop 分支,merge commit `278bff5`):
+
+### 做了什么
+1. **Bug 1 根因级修复** — user text prompt 从不持久化到 `messages` 表。fix: `executor/engine/query_engine.py` 在首条 user message append 后 `await self._callback.message_complete(role="user", ...)`;`frontend/Prism.html` `run_complete` handler 改 merge 不 wipe 乐观 user msg(双层兜底)。**同时修好隐藏 bug**:刷新/切 session 不再丢用户历史
+2. **Bug 2 markdown rendering** — marked@12 + DOMPurify@3 unpkg CDN,新 `MarkdownBody`(React.memo + useMemo),`.content.md` typography(serif headings + amber 胶囊 code + amber rail blockquote,严格用现有 `--paper/--ink/--amber/--panel/--line` token)
+3. **Session 2 并行调研**(Exa 2 个后台 subagent):`docs/research/2026-04-19-skills-plugins-im-competitive.md`(3200 字,10 条推荐,32 源)+ `docs/research/2026-04-19-distributed-task-decomposition.md`(Planner-Executor 推荐)
+4. 顺手修 `e2e/tests/skills.spec.ts` pre-existing strict-mode violation(textarea 未清空 + `text=...` 匹配 2 元素)
+5. simplify skill 精简:提 `startNewChatSession` 到 `e2e/fixtures/chat.ts`;`React.memo` 包 MarkdownBody
+
+### 验证结果(evidence-based)
+- **双端全套 Playwright**:desktop-chromium + mobile-safari **14 pass / 4 skip / 0 fail**(baseline was 11/5/0)
+- **Diagnostic 验证根因修复**:`GET /sessions/*/messages` 响应现含 `role:"user" sequence_no:1` + assistant 在 seq=2
+- **XSS 回归**:`<script>window.__xss=1</script>` 注入后 `window.__xss !== 1` ✓
+- **Skill 链全过**:simplify(3 agent 并行)→ verification-before-completion → react-code-review → pjr(Python ast.parse + in-container import 通过,frontend zero-build 无 lint) → git-merge-to-develop(无 remote,本地 merge --no-ff)
+- ⚠️ **未完成**:`superpowers:requesting-code-review` 独立 subagent 跑出 "limit reached, resets 1am Shanghai"(Sonnet model quota);Session 3 开工前需补这一步审(agent id `a67d23e023bab211d` 可 SendMessage 续跑,或重新 dispatch)
+
+### Commits(develop 分支,自下而上)
+```
+1763119 docs: spec Bug 1/2 (+amendments 72bde69)
+59c252f docs(plan): 12-task impl plan
+f8ce778 chore: gitignore .worktrees/
+988f567 test(e2e): RED phase Playwright
+c6a78e8 docs(blocker): Bug 1 architectural root cause + 3 scope options
+e9186a1 fix(executor,frontend): persist user prompt + merge defense
+e8d33b7 feat(frontend): markdown rendering (marked+DOMPurify+MarkdownBody+typography)
+6ce1729 test(e2e): fix pre-existing skills strict-mode
+b03c459 refactor: simplify findings (fixture extract + React.memo)
+0b1fdf4 docs(research): Session 2a/2b Exa outputs
+278bff5 Merge → develop
+```
+
+### 遗留
+- **code-reviewer 独立审查待补**(1am 后重试;已在 `requesting-code-review` skill 载入,脚手架就绪)
+- worktree `.worktrees/fix-chat-md` 保留未 remove(可供 Session 3 回溯;也可 `git worktree remove` 清理)
+- docker stack 当前从 worktree compose 启(nginx mount worktree frontend,内容与 develop 同);Session 3 新 worktree 起前需切换 compose 根目录回主仓或新 worktree
+- 主仓 `HANDOFF-LOG.md` 历史 dirty 状态 + `.claude/settings.json` 未跟踪 = 前前任 session 遗留,本次不碰
+- **Session 2b 的分布式任务拆解研究**(Planner-Executor 推荐)未被任何 Session 消费 — 架构级调整,待未来单独排期
+
+---
+
+## 🔴🔴🔴 下一 session = **Session 3 Redesign: Skills Market + Plugin Builder + IM 接入**
+
+**用户明确(2026-04-20)**:基于 Session 2 调研 + 真实官方文档(非推测),重新设计并落地 3 大子系统。本 Session 3 **覆盖原 Bug 3 plugin 联动 ADR**(大概率被 plugin builder redesign 自然重建)。
+
+### 目标(按优先级)
+- **P0 Skills Market**:参考 Claude Code skills progressive-disclosure 元数据结构 + Dify 6 类 plugin taxonomy;新增 marketplace registry 抽象(第 4 个 install channel:git-repo catalog 订阅)
+- **P0 Plugin Builder**:Dify-style typed manifest(`type: tool | agent_strategy | extension | trigger`);`PluginBuilder` chat 按 type 分支;`plugin.yaml` schema 更新
+- **P1 IM 接入**:新增 Slack(Events API / Socket Mode)+ Discord(HTTP Interactions + Ed25519);**飞书 chatbot 完整落地**(当前只有 webhook URL-verification 骨架):事件订阅配置 / 卡片交互 / SSO / bot 权限;企微/钉钉/Teams 按架构预留 adapter
+
+### 强制原则(用户重申)
+- **文档置信度**:**绝不基于调研二手总结写代码**;官方文档每个 API 必须 WebFetch 一次,URL 进 spec
+  - 飞书:`https://open.feishu.cn/document/ukTMukTMukTM/xxx`(bot message / card / webhook / callback encryption)
+  - Slack:`https://api.slack.com/events` + `https://api.slack.com/apis/socket-mode`
+  - Discord:`https://discord.com/developers/docs/interactions/receiving-and-responding`
+- **单一职责** / **最简代码** / **类型严格** / **KISS** / **不做向后兼容**
+- **完整 skills 链**:brainstorming → frontend-design + ui-ux-pro-max(前端) → systematic-debugging(真现问题) → TDD → using-git-worktrees(新 worktree `redesign/skills-plugins-im`) → simplify → verification-before-completion → react-code-review → pjr(**前后端 lint + build 都必须过**) → git-merge-to-develop → requesting-code-review
+- **Playwright 双端**+ **人工点过每个按钮**(不只看页面 — 完整流程走一遍)
+
+### 开工 SOP(逐步)
+1. 补做 Session 1 遗留 code-reviewer 独立审查(1am 后)→ 任何 Critical 行动项处理完
+2. 读 `docs/research/2026-04-19-skills-plugins-im-competitive.md`(先读 Part 4 的 10 条推荐 + R1/R2/R4 P0 项)
+3. `WebFetch` 飞书官方文档(上述 URL 全部),**每个 API 返回的 payload/header 结构保存到 `docs/research/2026-04-20-feishu-webhook-spec.md`**
+4. 加载 `superpowers:brainstorming` → 与用户对齐 scope(schema 变更如 `marketplace_registry` 表是否授权 / 去 PRD 加 ADR 编号)
+5. `superpowers:writing-plans` 生成 spec + plan(多子任务,可能拆 3 个子 session)
+6. 新 worktree `redesign/skills-plugins-im`
+7. 实施 → 双端 Playwright → 收尾 skill 链
+
+### 潜在 blocker 候选(可能需停下 blocker.md)
+- 加 `marketplace_registry` 表 = schema 变更(六原则 #1),需用户明确授权 + ADR 编号(PRD v4 ADR 编号空间已用到 ~120,需新编或平移)
+- `plugin.yaml` type 字段 = 协议级变更(六原则 #2),需 ADR
+- 飞书 bot 需要真实 AppID/AppSecret 配置(无 `.env` 字段),涉及用户侧敏感数据
+
+### 重要:本 session 可能过长
+Session 3 scope 估 4-8 小时。如上下文撑不住,可在 P0 Skills Market 完成后切 session,把剩下 Plugin Builder + IM 接入作为 Session 3B / 3C。
+
+---
+
+## 🟢 历史记录(已完成,按时间倒序)
+
+---
+
+## 🟡 Session 1 历史指引块(旧版,已被上方 ✅ 完成记录覆盖)
+  
+### Session 1 开工 SOP（逐步按序执行 — 已完成,保留作历史）
+
+1. **读本节 + Bug 1/2 定位结论**（见下），2 分钟内开工
+2. **启动 Docker**：`cd "E:/Agent program/PrismV3" && docker compose up -d`
+3. **强制加载 skills**（按顺序）：
+   - `superpowers:brainstorming`（2 分钟快过确认 Bug 1/2 边界，不展开需求沟通）
+   - `superpowers:using-git-worktrees`（开 `fix/chat-msg-disappear-and-md-render` worktree，全部改动在 worktree 内）
+   - `superpowers:systematic-debugging`（Bug 1 先 reproduce 确认根因，禁打补丁）
+   - `superpowers:test-driven-development`（先写失败 E2E，再改）
+   - `frontend-design` + `ui-ux-pro-max` + `taste-skill` + `soft-skill`（Bug 2 markdown 排版要走高端感）
+   - `clouddreamai-knowledge:clouddreamai-project-debug`（检索团队知识库是否有相似 bug 已解）
+4. **实现 → 双端 Playwright 测试**（`playwright-mcp` MCP + 桌面+移动端都跑，每个按钮/流程点一遍）
+5. **收尾 skills 链**（按顺序）：
+   - `simplify`（改过的代码走一遍简化审查）
+   - `superpowers:verification-before-completion`（质量门）
+   - `react-code-review:react-code-review`（前端专项审查）
+   - `project-review:pjr`（lint/build/文档一致性/工作区状态全查）
+   - `git-merge-to-develop:git-merge-to-develop`（rebase + merge 回 dev 分支）
+   - `superpowers:requesting-code-review`（独立 code-reviewer 审查 commit）
+6. **回写本 HANDOFF-LOG** 顶部加 `## 2026-04-XX — Session 1 完成` 记录，**删除本红色块**（或移到历史区）
+
+### Bug 1 定位结论（已读代码得出，无需重新摸排）
+
+**症状**：用户发送消息 → AI 有回复 → 用户消息 bubble 从 UI 消失
+
+**代码位置**：
+- `frontend/Prism.html:992-1023` `handleSend()` — 乐观推用户 msg(OK)
+- `frontend/Prism.html:772-803` `case "run_complete"` — **嫌疑最大**：`listMessages(..., {limit:50})` 拉历史后 **完全替换 `msgs` state**（`setMsgs(displayMsgs)`）
+- `frontend/Prism.html:781-796` parser loop — 只处理 `role === "user"` 和 `role === "assistant"`，若 `m.content` 非数组或 `b.type !== "text"` 文本抽不出来就变空 content
+- `frontend/apiClient.js:122-150` `request()` 自动解包 `{data, error}` → `listMessages` 返回直接是数组（已确认 shape OK）
+
+**可能根因（需 session 1 用浏览器 devtools 现场确认二选一）**：
+- **A**：DB 里 user message 的 `content[*].type` 不是 `"text"`（可能是 `"user_text"` 或裸字符串），parser filter 过滤掉了 → bubble 变空且 text_preview 也空 → 视觉上"消失"
+- **B**：race，run_complete 到达时 user message 还没 DB persist，`rawMsgs` 确实缺 user → setMsgs 覆盖掉乐观的那条
+
+**修复策略（择一后实施，禁止两个都改）**：
+- **优先 A**：修 parser 兜底（任何 role=user 的行必渲染，content 为空时用 text_preview，都空用 placeholder `[空消息]`）
+- **若确认 B**：`run_complete` 改为 **merge 不覆盖**——只 reconcile streaming placeholder，不 wipe 乐观 user msg
+
+### Bug 2 定位结论（已确认，无需再摸排）
+
+**根因**：`frontend/Prism.html:436` 直接渲染 `{m.content}` 为纯文本，整个 Prism.html 没有任何 markdown 库。
+
+**修复方案**（择一，决策依据：Prism.html 是零构建 inline React，无 webpack/vite）：
+- **方案 1（推荐）**：CDN 引入 `marked` + `DOMPurify` → 新建 `MarkdownBody` 组件用 `dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(marked.parse(m.content))}}` 替换 line 436 的 `{m.content}`
+- 方案 2：ESM 从 esm.sh 动态 import `react-markdown` + `remark-gfm`
+- **样式**：走 `ui-ux-pro-max` + `taste-skill` 做 `.content .md h1/h2/p/ul/code/pre/blockquote` 的排版（serif 标题、代码块 mono + subtle bg、列表缩进、code inline 胶囊），参考 `styles.css` 现有 token（var(--serif)、var(--ink)、var(--bg)）
+
+**验证**：下一 session 跑 Playwright 脚本发一条含 `## 标题`、`- 列表`、` ```代码块``` `、`**粗体**` 的 prompt，UI 截图要有真实排版（不是一坨文本）。
+
+### 用过的工具/文件（避免重复翻）
+- `frontend/Prism.html` 总 3604 行，ChatPage 在 591-1073，Msg 组件在 419-451
+- `backend/app/api/v1/sessions.py:195-235` list_messages 端点返回 `ApiResponse[list[MessageResponse]]`
+- `frontend/apiClient.js` 的 `request()` 自动解包 data 字段
+
+### 插件状态（已就绪）
+Installed：project-review (PJR)、git-merge-to-develop、react-code-review、frontend-logic-design、clouddreamai-knowledge、ui-ux-pro-max、playwright-mcp、nestjs-code-review（Prism 后端是 FastAPI 用不上，装了备查）。
+**Exa MCP** 用户已配置，用于 Session 2 竞品调研（本 Session 1 不需要）。
+
+### 重要约束
+- ❌ 不要碰 Bug 3(plugin 联动) → Session 3 才做
+- ❌ 不要跨到 Task 4a/4b 调研 → Session 2 才做
+- ❌ 不要改 PRD_V4 / ADR / Schema
+- ✅ 只动 `frontend/Prism.html` + `frontend/styles.css`（必要时）
+- ✅ 全部改动在 worktree 内，`git-merge-to-develop` 才合回 dev
+
+---
+
+## 🟡 上一版续作指引（已被上方 🔴 覆盖，保留作历史）
 
 **当前状态** — 全栈 healthy，CloudDream LLM 真实调通，Harness middleware 真实接入 (P1-2 根因级修复完成)。
 
