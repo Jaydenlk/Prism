@@ -15,7 +15,7 @@
 <script src="apiClient.js"></script>
 
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 /* ============ ICONS ============ */
 const Icon = ({ name, size = 16, stroke = 1.5, style = {} }) => {
@@ -90,7 +90,7 @@ const PrismGlyph = ({ size = 140 }) => (
   </svg>
 );
 
-/* ============ DATA ============ */
+/* ============ STATIC DATA (hardcoded pages only) ============ */
 const I18N = {
   zh: {
     brand: "Prism 棱镜",
@@ -100,7 +100,7 @@ const I18N = {
     newChat: "新对话", searchSession: "搜索会话",
     today: "今天", yesterday: "昨天", thisWeek: "本周", earlier: "更早",
     permissionTitle: "这一步需要你点头",
-    permissionBody: "我想运行一个会改动磁盘的命令,你看一眼。",
+    permissionBody: "Agent 想运行一个可能改动系统的操作,请确认。",
     planTitle: "这次的计划",
     loginTitle: "回到 Prism",
     loginSub: "让大模型变得可靠、可治理、可扩展 —— 而不是只会幻觉的聊天框。",
@@ -116,16 +116,6 @@ const I18N = {
     ]
   }
 };
-
-const SESSIONS = [
-  { id: "s1", title: "Harness 2026 简报", preview: "嗯,让我先读一下 DOC-00…", time: "14:32", group: "today", pinned: true, status: "running" },
-  { id: "s2", title: "MiniMax vs DeepSeek 的账", preview: "按最近 7 天,DeepSeek 平均每次 run 便宜大概 38%。", time: "11:05", group: "today" },
-  { id: "s3", title: "飞书 bot 配对失败", preview: "看起来是 webhook 回调超时。", time: "昨天", group: "yesterday" },
-  { id: "s4", title: "Compaction 回合组测试", preview: "VERDICT: PASS — 配对完整。", time: "昨天", group: "yesterday" },
-  { id: "s5", title: "只读 shell Skill", preview: "SKILL.md 骨架已经生成好。", time: "3 天前", group: "thisWeek" },
-  { id: "s6", title: "Coordinator 崩溃恢复", preview: "从 step 3 成功恢复。", time: "5 天前", group: "thisWeek" },
-  { id: "s7", title: "4 月用量月报", preview: "总共 412 runs,省了大约 ¥318。", time: "上月", group: "earlier" }
-];
 
 const PROVIDERS = [
   { id: "p1", name: "Anthropic", protocol: "anthropic", model: "claude-sonnet-4-5", health: "ok", default: true, cache: true, cost: "¥0.021/1K" },
@@ -157,14 +147,6 @@ const SKILLS = [
   { id: "sk6", name: "poco-importer", desc: "把 Poco v1 的会话 JSON 导进来。", version: "0.2.1", installed: false, author: "@farion1231" }
 ];
 
-const PLAN_STEPS = [
-  { id: 1, agent: "research", desc: "读一下 DOC-00,找出 Harness 的四个支柱", status: "done", duration: "12 秒" },
-  { id: 2, agent: "research", desc: "跟 Claude Code 的 query.ts 对一下,确认 TAOR 就是它", status: "done", duration: "18 秒" },
-  { id: 3, agent: "planner", desc: "规划一份三段式:问题 → 方案 → 验证", status: "active", duration: "正在做" },
-  { id: 4, agent: "general", desc: "按规划起草正文,带引用", status: "pending" },
-  { id: 5, agent: "verifier", desc: "对抗性验证,挑毛病", status: "pending" }
-];
-
 const RECENT_RUNS = [
   { session: "Harness 2026 简报", mode: "coordinator", status: "completed", tokens: "28,410", cache: "72%", cost: "¥0.28", turn: 11, at: "14:32" },
   { session: "MiniMax vs DeepSeek", mode: "general", status: "completed", tokens: "9,820", cache: "54%", cost: "¥0.06", turn: 5, at: "11:05" },
@@ -172,6 +154,78 @@ const RECENT_RUNS = [
   { session: "Compaction 测试", mode: "verifier", status: "completed", tokens: "12,004", cache: "68%", cost: "¥0.11", turn: 7, at: "昨天 22:12" },
   { session: "Coordinator 崩溃恢复", mode: "coordinator", status: "failed", tokens: "15,220", cache: "60%", cost: "¥0.14", turn: 8, at: "昨天 19:03" }
 ];
+
+/* ============ UTILS ============ */
+/**
+ * Group sessions by time bucket relative to now.
+ * Returns { today: [], yesterday: [], thisWeek: [], earlier: [] }
+ */
+function groupByTime(sessions) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday - 86400000);
+  const startOfWeek = new Date(startOfToday - (now.getDay() || 7) * 86400000);
+
+  const groups = { today: [], yesterday: [], thisWeek: [], earlier: [] };
+  const sorted = [...sessions].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  for (const s of sorted) {
+    const d = new Date(s.updated_at);
+    if (d >= startOfToday) groups.today.push(s);
+    else if (d >= startOfYesterday) groups.yesterday.push(s);
+    else if (d >= startOfWeek) groups.thisWeek.push(s);
+    else groups.earlier.push(s);
+  }
+  return groups;
+}
+
+function formatTime(isoStr) {
+  if (!isoStr) return "";
+  const d = new Date(isoStr);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday - 86400000);
+  if (d >= startOfToday) return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  if (d >= startOfYesterday) return "昨天";
+  return d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+}
+
+/**
+ * Render API ContentBlock[] into a displayable structure for Msg.
+ * Returns { text, tools }
+ */
+function renderContentBlocks(blocks, toolResults) {
+  if (!Array.isArray(blocks)) return { text: "", tools: [] };
+  const texts = [];
+  const tools = [];
+  // Build a map of tool_result by tool_use_id
+  const resultMap = {};
+  if (Array.isArray(toolResults)) {
+    for (const r of toolResults) {
+      if (r.type === "tool_result") resultMap[r.tool_use_id] = r;
+    }
+  }
+  for (const block of blocks) {
+    if (block.type === "text") {
+      texts.push(block.text);
+    } else if (block.type === "thinking") {
+      // Show thinking in muted style
+      texts.push(`[思考] ${block.thinking}`);
+    } else if (block.type === "tool_use") {
+      const result = resultMap[block.id];
+      tools.push({
+        id: block.id,
+        name: block.name,
+        icon: "terminal",
+        status: "ok",
+        preview: block.name,
+        input: block.input ? JSON.stringify(block.input, null, 2) : "",
+        output: result ? (typeof result.content === "string" ? result.content : JSON.stringify(result.content)) : "",
+        is_error: result?.is_error || false,
+      });
+    }
+  }
+  return { text: texts.join("\n"), tools };
+}
 
 /* ============ SHELL ============ */
 const NAV = [
@@ -185,14 +239,50 @@ const NAV = [
   { id: "settings", icon: "settings" }
 ];
 
-function Sidebar({ page, setPage, t }) {
+/* ============ SIDEBAR ============ */
+function Sidebar({ page, setPage, t, currentSessionId, setCurrentSessionId, addToast }) {
   const [q, setQ] = useState("");
+  const [sessions, setSessions] = useState([]);
+  const [loadError, setLoadError] = useState(false);
+
+  // Load sessions from API
+  async function loadSessions() {
+    try {
+      const res = await window.PrismAPI.sessions.list();
+      // Defensive: handle both raw array and { items: [] }
+      const arr = Array.isArray(res) ? res : (res?.items || res?.sessions || []);
+      setSessions(arr);
+      setLoadError(false);
+    } catch (err) {
+      console.warn("[Sidebar] sessions.list() failed:", err);
+      setLoadError(true);
+    }
+  }
+
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  async function handleNewChat() {
+    try {
+      const sess = await window.PrismAPI.sessions.create({ title: "新对话" });
+      setSessions(prev => [sess, ...prev]);
+      setCurrentSessionId(sess.id);
+    } catch (err) {
+      addToast({ id: Date.now(), kind: "danger", title: "新建会话失败", body: err.message });
+    }
+  }
+
   const groups = useMemo(() => {
-    const f = SESSIONS.filter(s => s.title.includes(q));
-    const out = {}; f.forEach(s => (out[s.group] = out[s.group] || []).push(s));
-    return out;
-  }, [q]);
+    const filtered = sessions.filter(s =>
+      !q || (s.title || "").toLowerCase().includes(q.toLowerCase()) || (s.last_message_preview || "").toLowerCase().includes(q.toLowerCase())
+    );
+    return groupByTime(filtered);
+  }, [sessions, q]);
+
   const gOrder = ["today", "yesterday", "thisWeek", "earlier"];
+  const user = window.PrismAPI.currentUser();
+  const initials = user?.username ? user.username[0].toUpperCase() : "U";
 
   return (
     <aside className="sidebar">
@@ -200,7 +290,7 @@ function Sidebar({ page, setPage, t }) {
         <div className="logo"><PrismMark size={22}/><span>{t.brand}</span><span className="badge" style={{ marginLeft: "auto" }}>v0.4</span></div>
       </div>
       <div style={{ padding: "0 12px 10px" }}>
-        <button className="btn primary" style={{ width: "100%", justifyContent: "center" }}>
+        <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} onClick={handleNewChat}>
           <Icon name="plus" size={12}/> {t.newChat}
         </button>
         <div style={{ marginTop: 10, position: "relative" }}>
@@ -217,18 +307,34 @@ function Sidebar({ page, setPage, t }) {
         ))}
       </nav>
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
+        {loadError && (
+          <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--danger)", fontFamily: "var(--mono)" }}>
+            连不上后端 · 会话列表不可用
+          </div>
+        )}
+        {!loadError && sessions.length === 0 && (
+          <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic" }}>
+            暂无会话
+          </div>
+        )}
         {gOrder.map(g => !groups[g]?.length ? null : (
           <div key={g} style={{ marginBottom: 8 }}>
             <div className="eyebrow" style={{ padding: "8px 12px 6px" }}>{t[g]} · {groups[g].length}</div>
-            {groups[g].map((s, i) => (
-              <div key={s.id} className={`session-item ${i === 0 && g === "today" ? "active" : ""}`}>
+            {groups[g].map(s => (
+              <div
+                key={s.id}
+                className={`session-item ${s.id === currentSessionId ? "active" : ""}`}
+                onClick={() => { setCurrentSessionId(s.id); setPage("chat"); }}
+              >
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  {s.pinned && <Icon name="pin" size={10} style={{ color: "var(--amber)" }}/>}
-                  <span className="title" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.title}</span>
+                  {s.is_pinned && <Icon name="pin" size={10} style={{ color: "var(--amber)" }}/>}
+                  <span className="title" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.title || "无标题"}
+                  </span>
                   {s.status === "running" && <span className="dot live"/>}
                 </div>
-                <div className="preview">{s.preview}</div>
-                <div className="meta"><span>{s.time}</span></div>
+                <div className="preview">{s.last_message_preview || ""}</div>
+                <div className="meta"><span>{formatTime(s.updated_at)}</span></div>
               </div>
             ))}
           </div>
@@ -242,10 +348,12 @@ function Sidebar({ page, setPage, t }) {
         ))}
       </div>
       <div style={{ padding: "12px 16px", borderTop: "1px solid var(--line)", display: "flex", gap: 10, alignItems: "center" }}>
-        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 13 }}>A</div>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 13 }}>
+          {initials}
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>Alice Chen</div>
-          <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>hangzhou-prod</div>
+          <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{user?.username || user?.email || "用户"}</div>
+          <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>{user?.role || "user"}</div>
         </div>
         <Icon name="more" size={14} style={{ color: "var(--ink-3)", cursor: "pointer" }}/>
       </div>
@@ -253,15 +361,19 @@ function Sidebar({ page, setPage, t }) {
   );
 }
 
-function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm }) {
-  const titles = { chat: "Harness 2026 简报", sessions: t.nav.sessions, usage: t.nav.usage, skills: t.nav.skills, plugins: t.nav.plugins, admin: t.nav.admin, observability: t.nav.observability, settings: t.nav.settings };
+function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm, sessionTitle }) {
+  const titles = {
+    chat: sessionTitle || "对话",
+    sessions: t.nav.sessions, usage: t.nav.usage, skills: t.nav.skills,
+    plugins: t.nav.plugins, admin: t.nav.admin, observability: t.nav.observability, settings: t.nav.settings
+  };
   return (
     <div className="topbar">
       {page === "chat" && <span className="crumb">会话 /</span>}
       <div className="title">{titles[page]}</div>
       <div style={{ flex: 1 }}/>
       {page === "chat" && <>
-        <span className="meta-chip"><span className="dot live"/> sonnet-4-5 · coordinator</span>
+        <span className="meta-chip"><span className="dot live"/> Prism · coordinator</span>
       </>}
       <button className="icon-btn" onClick={onPerm} title="权限请求"><Icon name="shield" size={14}/></button>
       {page === "chat" && <button className="icon-btn" onClick={() => setShowPlan(!showPlan)} title="计划面板" style={{ background: showPlan ? "var(--panel)" : "" }}><Icon name="layers" size={14}/></button>}
@@ -271,7 +383,7 @@ function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm }) {
   );
 }
 
-/* ============ CHAT ============ */
+/* ============ CHAT COMPONENTS ============ */
 function ToolCard({ tool, initOpen = false }) {
   const [open, setOpen] = useState(initOpen);
   return (
@@ -282,7 +394,8 @@ function ToolCard({ tool, initOpen = false }) {
         <span className="name">{tool.name}</span>
         <span className="preview">{tool.preview}</span>
         {tool.status === "running" && <span className="tool-status running"><span className="dot warn"/> 进行中</span>}
-        {tool.status === "ok" && <span className="tool-status ok"><Icon name="check" size={11}/> {tool.duration}</span>}
+        {tool.status === "ok" && <span className="tool-status ok"><Icon name="check" size={11}/> {tool.duration || ""}</span>}
+        {tool.status === "error" && <span className="tool-status" style={{ color: "var(--danger)" }}>错误</span>}
       </div>
       <div className="tool-body">
         {tool.input && <><div className="tool-section-label">输入</div><pre className="tool-code">{tool.input}</pre></>}
@@ -324,7 +437,7 @@ function Msg({ m, first }) {
             <div className="content">{m.content}{m.streaming && <span className="caret"/>}</div>
           )}
           {m.harness?.map((h, i) => <HarnessNotice key={i} {...h}/>)}
-          {m.tools?.map((t, i) => <ToolCard key={i} tool={t} initOpen={t.initOpen}/>)}
+          {m.tools?.map((tool, i) => <ToolCard key={tool.id || i} tool={tool} initOpen={tool.initOpen}/>)}
           {!isUser && !m.streaming && (
             <div style={{ marginTop: 14, display: "flex", gap: 2, marginLeft: -6 }}>
               <button className="icon-btn" title="复制"><Icon name="copy" size={12}/></button>
@@ -338,23 +451,24 @@ function Msg({ m, first }) {
   );
 }
 
-function Composer({ t, onSend }) {
+function Composer({ t, onSend, disabled }) {
   const [v, setV] = useState("");
   const ref = useRef(null);
   useEffect(() => { if (ref.current) { ref.current.style.height = "auto"; ref.current.style.height = Math.min(180, ref.current.scrollHeight) + "px"; } }, [v]);
-  const submit = () => { if (v.trim()) { onSend(v); setV(""); } };
+  const submit = () => { if (v.trim() && !disabled) { onSend(v); setV(""); } };
   return (
     <div className="composer-wrap">
       <div className="composer">
-        <textarea ref={ref} placeholder={t.composer_placeholder} value={v}
+        <textarea ref={ref} placeholder={disabled ? "请稍等…" : t.composer_placeholder} value={v}
           onChange={e => setV(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}/>
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+          disabled={disabled}/>
         <div className="tools">
           <button className="icon-btn" title="附件"><Icon name="attach" size={14}/></button>
           <button className="icon-btn" title="技能"><Icon name="skills" size={14}/></button>
           <button className="icon-btn" title="MCP"><Icon name="plugin" size={14}/></button>
           <div style={{ flex: 1 }}/>
-          <button className="btn primary sm" onClick={submit} style={{ padding: "7px 14px", borderRadius: 999 }} disabled={!v.trim()}>
+          <button className="btn primary sm" onClick={submit} style={{ padding: "7px 14px", borderRadius: 999 }} disabled={!v.trim() || disabled}>
             <Icon name="arrowUp" size={12}/>
           </button>
         </div>
@@ -364,119 +478,536 @@ function Composer({ t, onSend }) {
   );
 }
 
-function PlanPanel({ t }) {
-  return (
-    <aside className="plan-panel">
-      <div style={{ marginBottom: 18 }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>正在做</div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 18, color: "var(--ink)", fontStyle: "italic" }}>{t.planTitle}</div>
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--ink-3)", marginBottom: 6 }}>
-        <span>2 / 5 已完成</span><span style={{ fontFamily: "var(--mono)" }}>~ 48s</span>
-      </div>
-      <div className="progress" style={{ marginBottom: 14 }}><div className="bar" style={{ width: "48%" }}/></div>
-      {PLAN_STEPS.map(s => (
-        <div key={s.id} className={`plan-step ${s.status}`}>
-          <div className="idx">{s.status === "done" ? "✓" : s.id}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="desc">{s.desc}</div>
-            <div className="meta">{s.agent}{s.duration ? ` · ${s.duration}` : ""}</div>
-          </div>
-        </div>
-      ))}
-      <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--line)" }}>
-        <div className="eyebrow" style={{ marginBottom: 12 }}>Harness 这边</div>
-        {[
-          { t: "压缩了一轮", d: "Turn 9 的回合组从 18.2k tokens 压到了 9.4k,tool_use↔tool_result 配对没断。", c: "var(--ink-3)" },
-          { t: "护栏响了", d: "数字 '38%' 没溯源,我已经要求它补上引用。", c: "var(--amber)" }
-        ].map((e, i) => (
-          <div key={i} style={{ padding: "10px 0", borderTop: i > 0 ? "1px dashed var(--line)" : "" }}>
-            <div style={{ fontSize: 12.5, color: "var(--ink)", fontFamily: "var(--serif)", fontStyle: "italic" }}>{e.t}</div>
-            <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.55 }}>{e.d}</div>
-          </div>
-        ))}
-      </div>
-    </aside>
-  );
-}
+/* ============ PERMISSION MODAL ============ */
+function PermissionModal({ onClose, t, permRequest, sessionId, addToast }) {
+  const [countdown, setCountdown] = useState(null);
+  const [answering, setAnswering] = useState(false);
 
-function PermissionModal({ onClose, t }) {
+  useEffect(() => {
+    if (!permRequest?.timeout_at) return;
+    function tick() {
+      const secs = Math.max(0, Math.round((new Date(permRequest.timeout_at) - new Date()) / 1000));
+      setCountdown(secs);
+      if (secs === 0) onClose();
+    }
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [permRequest?.timeout_at]);
+
+  async function answer(decision) {
+    if (!sessionId || !permRequest?.request_id) { onClose(); return; }
+    setAnswering(true);
+    try {
+      await window.PrismAPI.sessions.permissionAnswer(sessionId, {
+        request_id: permRequest.request_id,
+        decision,
+      });
+      onClose();
+    } catch (err) {
+      addToast({ id: Date.now(), kind: "danger", title: "回复失败", body: err.message });
+      onClose();
+    } finally {
+      setAnswering(false);
+    }
+  }
+
+  const toolName = permRequest?.tool_name || "unknown";
+  const toolInput = permRequest?.tool_input ? JSON.stringify(permRequest.tool_input, null, 2) : "";
+  const reason = permRequest?.reason || t.permissionBody;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="head">
-          <div className="eyebrow" style={{ color: "var(--amber)", marginBottom: 6 }}>等一下</div>
+          <div className="eyebrow" style={{ color: "var(--amber)", marginBottom: 6 }}>
+            等一下{countdown !== null && ` · ${countdown}s`}
+          </div>
           <div style={{ fontFamily: "var(--serif)", fontSize: 22, color: "var(--ink)", fontWeight: 500, letterSpacing: "-0.01em" }}>{t.permissionTitle}</div>
-          <div style={{ fontSize: 13.5, color: "var(--ink-3)", marginTop: 8, fontFamily: "var(--serif)", fontStyle: "italic" }}>{t.permissionBody}</div>
+          <div style={{ fontSize: 13.5, color: "var(--ink-3)", marginTop: 8, fontFamily: "var(--serif)", fontStyle: "italic" }}>{reason}</div>
         </div>
         <div className="body">
-          <div style={{ background: "var(--bg)", borderRadius: 12, padding: "14px 16px", fontFamily: "var(--mono)", fontSize: 12.5 }}>
-            <div style={{ color: "var(--ink-4)", fontSize: 10.5, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.12em" }}>$ bash</div>
-            <div style={{ color: "var(--ink)" }}>rm -rf tmp/cache/</div>
-          </div>
-          <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 14px", fontSize: 13 }}>
-            <span style={{ color: "var(--ink-3)" }}>谁</span><span style={{ color: "var(--ink)" }}>general · planner</span>
-            <span style={{ color: "var(--ink-3)" }}>依赖</span><span className="mono" style={{ color: "var(--ink)", fontSize: 12 }}>readonly-shell@1.2.0</span>
-            <span style={{ color: "var(--ink-3)" }}>护栏</span><span style={{ color: "var(--ink)" }}>GR-EXEC-004 · 破坏性操作白名单</span>
-            <span style={{ color: "var(--ink-3)" }}>为什么</span><span style={{ color: "var(--ink-2)", fontFamily: "var(--serif)", fontStyle: "italic" }}>清理上次 run 的临时缓存,腾点磁盘空间</span>
-          </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 12.5, color: "var(--ink-3)", cursor: "pointer" }}>
-            <input type="checkbox" style={{ accentColor: "var(--ink)" }}/>
-            这个会话内都别再问我 (审计还是会记)
-          </label>
+          {toolInput && (
+            <div style={{ background: "var(--bg)", borderRadius: 12, padding: "14px 16px", fontFamily: "var(--mono)", fontSize: 12.5 }}>
+              <div style={{ color: "var(--ink-4)", fontSize: 10.5, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.12em" }}>$ {toolName}</div>
+              <pre style={{ color: "var(--ink)", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{toolInput}</pre>
+            </div>
+          )}
+          {!toolInput && (
+            <div style={{ background: "var(--bg)", borderRadius: 12, padding: "14px 16px", fontFamily: "var(--mono)", fontSize: 12.5, color: "var(--ink-3)" }}>
+              工具: {toolName}
+            </div>
+          )}
         </div>
         <div className="foot">
-          <button className="btn" onClick={onClose}>{t.deny}</button>
-          <button className="btn primary" onClick={onClose}>{t.allow}</button>
+          <button className="btn" onClick={() => answer("deny")} disabled={answering}>{t.deny}</button>
+          <button className="btn primary" onClick={() => answer("allow")} disabled={answering}>{t.allow}</button>
         </div>
       </div>
     </div>
   );
 }
 
-function ChatPage({ t }) {
-  const [msgs, setMsgs] = useState([
-    { role: "user", at: "14:31", content: <>帮我写一份 <code>Harness Engineering 2026</code> 的内部简报。参考 <code>docs/DOC-00-v4.md</code>,语气像 Monocle 杂志那种克制,三段式。最后给我溯源。</> },
-    { role: "agent", at: "14:31", content: <><p>好咧。我脑子里的步骤是这样:<em className="aside">先读原文,再想结构,再起草,最后自己挑一遍毛病。</em>分给 research / general / verifier 三个 agent,我这儿收口。</p></>,
-      harness: [{ kind: "compaction", title: "顺手压了一下", detail: "前面那轮对话太长,从 18.2k tokens 压到 9.4k。配对没断,缓存 prefix 也还在 —— 不用担心。" }] },
-    { role: "agent", at: "14:31", content: <><p>读了一下,DOC-00 的结构很清楚。几个关键点我挑出来了:</p></>,
-      tools: [
-        { name: "fs.read", icon: "book", status: "ok", duration: "412ms", preview: "docs/DOC-00-v4.md 头 200 行",
-          input: 'path: "docs/DOC-00-v4.md"\nrange: [1, 200]',
-          output: '# DOC-00 · Prism v2 核心原则\n\n## 1. Harness 不是胶水,是操作系统\n模型给你裸能力,Harness 给你治理。没有 Harness,agent 只是个会幻觉的 shell。\n\n## 2. 可观测性是一等公民\n每一次 tool_use、每一次 compaction、每一次护栏触发,都必须可追溯。',
-          meta: { tokens: 1240, cache: "hit" } },
-        { name: "fs.grep", icon: "search", status: "ok", duration: "89ms", preview: '"TAOR" 在 docs/ 里有 12 处',
-          input: 'pattern: "TAOR|Think→Act→Observe→Reason"\npath: "docs/"',
-          output: 'docs/DOC-00-v4.md:412: ## 4.3 The TAOR loop\ndocs/DOC-04-harness.md:88: TAOR 回合 = 一次 LLM 调用 + 最多 N 次工具调用' }
-      ]
-    },
-    { role: "agent", at: "14:32", content: <><p>四个支柱基本清楚了:</p>
-      <p><strong>Harness Runtime</strong> —— 就是 TAOR 主循环加子进程隔离,对标 Claude Code 的 <code>query.ts</code>。<em className="aside">简单说,就是一个不停转的 while 循环,外加一个不敢乱动磁盘的沙盒。</em></p>
-      <p><strong>四层压缩</strong> —— 从去重到摘要,一层层把上下文瘦身。<strong>Coordinator 模式</strong> —— 一个调度官带一群 agent。<strong>权限引擎</strong> —— 每次写操作都过一遍 <em className="aside">允许 / 拒绝 / 问一下</em>。</p></>,
-      harness: [{ kind: "danger", title: "护栏响了一下", detail: "我刚才打算写个 \"38%\",但没说这个数哪来的。我去找下出处再告诉你。" }] },
-    { role: "agent", at: "14:32", content: <><p>那结构我想这样:</p>
-      <p>一、<em className="aside">问题。</em>为什么 2026 年了,光有大模型还不够。二、<em className="aside">方案。</em>Harness 的四个子系统各自解决什么。三、<em className="aside">验证。</em>对照 Poco v1 的旧数据,Harness 把成本降到了什么水平。</p>
-      <p>正在让 general agent 起草正文,稍等<span className="caret"/></p></>,
-      streaming: true,
-      tools: [{ name: "coordinator.dispatch", icon: "fork", status: "running", preview: "交给 general (writer) —— 已等 4 秒",
-        input: 'target: "general"\ntask: "按三段式起草 Harness 简报,带溯源"\nbudget: 6000 tokens',
-        meta: { parent: "turn 11", child: "r-5b03-c2" } }] }
-  ]);
+/* ============ PLAN PANEL ============ */
+function PlanPanel({ t, planState }) {
+  if (!planState) {
+    return (
+      <aside className="plan-panel">
+        <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 14 }}>尚无计划</div>
+      </aside>
+    );
+  }
+
+  const { plan_json, current_step, total_steps, status } = planState;
+  const steps = plan_json?.steps || [];
+  const pct = total_steps > 0 ? Math.round((current_step / total_steps) * 100) : 0;
+
+  return (
+    <aside className="plan-panel">
+      <div style={{ marginBottom: 18 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>正在做</div>
+        <div style={{ fontFamily: "var(--serif)", fontSize: 18, color: "var(--ink)", fontStyle: "italic" }}>
+          {plan_json?.task_summary || t.planTitle}
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--ink-3)", marginBottom: 6 }}>
+        <span>{current_step} / {total_steps} 已完成</span>
+        <span style={{ fontFamily: "var(--mono)" }}>{status}</span>
+      </div>
+      <div className="progress" style={{ marginBottom: 14 }}><div className="bar" style={{ width: `${pct}%` }}/></div>
+      {steps.map(s => (
+        <div key={s.step_id} className={`plan-step ${s.status === "completed" ? "done" : s.status === "running" ? "active" : s.status}`}>
+          <div className="idx">{s.status === "completed" ? "✓" : s.step_id}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="desc">{s.description}</div>
+            <div className="meta">{s.agent_type}</div>
+          </div>
+        </div>
+      ))}
+    </aside>
+  );
+}
+
+/* ============ CHAT PAGE ============ */
+function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanState }) {
+  const [msgs, setMsgs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [sessionMeta, setSessionMeta] = useState(null);
+  const [runActive, setRunActive] = useState(false);
+
+  // SSE ref - holds { es, sessionId }
+  const esRef = useRef(null);
+  // In-flight streaming buffer: { [message_id]: { text: "", tools: {}, finalContent: null } }
+  const streamBuf = useRef({});
+  // RAF handle for throttled flush
+  const rafHandle = useRef(null);
+
+  // Scroll ref
+  const bottomRef = useRef(null);
+
+  function scrollToBottom() {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  // Close any open SSE connection
+  function closeStream() {
+    if (esRef.current) {
+      esRef.current.es?.close();
+      esRef.current = null;
+    }
+    if (rafHandle.current) {
+      cancelAnimationFrame(rafHandle.current);
+      rafHandle.current = null;
+    }
+  }
+
+  // Flush streaming buffer into React state (throttled via RAF)
+  function scheduleFlush() {
+    if (rafHandle.current) return; // already scheduled
+    rafHandle.current = requestAnimationFrame(() => {
+      rafHandle.current = null;
+      const buf = streamBuf.current;
+      const ids = Object.keys(buf);
+      if (!ids.length) return;
+      setMsgs(prev => {
+        const next = [...prev];
+        for (const msgId of ids) {
+          const entry = buf[msgId];
+          if (entry.finalized) continue;
+          const idx = next.findIndex(m => m._streamId === msgId);
+          const toolsArr = Object.values(entry.tools);
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], content: entry.text || "…", tools: toolsArr, streaming: true };
+          } else {
+            next.push({ _streamId: msgId, role: "agent", at: "now", content: entry.text || "…", tools: toolsArr, streaming: true });
+          }
+        }
+        return next;
+      });
+      scrollToBottom();
+    });
+  }
+
+  function openSSE(sid) {
+    closeStream();
+    streamBuf.current = {};
+    const stamp = sid; // session-id stamp to detect stale promises
+    window.PrismAPI.openStream(sid, {
+      onEvent(evt) {
+        // Guard: if session changed while ticket was being minted
+        if (!esRef.current || esRef.current.sessionId !== stamp) return;
+        handleSSEEvent(evt, sid);
+      },
+      onError(err) {
+        console.warn("[ChatPage] SSE error:", err);
+        setRunActive(false);
+      },
+      onClose() {
+        console.log("[ChatPage] SSE closed for session", sid);
+        setRunActive(false);
+      },
+    }).then(es => {
+      // Only store if still on same session
+      if (esRef.current === null || esRef.current.sessionId === stamp) {
+        esRef.current = { es, sessionId: stamp };
+      } else {
+        es.close(); // stale - we've already switched sessions
+      }
+    }).catch(err => {
+      console.warn("[ChatPage] openStream failed:", err);
+    });
+    setRunActive(true);
+  }
+
+  function handleSSEEvent(evt, sid) {
+    const { type } = evt;
+    switch (type) {
+      case "text_delta": {
+        const mid = evt.message_id || "default";
+        if (!streamBuf.current[mid]) streamBuf.current[mid] = { text: "", tools: {}, finalized: false };
+        streamBuf.current[mid].text += evt.text || "";
+        scheduleFlush();
+        break;
+      }
+      case "tool_use_delta": {
+        // Accumulate partial JSON for a tool call
+        const tid = evt.tool_use_id;
+        const mid = evt.message_id || "default";
+        if (!streamBuf.current[mid]) streamBuf.current[mid] = { text: "", tools: {}, finalized: false };
+        if (!streamBuf.current[mid].tools[tid]) {
+          streamBuf.current[mid].tools[tid] = { id: tid, name: "", icon: "terminal", status: "running", preview: "", input: "", output: "" };
+        }
+        streamBuf.current[mid].tools[tid].inputPartial = (streamBuf.current[mid].tools[tid].inputPartial || "") + (evt.partial_json || "");
+        scheduleFlush();
+        break;
+      }
+      case "tool_start": {
+        // A tool is beginning execution
+        const mid = evt.message_id || "default";
+        if (!streamBuf.current[mid]) streamBuf.current[mid] = { text: "", tools: {}, finalized: false };
+        streamBuf.current[mid].tools[evt.tool_use_id] = {
+          id: evt.tool_use_id,
+          name: evt.tool_name,
+          icon: "terminal",
+          status: "running",
+          preview: evt.tool_name,
+          input: evt.input ? JSON.stringify(evt.input, null, 2) : "",
+          output: "",
+        };
+        scheduleFlush();
+        break;
+      }
+      case "tool_end": {
+        // Tool finished
+        const mid = evt.message_id || "default";
+        if (!streamBuf.current[mid]) streamBuf.current[mid] = { text: "", tools: {}, finalized: false };
+        const existing = streamBuf.current[mid].tools[evt.tool_use_id] || {};
+        streamBuf.current[mid].tools[evt.tool_use_id] = {
+          ...existing,
+          status: evt.is_error ? "error" : "ok",
+          output: evt.output ? (typeof evt.output === "string" ? evt.output : JSON.stringify(evt.output)) : "",
+          duration: evt.duration_ms ? `${evt.duration_ms}ms` : "",
+        };
+        scheduleFlush();
+        break;
+      }
+      case "message_complete": {
+        // Finalize the in-flight message with authoritative content
+        const content = evt.content || [];
+        const mid = content.find ? content.find(b => b.type === "text")?.text || "" : "";
+        // Build tools from tool_use blocks paired with tool_result blocks
+        const { text, tools: parsedTools } = renderContentBlocks(content, []);
+        setMsgs(prev => {
+          const next = [...prev];
+          // Find streaming placeholder
+          const idx = next.findIndex(m => m.streaming && m.role === "agent");
+          const finalMsg = {
+            role: evt.role === "user" ? "user" : "agent",
+            at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+            content: text || mid,
+            tools: parsedTools,
+            streaming: false,
+          };
+          if (idx >= 0) {
+            next[idx] = finalMsg;
+          } else {
+            next.push(finalMsg);
+          }
+          return next;
+        });
+        // Mark stream buffer entry as finalized
+        for (const key of Object.keys(streamBuf.current)) {
+          streamBuf.current[key].finalized = true;
+        }
+        streamBuf.current = {};
+        scrollToBottom();
+        break;
+      }
+      case "run_complete": {
+        setRunActive(false);
+        closeStream();
+        break;
+      }
+      case "run_error": {
+        addToast({ id: Date.now(), kind: "danger", title: "Run 失败", body: evt.error || "未知错误" });
+        setRunActive(false);
+        closeStream();
+        break;
+      }
+      case "run_crashed": {
+        addToast({ id: Date.now(), kind: "danger", title: "Run 崩溃", body: evt.reason || "进程崩溃,可尝试恢复" });
+        setRunActive(false);
+        closeStream();
+        break;
+      }
+      case "permission_ask": {
+        setPermRequest(evt);
+        setPerm(true);
+        break;
+      }
+      case "harness_event": {
+        const sub = evt.subtype;
+        if (sub === "compaction") {
+          addToast({ id: Date.now(), title: "上下文已压缩", body: `${sub}: ${evt.detail?.before_tokens || "?"} → ${evt.detail?.after_tokens || "?"} tokens` });
+        } else if (sub === "step_start" || sub === "step_end" || sub === "plan_step") {
+          // Handled via coordinator_plan_update; just log
+          console.log("[harness_event]", sub, evt.detail);
+        } else {
+          console.log("[harness_event]", sub, evt.detail);
+        }
+        break;
+      }
+      case "coordinator_plan_update": {
+        setPlanState({
+          plan_json: evt.plan_json,
+          current_step: evt.current_step,
+          total_steps: evt.total_steps,
+          status: evt.status,
+          step_results: evt.step_results,
+        });
+        break;
+      }
+      case "session_title": {
+        if (evt.title && sessionMeta) {
+          setSessionMeta(prev => prev ? { ...prev, title: evt.title } : prev);
+        }
+        break;
+      }
+      default:
+        console.log("[SSE unknown type]", type, evt);
+    }
+  }
+
+  // Load session + history when sessionId changes
+  useEffect(() => {
+    if (!sessionId) {
+      setMsgs([]);
+      setSessionMeta(null);
+      setLoadError(false);
+      closeStream();
+      return;
+    }
+
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setLoadError(false);
+      setMsgs([]);
+      setPlanState(null);
+      closeStream();
+
+      try {
+        const [meta, historyRes] = await Promise.all([
+          window.PrismAPI.sessions.get(sessionId),
+          window.PrismAPI.sessions.listMessages(sessionId, { limit: 50 }),
+        ]);
+        if (cancelled) return;
+
+        setSessionMeta(meta);
+
+        // Defensive: handle array or { items: [] } or { messages: [] }
+        const rawMsgs = Array.isArray(historyRes)
+          ? historyRes
+          : (historyRes?.messages || historyRes?.items || []);
+
+        // Convert API messages to display format
+        // Group consecutive assistant messages to pair tool_use with tool_result
+        const displayMsgs = [];
+        let i = 0;
+        while (i < rawMsgs.length) {
+          const m = rawMsgs[i];
+          if (m.role === "user") {
+            const textBlocks = (m.content || []).filter(b => b.type === "text");
+            const text = textBlocks.map(b => b.text).join("\n");
+            displayMsgs.push({
+              role: "user",
+              at: formatTime(m.created_at),
+              content: text || m.text_preview || "",
+            });
+            i++;
+          } else if (m.role === "assistant") {
+            // Collect tool_result from next message if it's a tool_result role
+            let toolResults = [];
+            if (i + 1 < rawMsgs.length && rawMsgs[i + 1].role === "tool_result") {
+              const trMsg = rawMsgs[i + 1];
+              toolResults = trMsg.content || [];
+              // skip tool_result message since we'll embed it
+            }
+            const { text, tools } = renderContentBlocks(m.content, toolResults);
+            displayMsgs.push({
+              role: "agent",
+              at: formatTime(m.created_at),
+              content: text || m.text_preview || "",
+              tools,
+            });
+            i++;
+            // Skip next message only if we consumed it as toolResults
+            if (toolResults.length > 0) i++;
+          } else {
+            // skip tool_use / tool_result / system standalone roles
+            i++;
+          }
+        }
+
+        setMsgs(displayMsgs);
+
+        // Subscribe SSE if session is running
+        if (meta.status === "running" && meta.blocking_run_id) {
+          openSSE(sessionId);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("[ChatPage] load session failed:", err);
+        setLoadError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; closeStream(); };
+  }, [sessionId]);
+
+  async function handleSend(prompt) {
+    if (!sessionId) return;
+    // Optimistic: push user message immediately
+    const optMsg = { role: "user", at: "now", content: prompt };
+    setMsgs(prev => [...prev, optMsg]);
+    scrollToBottom();
+
+    try {
+      const res = await window.PrismAPI.tasks.submit({ session_id: sessionId, prompt });
+      if (res.accepted_type === "immediate") {
+        // Subscribe SSE immediately if not already open
+        if (!esRef.current || esRef.current.sessionId !== sessionId) {
+          openSSE(sessionId);
+        }
+      } else if (res.accepted_type === "queued_query") {
+        addToast({ id: Date.now(), title: "已排队", body: `第 ${res.queue_position || "?"} 位` });
+      }
+    } catch (err) {
+      addToast({ id: Date.now(), kind: "danger", title: "发送失败", body: err.message });
+      // Remove optimistic message on failure
+      setMsgs(prev => prev.filter(m => m !== optMsg));
+    }
+  }
+
+  // Empty state when no session is selected
+  if (!sessionId) {
+    return <EmptyNoSession t={t}/>;
+  }
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic" }}>
+        <PrismMark size={20} style={{ marginRight: 10 }}/> 正在加载会话…
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ display: "flex", flex: 1, flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "var(--ink-3)" }}>
+        <div style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>加载失败,后端可能不可用</div>
+        <button className="btn" onClick={() => { setLoadError(false); setLoading(true); }}>重试</button>
+      </div>
+    );
+  }
+
+  const showEmpty = msgs.length === 0 && !runActive;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
       <div style={{ flex: 1, overflowY: "auto" }}>
+        {showEmpty && (
+          <div style={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center", color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>
+            发送一条消息开始对话
+          </div>
+        )}
         {msgs.map((m, i) => {
-          const prev = msgs[i-1];
+          const prev = msgs[i - 1];
           const first = m.role === "agent" && (!prev || prev.role !== "agent");
           return <Msg key={i} m={m} first={first}/>;
         })}
+        <div ref={bottomRef}/>
       </div>
-      <Composer t={t} onSend={(x) => setMsgs([...msgs, { role: "user", at: "now", content: x }])}/>
+      <Composer t={t} onSend={handleSend} disabled={runActive}/>
     </div>
   );
 }
 
-/* ============ SECONDARY PAGES (lean) ============ */
+function EmptyNoSession({ t }) {
+  return (
+    <div className="empty">
+      <div style={{ color: "var(--ink-3)" }}><PrismGlyph size={150}/></div>
+      <h3>{t.emptyTitle}</h3>
+      <p>{t.emptyBody}</p>
+    </div>
+  );
+}
+
+function EmptyChat({ t, onPick }) {
+  return (
+    <div className="empty">
+      <div style={{ color: "var(--ink-3)" }}><PrismGlyph size={150}/></div>
+      <h3>{t.emptyTitle}</h3>
+      <p>{t.emptyBody}</p>
+      <div className="eyebrow" style={{ marginBottom: 14, marginTop: 4 }}>{t.tryExample}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, maxWidth: 680, width: "100%" }}>
+        {t.examples.map((ex, i) => (
+          <button key={i} className="card" onClick={() => onPick?.(ex)} style={{ padding: "14px 18px", textAlign: "left", cursor: "pointer", display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <Icon name="arrowRight" size={13} style={{ color: "var(--ink-4)", marginTop: 3, flexShrink: 0 }}/>
+            <span style={{ fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.55, fontFamily: "var(--serif)", fontStyle: "italic" }}>{ex}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============ SECONDARY PAGES (lean - still hardcoded) ============ */
 function SessionsPage() {
   return (
     <div className="page">
@@ -831,9 +1362,9 @@ function SettingsPage() {
   );
 }
 
-/* ============ LOGIN & EMPTY ============ */
+/* ============ LOGIN ============ */
 function LoginScreen({ onSignIn, onToast, t }) {
-  const [mode, setMode]         = useState("login"); // "login" | "register"
+  const [mode, setMode]         = useState("login");
   const [email, setEmail]       = useState("alice@example.com");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
@@ -852,7 +1383,6 @@ function LoginScreen({ onSignIn, onToast, t }) {
       } else {
         if (!username.trim()) { setErrMsg("用户名不能为空"); setLoading(false); return; }
         await window.PrismAPI.register({ email, username, password, invite_code: inviteCode || undefined });
-        // auto-login after register
         await window.PrismAPI.login(email, password);
         onSignIn();
       }
@@ -979,25 +1509,6 @@ function LoginScreen({ onSignIn, onToast, t }) {
   );
 }
 
-function EmptyChat({ t, onPick }) {
-  return (
-    <div className="empty">
-      <div style={{ color: "var(--ink-3)" }}><PrismGlyph size={150}/></div>
-      <h3>{t.emptyTitle}</h3>
-      <p>{t.emptyBody}</p>
-      <div className="eyebrow" style={{ marginBottom: 14, marginTop: 4 }}>{t.tryExample}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, maxWidth: 680, width: "100%" }}>
-        {t.examples.map((ex, i) => (
-          <button key={i} className="card" onClick={() => onPick?.(ex)} style={{ padding: "14px 18px", textAlign: "left", cursor: "pointer", display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <Icon name="arrowRight" size={13} style={{ color: "var(--ink-4)", marginTop: 3, flexShrink: 0 }}/>
-            <span style={{ fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.55, fontFamily: "var(--serif)", fontStyle: "italic" }}>{ex}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /* ============ TOASTS & TWEAKS ============ */
 function Toasts({ toasts, onClose }) {
   return (
@@ -1047,15 +1558,15 @@ function Tweaks({ tweaks, setTweaks }) {
 function App() {
   const [tweaks, setTweaks] = useState({ theme: "light", density: "comfortable", bubble: "soft", tone: "同事", layout: "split" });
   const [lang, setLang] = useState("zh");
-  // screen: "loading" | "login" | "empty" | "app"
+  // screen: "loading" | "login" | "app"
   const [screen, setScreen] = useState("loading");
   const [page, setPage] = useState("chat");
   const [showPlan, setShowPlan] = useState(true);
   const [perm, setPerm] = useState(false);
-  const [toasts, setToasts] = useState([
-    { id: 1, title: "顺手压了一下", body: "Turn 9 的上下文,9.4k → 4.2k。" },
-    { id: 2, kind: "danger", title: "护栏响了", body: "数字 '38%' 没出处,让 agent 去找一下。" }
-  ]);
+  const [permRequest, setPermRequest] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [planState, setPlanState] = useState(null);
 
   // Auto-restore login from sessionStorage token
   useEffect(() => {
@@ -1084,7 +1595,6 @@ function App() {
     document.documentElement.setAttribute("data-density", tweaks.density);
   }, [tweaks]);
 
-  // bubble roundness tweak
   useEffect(() => {
     const map = { soft: "18px 18px 6px 18px", softer: "22px 22px 22px 22px", pill: "22px 22px 6px 22px" };
     document.documentElement.style.setProperty("--bubble-radius", map[tweaks.bubble]);
@@ -1094,6 +1604,8 @@ function App() {
 
   function addToast(toast) {
     setToasts(prev => [...prev, toast]);
+    // Auto-dismiss after 6s
+    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== toast.id)), 6000);
   }
 
   if (screen === "loading") {
@@ -1108,24 +1620,51 @@ function App() {
     return (<><LoginScreen t={t} onSignIn={() => setScreen("app")} onToast={addToast}/><Tweaks tweaks={tweaks} setTweaks={setTweaks}/></>);
   }
 
-  const sidebarMode = tweaks.layout === "split" && page === "chat" && showPlan ? "split" : "normal";
+  const sidebarMode = tweaks.layout === "split" && page === "chat" && showPlan && planState ? "split" : "normal";
+
+  // Get current session title for Topbar
+  const sessionTitle = currentSessionId ? null : null; // resolved inside ChatPage via sessionMeta
 
   return (
     <>
       <div className="app" data-sidebar={sidebarMode}>
-        <Sidebar page={page} setPage={setPage} t={t}/>
+        <Sidebar
+          page={page}
+          setPage={setPage}
+          t={t}
+          currentSessionId={currentSessionId}
+          setCurrentSessionId={(id) => { setCurrentSessionId(id); setPlanState(null); }}
+          addToast={addToast}
+        />
         <main className="main">
-          <Topbar page={page} t={t} showPlan={showPlan} setShowPlan={setShowPlan} lang={lang} setLang={setLang} onPerm={() => setPerm(true)}/>
-          {screen === "empty" && page === "chat" ? <EmptyChat t={t} onPick={() => setScreen("app")}/> : (<>
-            {page === "chat" && <ChatPage t={t}/>}
-            {page === "sessions" && <SessionsPage/>}
-            {page === "usage" && <UsagePage/>}
-            {page === "skills" && <SkillsPage/>}
-            {page === "plugins" && <PluginsPage/>}
-            {page === "admin" && <AdminPage/>}
-            {page === "observability" && <ObsPage/>}
-            {page === "settings" && <SettingsPage/>}
-          </>)}
+          <Topbar
+            page={page}
+            t={t}
+            showPlan={showPlan}
+            setShowPlan={setShowPlan}
+            lang={lang}
+            setLang={setLang}
+            onPerm={() => setPerm(true)}
+            sessionTitle={null}
+          />
+          {page === "chat" && (
+            <ChatPage
+              key={currentSessionId || "empty"}
+              t={t}
+              sessionId={currentSessionId}
+              addToast={addToast}
+              setPermRequest={setPermRequest}
+              setPerm={setPerm}
+              setPlanState={setPlanState}
+            />
+          )}
+          {page === "sessions" && <SessionsPage/>}
+          {page === "usage" && <UsagePage/>}
+          {page === "skills" && <SkillsPage/>}
+          {page === "plugins" && <PluginsPage/>}
+          {page === "admin" && <AdminPage/>}
+          {page === "observability" && <ObsPage/>}
+          {page === "settings" && <SettingsPage/>}
           {page !== "chat" && (
             <div className="statusbar">
               <div className="kv"><span>provider</span> <b>anthropic</b></div>
@@ -1136,17 +1675,25 @@ function App() {
             </div>
           )}
         </main>
-        {sidebarMode === "split" && <PlanPanel t={t}/>}
+        {sidebarMode === "split" && <PlanPanel t={t} planState={planState}/>}
       </div>
 
       {/* Demo switcher */}
       <div style={{ position: "fixed", top: 14, right: 20, zIndex: 70, display: "flex", gap: 4, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 999, padding: 4, boxShadow: "var(--shadow-2)" }}>
         <button className="icon-btn" onClick={() => setScreen("login")} title="登录页"><Icon name="arrowRight" size={11} style={{ transform: "rotate(180deg)" }}/></button>
-        <button className="icon-btn" onClick={() => { setScreen("empty"); setPage("chat"); }} title="空状态"><Icon name="sparkle" size={11}/></button>
-        <button className="icon-btn" onClick={() => setScreen("app")} title="对话"><Icon name="chat" size={11}/></button>
+        <button className="icon-btn" onClick={() => { setCurrentSessionId(null); setPage("chat"); }} title="空状态"><Icon name="sparkle" size={11}/></button>
+        <button className="icon-btn" onClick={() => setScreen("app")} title="应用"><Icon name="chat" size={11}/></button>
       </div>
 
-      {perm && <PermissionModal t={t} onClose={() => setPerm(false)}/>}
+      {perm && (
+        <PermissionModal
+          t={t}
+          onClose={() => { setPerm(false); setPermRequest(null); }}
+          permRequest={permRequest}
+          sessionId={currentSessionId}
+          addToast={addToast}
+        />
+      )}
       <Toasts toasts={toasts} onClose={id => setToasts(toasts.filter(x => x.id !== id))}/>
       <Tweaks tweaks={tweaks} setTweaks={setTweaks}/>
     </>
