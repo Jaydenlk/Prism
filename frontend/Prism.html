@@ -1823,13 +1823,14 @@ function PluginsPage() {
     setSaving(false);
   }
 
-  // ── Open save modal pre-filled from last assistant message ─────────────
+  // ── Open save modal pre-filled from last agent message ───────────────
   function openSaveModalFromLastMsg() {
-    const lastAssistant = [...builderMsgs].reverse().find(m => m.role === "assistant");
-    const yamlText = lastAssistant?.text || "";
+    // builderMsgs use role="agent" and field=".content" (set by scheduleFlush/message_complete)
+    const lastAgent = [...builderMsgs].reverse().find(m => m.role === "agent" && !m.streaming);
+    const rawText = lastAgent?.content || "";
     // Extract fenced YAML block if present, otherwise use raw text
-    const yamlMatch = yamlText.match(/```ya?ml\s*([\s\S]*?)```/i);
-    const extracted = yamlMatch ? yamlMatch[1].trim() : yamlText.trim();
+    const yamlMatch = rawText.match(/```ya?ml\s*([\s\S]*?)```/i);
+    const extracted = yamlMatch ? yamlMatch[1].trim() : rawText.trim();
     setSaveName("");
     setSaveDesc("");
     setSaveYaml(extracted);

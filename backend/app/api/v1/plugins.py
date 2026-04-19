@@ -424,11 +424,23 @@ async def save_plugin(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> PluginLibraryResponse:
     """将 Plugin manifest 保存到用户插件库（同名则更新，否则新建）。"""
+    import yaml as _yaml
     from datetime import datetime, timezone
 
     from app.models.plugin_library import PluginLibrary
 
     now = datetime.now(timezone.utc)
+
+    # If manifest_json is empty ({}) but YAML is provided, parse YAML server-side
+    # so the JSONB cache column stays consistent with manifest_yaml.
+    manifest_json = body.manifest_json
+    if not manifest_json and body.manifest_yaml.strip():
+        try:
+            parsed = _yaml.safe_load(body.manifest_yaml)
+            if isinstance(parsed, dict):
+                manifest_json = parsed
+        except Exception:
+            pass  # YAML parse error — keep {} rather than reject the save
 
     existing = (
         db.query(PluginLibrary)
@@ -440,7 +452,7 @@ async def save_plugin(
         existing.version = body.version
         existing.description = body.description
         existing.manifest_yaml = body.manifest_yaml
-        existing.manifest_json = body.manifest_json
+        existing.manifest_json = manifest_json
         existing.updated_at = now
         entry = existing
         logger.info(
@@ -455,7 +467,7 @@ async def save_plugin(
             version=body.version,
             description=body.description,
             manifest_yaml=body.manifest_yaml,
-            manifest_json=body.manifest_json,
+            manifest_json=manifest_json,
             enabled=True,
             created_at=now,
             updated_at=now,
