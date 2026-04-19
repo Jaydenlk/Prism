@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+import structlog
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -35,7 +37,7 @@ from app.schemas.provider import (
 )
 from app.services.provider_presets import BUILTIN_PRESETS, PRESET_ENV_MAP
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 # ---------------------------------------------------------------------------

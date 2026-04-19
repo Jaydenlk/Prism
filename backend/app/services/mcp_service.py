@@ -45,7 +45,8 @@ from app.schemas.mcp import (
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 # ---------------------------------------------------------------------------
 # Built-in system MCP Servers
