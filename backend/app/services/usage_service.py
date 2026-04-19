@@ -22,7 +22,8 @@ from sqlalchemy.orm import Session
 from app.models.provider import Provider
 from app.models.run import Run
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 # Anthropic prompt cache pricing constants (approximate)
 # cache_hit_tokens 节省 = 原 input price × 90%(缓存命中只收 10% 费用)

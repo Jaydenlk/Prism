@@ -45,7 +45,8 @@ import httpx
 if TYPE_CHECKING:
     from app.core.config import Settings
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 
 class ProcessManager:

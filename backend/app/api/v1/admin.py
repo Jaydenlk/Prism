@@ -53,7 +53,8 @@ from app.services.admin_stats_service import AdminStatsService
 from app.services.audit_service import AuditService
 from app.services.invite_service import InviteService
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 # All admin routes require admin role at router level (ADR-059)
 router = APIRouter(

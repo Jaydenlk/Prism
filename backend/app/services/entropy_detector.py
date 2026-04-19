@@ -42,7 +42,8 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from app.services.harness_analytics import HarnessAnalytics
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 
 # ---------------------------------------------------------------------------

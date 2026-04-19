@@ -27,7 +27,8 @@ from sqlalchemy import text
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 
 class HarnessAnalytics:

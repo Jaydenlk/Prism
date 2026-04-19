@@ -29,7 +29,8 @@ from app.models.base import generate_uuid
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.services.user_service import UserService
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 
 class AuthService:
@@ -145,6 +146,11 @@ class AuthService:
             raise _invalid
         if not verify_password(data.password, user.password_hash):
             raise _invalid
+        if getattr(user, "is_active", True) is False:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="账户已被禁用，请联系管理员",
+            )
 
         # Update last_login_at
         user.last_login_at = datetime.now(timezone.utc)

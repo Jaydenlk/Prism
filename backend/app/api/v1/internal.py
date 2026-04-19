@@ -33,7 +33,8 @@ from app.services.callback_service import CallbackService
 from app.services.run_lifecycle import RunLifecycle
 from app.services.sse_manager import SSEManager
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 

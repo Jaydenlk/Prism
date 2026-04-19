@@ -39,7 +39,8 @@ from app.services.run_lifecycle import RunLifecycle
 from app.services.sequence_service import get_next_message_sequence_no
 from app.services.sse_manager import SSEManager
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 
 class CallbackService:

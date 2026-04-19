@@ -26,7 +26,8 @@ from sqlalchemy.orm import Session
 
 from app.models.run import Run
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 # route_reason 关键词 — 判断是否用户显式覆盖
 _OVERRIDE_KEYWORDS = ("显式指定", "explicit", "user_override", "manual")

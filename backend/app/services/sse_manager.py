@@ -26,7 +26,8 @@ from typing import Any
 import redis as redis_lib
 import redis.asyncio as aioredis
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 
 class SSEManager:

@@ -28,7 +28,8 @@ from typing import Any
 
 import psutil
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 # ============================================================
 # ADR-111 百分比阈值常量

@@ -30,7 +30,8 @@ if TYPE_CHECKING:
     from app.core.config import Settings
     from app.services.process_manager import ProcessManager
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 
 class CoordinatorRecoveryService:

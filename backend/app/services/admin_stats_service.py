@@ -25,7 +25,8 @@ from app.models.session import Session as SessionModel
 from app.models.user import User
 from app.schemas.admin import SystemStatsResponse
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 # Cache savings rate: $0.30 per 1M tokens * 90% discount
 _CACHE_SAVINGS_PER_TOKEN = 0.30 / 1_000_000 * 0.90

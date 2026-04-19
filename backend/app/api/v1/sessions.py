@@ -56,7 +56,8 @@ from app.schemas.session import (
 from app.services.session_service import SessionService
 from app.services.sse_manager import SSEManager
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 

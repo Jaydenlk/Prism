@@ -39,7 +39,8 @@ from app.schemas.common import ApiResponse
 from app.services.auth_service import AuthService
 from app.services.sse_ticket_service import SSETicketService
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -236,16 +237,21 @@ async def create_sse_ticket(
             detail="Session not found or does not belong to current user",
         )
 
-    # Redis is not yet initialised in Phase 1 — SSETicketService is wired in
-    # DOC-07 Task 7.3.  Import get_redis lazily so auth endpoints not using
-    # the ticket still work without Redis.
+    from app.core.dependencies import get_redis
+    redis_client = None
     try:
-        from app.core.dependencies import get_redis
-        redis_client = next(get_redis())
+        async for r in get_redis():
+            redis_client = r
+            break
     except NotImplementedError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Redis not yet initialised; SSE tickets unavailable until DOC-07 Task 7.3",
+            detail="Redis not initialised; SSE tickets unavailable.",
+        )
+    if redis_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Redis not initialised; SSE tickets unavailable.",
         )
 
     ticket_svc = SSETicketService(redis_client, settings)

@@ -41,7 +41,8 @@ from app.schemas.mcp import (
 )
 from app.services.mcp_service import MCPService
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 router = APIRouter(tags=["mcp"])
 

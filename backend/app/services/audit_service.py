@@ -28,7 +28,8 @@ from app.schemas.audit import AuditLogQuery, AuditLogResponse
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 _EXPORT_ROW_LIMIT = 10_000
 

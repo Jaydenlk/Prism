@@ -24,7 +24,8 @@ from app.schemas.session import CreateSessionRequest, UpdateSessionRequest
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger(__name__)
+import structlog
+logger = structlog.get_logger()
 
 
 # ---------------------------------------------------------------------------
