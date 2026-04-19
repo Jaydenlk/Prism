@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import base64
 import os
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -349,14 +349,25 @@ async def validate_plugin(
 # ---------------------------------------------------------------------------
 
 
+PluginType = Literal["tool", "agent_strategy", "extension", "trigger"]
+
+
 class PluginSaveRequest(BaseModel):
-    """POST /plugins/save 请求体 — 保存 Plugin manifest 到用户插件库。"""
+    """POST /plugins/save 请求体 — 保存 Plugin manifest 到用户插件库。
+
+    ``type`` + ``permissions`` are DOC-SK R2+R5 / ADR-087 additions. Either may
+    be omitted; backend defaults to ``type='tool'`` and ``permissions={}`` (DB
+    server_default), OR extracts ``type`` / ``permissions`` from
+    ``manifest_json`` if the caller embedded them there.
+    """
 
     name: str = Field(..., min_length=1, description="插件名称（唯一标识）")
     version: str = Field(default="1.0.0", description="版本号")
     description: str = Field(default="", description="描述")
     manifest_yaml: str = Field(default="", description="Plugin manifest YAML 字符串")
     manifest_json: dict = Field(default_factory=dict, description="manifest 解析后的 JSON 对象")
+    type: PluginType | None = Field(default=None, description="Plugin 类型（DOC-SK R2, ADR-087）；缺省 -> manifest_json.type -> 'tool'")
+    permissions: dict[str, Any] | None = Field(default=None, description="Plugin 权限声明（DOC-SK R5, ADR-087）；缺省 -> manifest_json.permissions -> {}")
 
 
 class PluginLibraryResponse(BaseModel):
@@ -369,6 +380,8 @@ class PluginLibraryResponse(BaseModel):
     description: str
     manifest_yaml: str
     manifest_json: dict
+    plugin_type: PluginType = "tool"
+    permissions_json: dict[str, Any] = Field(default_factory=dict)
     enabled: bool
     created_at: str
     updated_at: str
@@ -442,6 +455,24 @@ async def save_plugin(
         except Exception:
             pass  # YAML parse error — keep {} rather than reject the save
 
+    # Resolve plugin_type: explicit body.type > manifest_json.type > 'tool' default.
+    # If an explicit value is outside the enum, reject with 422 (ADR-087 strict on the type field).
+    _valid_types = {"tool", "agent_strategy", "extension", "trigger"}
+    effective_type = body.type or (manifest_json.get("type") if isinstance(manifest_json, dict) else None) or "tool"
+    if effective_type not in _valid_types:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"plugin type '{effective_type}' 无效；合法值: {sorted(_valid_types)}",
+        )
+
+    effective_permissions = body.permissions
+    if effective_permissions is None and isinstance(manifest_json, dict):
+        mp = manifest_json.get("permissions")
+        if isinstance(mp, dict):
+            effective_permissions = mp
+    if effective_permissions is None:
+        effective_permissions = {}
+
     existing = (
         db.query(PluginLibrary)
         .filter_by(user_id=current_user.id, name=body.name)
@@ -453,12 +484,15 @@ async def save_plugin(
         existing.description = body.description
         existing.manifest_yaml = body.manifest_yaml
         existing.manifest_json = manifest_json
+        existing.plugin_type = effective_type
+        existing.permissions_json = effective_permissions
         existing.updated_at = now
         entry = existing
         logger.info(
             "plugin.library.updated",
             user_id=str(current_user.id),
             plugin=body.name,
+            plugin_type=effective_type,
         )
     else:
         entry = PluginLibrary(
@@ -468,6 +502,8 @@ async def save_plugin(
             description=body.description,
             manifest_yaml=body.manifest_yaml,
             manifest_json=manifest_json,
+            plugin_type=effective_type,
+            permissions_json=effective_permissions,
             enabled=True,
             created_at=now,
             updated_at=now,
@@ -477,6 +513,7 @@ async def save_plugin(
             "plugin.library.saved",
             user_id=str(current_user.id),
             plugin=body.name,
+            plugin_type=effective_type,
         )
 
     db.commit()
@@ -587,6 +624,8 @@ def _plugin_library_to_response(entry) -> PluginLibraryResponse:
         description=entry.description,
         manifest_yaml=entry.manifest_yaml,
         manifest_json=entry.manifest_json or {},
+        plugin_type=entry.plugin_type,
+        permissions_json=entry.permissions_json or {},
         enabled=entry.enabled,
         created_at=entry.created_at.isoformat() if entry.created_at else "",
         updated_at=entry.updated_at.isoformat() if entry.updated_at else "",
