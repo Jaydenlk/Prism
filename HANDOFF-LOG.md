@@ -35,6 +35,42 @@
 
 ---
 
+## 2026-04-19 18:00 — Prism.html 前端改进 A-1/A-2/A-3/A-4 COMPLETED ✅
+
+### 本次 session 做了什么
+1. **Task A-1**: 删除 `AdminPage()` 函数（约 42 行）、NAV `{id:"admin"}` 条目、App 路由 `{page==="admin"&&<AdminPage/>}`、Topbar title `admin: t.nav.admin`。`admin.html` 是正式入口。
+2. **Task A-4**: LoginScreen 结构重写 — `loginMode`+`regTab` → `channel`("email"|"phone") + `emailMode`("email_pw"|"magic"|"otp")；顶层邮箱/手机 tab 共享 channel 状态；注册页复用同一 channel；sub-tab 三档（密码/Magic Link/验证码）。
+3. **Task A-2**: SkillsPage 完整重写 — 3 install channel（Local file picker→base64、GitHub URL、Custom Markdown）、300ms debounced 搜索、已装列表 CRUD（enable/disable PATCH、view SKILL.md modal、uninstall DELETE）。后端：`content_base64` 可选字段 + 解码写磁盘、PATCH enable/disable、GET content 端点、`docker compose build backend` 重建镜像、migration 无需新增（skill_installs 已有）。
+4. **Task A-3**: PluginsPage 完整重写 — 左侧 SSE 对话式 Plugin Builder（`agent_type="plugin_builder"`、进度条、RAF throttle 与 ChatPage 相同模式）；右侧 Plugin Library CRUD；后端：migration 007 `plugins_library` 表、4 新端点（list/save/patch/delete）、`PluginLibrary` ORM model + User relationship。
+5. **BLOCKER 修复**: `plugin_manifest_ready` harness_event 从未被 backend 发出 → 在 builder pane 消息区下方添加 "保存到插件库" 手动按钮（`builderMsgs.length > 0 && !builderRunning`），`openSaveModalFromLastMsg()` 提取最后一条 assistant 消息中的 ```yaml 块作为预填充内容。
+6. **YAML 脱同步修复**: `yamlManuallyEdited` ref 追踪用户是否手动编辑 YAML；`handleSaveToLibrary` 时若 ref=true 则传 `manifest_json: {}` 而非 stale JSON，防止结构和 YAML 不一致。
+
+### 验证结果
+- Task A-1: AdminPage 删除 — curl `/` 200 PASS；admin.html 独立可访问 PASS
+- Task A-2: skill install（local/github/custom）+ PATCH/GET content — docker rebuild 后验证 PASS
+- Task A-3: migration 007 applied；4 endpoints curl 验证 PASS；builder 对话 → save flow 通过手动按钮可用
+- Task A-4: LoginScreen 邮箱/手机 tab — 结构正确，JSX 无语法错误
+
+### 下一个 Task 需要注意
+- **`plugin_manifest_ready` 事件**：backend 从未发出此事件（grep 确认无命中）。当 plugin_builder agent 真正生成 manifest 时，需在 executor 侧 emit `harness_event{subtype:"plugin_manifest_ready", data:{name,version,description,manifest_yaml,manifest_json}}`。目前用手动按钮作为 fallback。
+- **SkillsPage content_base64 路径**: 写入 `{PRISM_WORKSPACE}/.prism/skills/@local/{name}/SKILL.md`（Docker 容器内路径依赖 PRISM_WORKSPACE env var）
+- **Migration 007**: `down_revision="006"` — 若还有 008 需要 `down_revision="007"`
+- **Task C**: multi-channel frontend LoginScreen 已由 Task A-4 部分完成；Admin Auth Config 面板仍 pending
+
+### 遗留风险 / 未决事项
+- Plugin builder agent 的 manifest 完成事件名称未知（`plugin_manifest_ready` 是 spec 假设名，非实现名）
+- PRISM_WORKSPACE 未在 docker-compose.yml 中明确配置（依赖默认值或 .env）
+- SkillsPage `PATCH /skills/{skill_name}` 端点更新 `metadata_["enabled"]` 但不写磁盘 — reload 后可能丢失（`skill_installs` DB 记录的 enabled 字段是 source of truth）
+
+### Commit
+- `f840384` — `chore(frontend): remove duplicate AdminPage from Prism.html (admin.html is canonical)`
+- `80c152e` — `feat(frontend): Task A-4 LoginScreen reshape to 邮箱/手机 top-tab structure`
+- `99e28c8` — `feat(skills): Task A-2 SkillsPage real CRUD + 3 install channels + content_base64 backend`
+- `371eef2` — `feat(plugins): Task A-3 PluginsPage conversational builder + plugin library`
+- *(pending fixup commit)* — manual save button + YAML desync fix
+
+---
+
 ## 2026-04-19 13:35 — Task B (Google OAuth 登录) COMPLETED ✅
 
 **本 Task 执行策略**（advisor 建议 3 项关键决策）：

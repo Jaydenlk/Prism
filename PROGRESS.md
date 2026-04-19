@@ -165,15 +165,26 @@
 
 ---
 
+## Prism.html 前端改进 Session（2026-04-19 下午）
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| Task A-1: 删除 AdminPage（admin.html 为正式入口）| completed | 2026-04-19 | 2026-04-19 | f840384 | 删除 NAV admin 条目 + AdminPage() 函数 + App 路由 case + Topbar title 映射 |
+| Task A-4: LoginScreen 邮箱/手机 top-tab 结构 | completed | 2026-04-19 | 2026-04-19 | 80c152e | 统一 loginMode+regTab→channel+emailMode；顶层 邮箱/手机 tab；登录/注册共享 channel 状态 |
+| Task A-2: SkillsPage 完整实现 + backend content_base64 | completed | 2026-04-19 | 2026-04-19 | 99e28c8 | 3 install channel（Local/GitHub/Markdown）+搜索+已装CRUD；backend: SkillInstallRequest 可选字段 + PATCH enable/disable + GET content |
+| Task A-3: PluginsPage 对话式构建 + 插件库 CRUD | completed | 2026-04-19 | 2026-04-19 | 371eef2 | SSE-driven builder pane + library CRUD；backend: migration 007 + 4 endpoints；修复 plugin_manifest_ready 未发出 → 手动保存按钮 |
+
+---
+
 ## 统计
 
-- **总 Task 数**: 51 (+ 2 前端原型 ad-hoc + 3 multi-channel auth)
-- **已完成**: 46（42 后端/可观测 + 2 前端原型 + 2 multi-channel auth）
+- **总 Task 数**: 51 (+ 2 前端原型 ad-hoc + 3 multi-channel auth + 4 Prism.html 改进)
+- **已完成**: 50（42 后端/可观测 + 2 前端原型 + 2 multi-channel auth + 4 Prism.html 改进）
 - **in_progress**: 0
 - **blocked**: 0
 - **pending**: 11（前端 DOC-10/DOC-11 Next.js + Task C multi-channel frontend）
 
 ---
 
-> **最后更新**: 2026-04-19（Task B: Google OAuth 登录; commit 082dc53）
-> **下一个动作**: Task C — 前端 LoginScreen 多通道改造 + admin Auth Config 面板
+> **最后更新**: 2026-04-19（Task A-1/A-2/A-3/A-4: Prism.html 前端改进; commits f840384/80c152e/99e28c8/371eef2 + 手动保存按钮 fixup）
+> **下一个动作**: Task C — 前端 LoginScreen 多通道改造 + admin Auth Config 面板（或继续 DOC-10/11 Next.js）

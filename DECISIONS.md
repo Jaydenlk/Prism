@@ -1791,4 +1791,36 @@
   - 非前端部分（DOC-02~DOC-09 + DOC-12）全部完成，**整体非前端项目收官**
   - 前端（DOC-10/DOC-11）独立实施，不受本 Task 影响
 
-> **最后更新**: 2026-04-19(DOC-12 Task 12.8 — AlertDispatcher ADR-120; DOC-12 8/8 DONE; 非前端项目收官)
+---
+
+## Prism.html 前端改进 Session（Tasks A-1/A-2/A-3/A-4）
+
+### Migration 007: plugins_library 表
+
+- **来源**: Task A-3 — PluginsPage 插件库需要持久化 user-scoped plugin manifests
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/alembic/versions/007_plugins_library.py` — CREATE TABLE plugins_library (10 列), uq_plugins_library_user_name, ix_plugins_library_user_created
+  - `backend/app/models/plugin_library.py` — PluginLibrary ORM model; User relationship back_populates="plugin_library_entries"
+  - `backend/app/models/user.py` — 追加 plugin_library_entries relationship + cascade delete-orphan
+  - `backend/app/models/__init__.py` — 导出 PluginLibrary
+- **偏离**: 无；与 migration spec 007 完全对齐
+- **验证**: `docker compose exec backend alembic upgrade head` → revision 007 applied; curl `/plugins/library` 200 []
+
+### SkillsPage backend 扩展（无新 migration）
+
+- **来源**: Task A-2 — SkillsPage 需要 content_base64 install 路径 + enable/disable PATCH + SKILL.md GET
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/api/v1/skills.py` — SkillInstallRequest 4 字段可选化 + content_base64; SkillPatchRequest; PATCH /{skill_name}; GET /{skill_name}/content
+- **偏离**: `install_path` 写入 `{PRISM_WORKSPACE}/.prism/skills/@local/{name}/SKILL.md`；PRISM_WORKSPACE env var 依赖 .env 或 Docker 环境配置
+
+### Plugins 4 新端点（无 ADR 编号）
+
+- **来源**: Task A-3 — PluginsPage 需要 library CRUD
+- **实施状态**: ✅ 2026-04-19
+- **落地位置**:
+  - `backend/app/api/v1/plugins.py` — GET /plugins/library + POST /plugins/save + PATCH /plugins/library/{id} + DELETE /plugins/library/{id}
+- **偏离**: `plugin_manifest_ready` harness_event 未被 executor 发出（grep 无命中）—— 前端改用手动 "保存到插件库" 按钮作为 fallback；需后续在 executor plugin_builder 完成时 emit 事件
+
+> **最后更新**: 2026-04-19(Prism.html 前端改进 A-1/A-2/A-3/A-4; migration 007; plugins_library; skills content_base64)

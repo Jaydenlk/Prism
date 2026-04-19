@@ -1593,6 +1593,7 @@ function PluginsPage() {
   const [saveDesc, setSaveDesc] = useState("");
   const [saveYaml, setSaveYaml] = useState("");
   const [saving, setSaving] = useState(false);
+  const yamlManuallyEdited = useRef(false); // true when user edited YAML in modal (desync guard)
 
   // ── Toasts ─────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState([]);
@@ -1698,6 +1699,7 @@ function PluginsPage() {
           setSaveName(data.name || "my-plugin");
           setSaveDesc(data.description || "");
           setSaveYaml(data.manifest_yaml || "");
+          yamlManuallyEdited.current = false;
           setSaveModal(true);
         }
         break;
@@ -1801,21 +1803,39 @@ function PluginsPage() {
     if (!saveName.trim()) { addToast("warn", "请填写插件名", ""); return; }
     setSaving(true);
     try {
+      // If user manually edited YAML, manifest_json is stale — send {} so backend re-parses from YAML
+      const manifestJson = yamlManuallyEdited.current ? {} : (pendingManifest?.json || {});
       await PrismAPI.plugins.save({
         name: saveName.trim(),
         version: pendingManifest?.version || "1.0.0",
         description: saveDesc.trim(),
         manifest_yaml: saveYaml,
-        manifest_json: pendingManifest?.json || {},
+        manifest_json: manifestJson,
       });
       addToast("success", "已保存到插件库", saveName.trim());
       setSaveModal(false);
       setPendingManifest(null);
+      yamlManuallyEdited.current = false;
       await loadLibrary();
     } catch (err) {
       addToast("danger", "保存失败", err.message || String(err));
     }
     setSaving(false);
+  }
+
+  // ── Open save modal pre-filled from last assistant message ─────────────
+  function openSaveModalFromLastMsg() {
+    const lastAssistant = [...builderMsgs].reverse().find(m => m.role === "assistant");
+    const yamlText = lastAssistant?.text || "";
+    // Extract fenced YAML block if present, otherwise use raw text
+    const yamlMatch = yamlText.match(/```ya?ml\s*([\s\S]*?)```/i);
+    const extracted = yamlMatch ? yamlMatch[1].trim() : yamlText.trim();
+    setSaveName("");
+    setSaveDesc("");
+    setSaveYaml(extracted);
+    setPendingManifest(null);
+    yamlManuallyEdited.current = false;
+    setSaveModal(true);
   }
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────
@@ -1855,7 +1875,7 @@ function PluginsPage() {
             </label>
             <label>
               <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>Manifest YAML（可编辑）</div>
-              <textarea className="input" rows={10} style={{ fontFamily: "var(--mono)", fontSize: 12, resize: "vertical" }} value={saveYaml} onChange={e => setSaveYaml(e.target.value)}/>
+              <textarea className="input" rows={10} style={{ fontFamily: "var(--mono)", fontSize: 12, resize: "vertical" }} value={saveYaml} onChange={e => { yamlManuallyEdited.current = true; setSaveYaml(e.target.value); }}/>
             </label>
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <button className="btn primary" style={{ flex: 1, justifyContent: "center" }} onClick={handleSaveToLibrary} disabled={saving}>
@@ -1926,6 +1946,15 @@ function PluginsPage() {
             ))}
             <div ref={bottomRef}/>
           </div>
+
+          {/* Manual save button — fallback for when plugin_manifest_ready event is never emitted */}
+          {builderMsgs.length > 0 && !builderRunning && (
+            <div style={{ padding: "8px 16px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "flex-end" }}>
+              <button className="btn ghost sm" style={{ color: "var(--teal)", borderColor: "var(--teal)" }} onClick={openSaveModalFromLastMsg}>
+                <Icon name="pin" size={13}/> 保存到插件库
+              </button>
+            </div>
+          )}
 
           {/* Composer */}
           <div style={{ borderTop: "1px solid var(--line)" }}>
