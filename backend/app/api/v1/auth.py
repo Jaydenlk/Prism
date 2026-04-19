@@ -1,5 +1,5 @@
 """
-Prism v2 — Authentication API Endpoints (DOC-06 Task 6.1 + multi-channel auth Task A)
+Prism v2 — Authentication API Endpoints (DOC-06 Task 6.1 + multi-channel auth Task A+B)
 
 Routes (all under /api/v1):
   POST /auth/register              — new user registration (requires invite code)  [public]
@@ -19,6 +19,10 @@ Routes (all under /api/v1):
   POST /auth/phone-register        — register with phone + password + invite       [public]
   POST /auth/phone-login           — login with phone + password                   [public]
 
+  GET  /auth/google/authorize      — redirect to Google consent screen             [public]
+  GET  /auth/google/callback       — handle Google OAuth callback                  [public]
+  POST /auth/google/complete       — finish OAuth signup with invite code           [public]
+
 ADR-051: SSE ticket replaces ?token=<JWT> in query string to prevent token
          leakage into browser history / Nginx access_log / Referer headers.
 
@@ -31,7 +35,8 @@ import secrets
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -53,6 +58,7 @@ from app.schemas.auth import (
     EmailOtpRequestBody,
     EmailOtpVerifyBody,
     ForgotPasswordBody,
+    GoogleCompleteBody,
     LoginRequest,
     PhoneLoginBody,
     PhoneRegisterBody,
@@ -68,6 +74,7 @@ from app.services.auth_challenge_service import AuthChallengeService
 from app.services.auth_config_service import AuthConfigService
 from app.services.auth_service import AuthService
 from app.services.email_service import EmailService
+from app.services.google_oauth_service import GoogleOAuthService
 from app.services.sse_ticket_service import SSETicketService
 
 import structlog
@@ -382,10 +389,9 @@ def get_providers(
     """
     cfg_svc = AuthConfigService(db)
     phone_enabled = cfg_svc.is_phone_registration_allowed()
-    # Google OAuth detected by env vars (Task B not implemented yet → always false)
-    google_enabled = bool(
-        getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", "")
-    )
+    # Google OAuth availability: both client_id AND client_secret must be set
+    google_svc = GoogleOAuthService(settings, redis_client=None)
+    google_enabled = google_svc.is_configured()
     return ApiResponse(
         data=AuthProvidersResponse(
             email_password=True,
@@ -855,3 +861,379 @@ def phone_login(
     logger.info("auth.phone.login", user_id=user.id)
 
     return resp
+
+
+# ===========================================================================
+# Google OAuth endpoints (Task B)
+# ===========================================================================
+
+_OAUTH_PENDING_KEY_PREFIX = "auth:oauth_pending:"
+_OAUTH_PENDING_TTL = 600  # 10 minutes
+
+
+async def _get_redis_client():
+    """Retrieve async Redis client or raise 503."""
+    redis_client = None
+    async for r in get_redis():
+        redis_client = r
+        break
+    if redis_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Redis unavailable",
+        )
+    return redis_client
+
+
+# ---------------------------------------------------------------------------
+# GET /auth/google/authorize
+# ---------------------------------------------------------------------------
+
+
+@router.get("/google/authorize")
+async def google_authorize(
+    next: str = Query(default="", alias="next"),
+) -> RedirectResponse:
+    """Redirect the user to Google's consent screen.
+
+    Query params:
+      next  — optional URL to redirect to after login (carried through state)
+
+    Responses:
+      302  — redirect to Google consent URL
+      503  — Google OAuth not configured
+    """
+    google_svc = GoogleOAuthService(settings, redis_client=None)
+    if not google_svc.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth 未配置",
+        )
+
+    redis_client = await _get_redis_client()
+    google_svc = GoogleOAuthService(settings, redis_client=redis_client)
+    authorize_url, _state = await google_svc.build_authorize_url(next_url=next)
+
+    logger.info("auth.google.authorize_redirecting")
+    return RedirectResponse(url=authorize_url, status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# GET /auth/google/callback
+# ---------------------------------------------------------------------------
+
+
+@router.get("/google/callback")
+async def google_callback(
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    code: Optional[str] = Query(default=None),
+    state: Optional[str] = Query(default=None),
+    error: Optional[str] = Query(default=None),
+) -> RedirectResponse:
+    """Handle Google OAuth callback.
+
+    Google redirects here with ?code=...&state=... (success) or ?error=... (denied).
+
+    Branching after code exchange:
+      Case 1 — user with matching google_id found → login directly
+      Case 2 — user with matching email (no google_id) → merge account → login
+      Case 3a — new email, allow_oauth_signup_without_invite=True → auto-create → login
+      Case 3b — new email, invite required → store pending token → redirect frontend
+    """
+    import json as _json
+
+    frontend_base = settings.FRONTEND_BASE_URL
+
+    # Error from Google (e.g. user cancelled)
+    if error:
+        logger.warning("auth.google.callback_error", error=error)
+        return RedirectResponse(
+            url=f"{frontend_base}/Prism.html?auth_error={error}",
+            status_code=302,
+        )
+
+    # Missing code or state
+    if not code or not state:
+        return RedirectResponse(
+            url=f"{frontend_base}/Prism.html?auth_error=missing_code_or_state",
+            status_code=302,
+        )
+
+    # Validate CSRF state (GETDEL — consume atomically)
+    redis_client = await _get_redis_client()
+    google_svc = GoogleOAuthService(settings, redis_client=redis_client)
+
+    state_payload = await google_svc.consume_state(state)
+    if state_payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CSRF 校验失败：state 无效或已过期",
+        )
+
+    next_url = state_payload.get("next", "")
+
+    # Exchange authorization code for id_token + claims
+    try:
+        google_info = await google_svc.exchange_code(code)
+    except ValueError as exc:
+        logger.warning("auth.google.exchange_failed", error=str(exc))
+        return RedirectResponse(
+            url=f"{frontend_base}/Prism.html?auth_error=token_exchange_failed",
+            status_code=302,
+        )
+
+    google_id: str = google_info["google_id"]
+    email: str = google_info["email"]
+    email_verified: bool = google_info["email_verified"]
+    name: str = google_info.get("name", "")
+
+    # --- Case 1: existing user with matching google_id ---
+    user = db.query(User).filter(User.google_id == google_id).first()
+    if user is not None:
+        if not user.is_active:
+            return RedirectResponse(
+                url=f"{frontend_base}/Prism.html?auth_error=account_disabled",
+                status_code=302,
+            )
+        redirect_resp = RedirectResponse(
+            url=f"{frontend_base}/Prism.html#access_token="
+                + _build_login_hash(user, db),
+            status_code=302,
+        )
+        _set_refresh_cookie(redirect_resp, create_refresh_token(user.id))
+        _write_audit(db, user.id, "user.login.google")
+        db.commit()
+        logger.info("auth.google.login.existing", user_id=user.id)
+        return redirect_resp
+
+    # --- Case 2: user exists by email but no google_id ---
+    user = db.query(User).filter(User.email == email).first()
+    if user is not None:
+        # Gate account merge on email_verified to prevent takeover
+        if not email_verified:
+            return RedirectResponse(
+                url=f"{frontend_base}/Prism.html?auth_error=email_not_verified",
+                status_code=302,
+            )
+        if not user.is_active:
+            return RedirectResponse(
+                url=f"{frontend_base}/Prism.html?auth_error=account_disabled",
+                status_code=302,
+            )
+        # Merge: set google_id + email_verified
+        user.google_id = google_id
+        user.email_verified = True
+        db.flush()
+
+        redirect_resp = RedirectResponse(
+            url=f"{frontend_base}/Prism.html#access_token="
+                + _build_login_hash(user, db),
+            status_code=302,
+        )
+        _set_refresh_cookie(redirect_resp, create_refresh_token(user.id))
+        _write_audit(db, user.id, "user.login.google.merge")
+        db.commit()
+        logger.info("auth.google.login.merged", user_id=user.id)
+        return redirect_resp
+
+    # --- Case 3: brand-new email ---
+    cfg_svc = AuthConfigService(db)
+    allow_signup = cfg_svc.is_oauth_signup_without_invite()
+
+    if allow_signup:
+        # Case 3a: auto-create user
+        username = _generate_unique_username(email, db)
+        new_user = User(
+            email=email,
+            username=username,
+            password_hash=secrets.token_hex(32),  # unusable random hash (spec §2.3)
+            role="user",
+            google_id=google_id,
+            email_verified=email_verified,
+        )
+        db.add(new_user)
+        db.flush()
+
+        redirect_resp = RedirectResponse(
+            url=f"{frontend_base}/Prism.html#access_token="
+                + _build_login_hash(new_user, db),
+            status_code=302,
+        )
+        _set_refresh_cookie(redirect_resp, create_refresh_token(new_user.id))
+        _write_audit(db, new_user.id, "user.register.google")
+        db.commit()
+        logger.info("auth.google.register.auto", user_id=new_user.id)
+        return redirect_resp
+
+    else:
+        # Case 3b: invite required — store pending token, redirect frontend
+        tmp_token = secrets.token_urlsafe(32)
+        pending_data = _json.dumps({
+            "google_id": google_id,
+            "email": email,
+            "email_verified": email_verified,
+            "name": name,
+        })
+        await redis_client.setex(
+            f"{_OAUTH_PENDING_KEY_PREFIX}{tmp_token}",
+            _OAUTH_PENDING_TTL,
+            pending_data,
+        )
+
+        # Audit (user_id=None — not yet created)
+        _write_audit(db, None, "user.oauth.pending", details={"google_id": google_id, "email": email})
+        db.commit()
+
+        logger.info("auth.google.pending", email_domain=email.split("@")[-1])
+        return RedirectResponse(
+            url=f"{frontend_base}/Prism.html?auth_pending={tmp_token}",
+            status_code=302,
+        )
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/google/complete
+# ---------------------------------------------------------------------------
+
+
+@router.post("/google/complete", response_model=ApiResponse[TokenResponse])
+async def google_complete(
+    body: GoogleCompleteBody,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[TokenResponse]:
+    """Complete Google OAuth signup when an invite code is required.
+
+    Flow:
+      1. GETDEL auth:oauth_pending:{tmp_token} from Redis
+      2. Validate invite code (same as register flow)
+      3. Create user (google_id + email + email_verified=True)
+      4. Consume invite + write audit
+      5. Return TokenResponse + set refresh cookie
+    """
+    import json as _json
+
+    redis_client = await _get_redis_client()
+
+    # GETDEL the pending token
+    pending_key = f"{_OAUTH_PENDING_KEY_PREFIX}{body.tmp_token}"
+    raw = await redis_client.getdel(pending_key)
+    if raw is None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="链接已失效，请重新使用 Google 登录",
+        )
+
+    try:
+        google_info: dict = _json.loads(raw)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="链接已失效（数据损坏），请重新使用 Google 登录",
+        )
+
+    google_id: str = google_info["google_id"]
+    email: str = google_info["email"]
+    email_verified: bool = google_info.get("email_verified", False)
+
+    # Validate invite code
+    invite = _validate_invite(body.invite_code, db)
+
+    # Uniqueness guard (race condition: another request may have registered same email)
+    if db.query(User).filter(User.email == email).first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该邮箱已注册，请直接登录",
+        )
+    if db.query(User).filter(User.google_id == google_id).first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该 Google 账号已绑定其他用户，请直接登录",
+        )
+
+    username = _generate_unique_username(email, db)
+    new_user = User(
+        email=email,
+        username=username,
+        password_hash=secrets.token_hex(32),  # unusable random hash (spec §2.3)
+        role="user",
+        google_id=google_id,
+        email_verified=email_verified,
+    )
+    db.add(new_user)
+    db.flush()
+
+    # Consume invite
+    invite.used_count += 1
+    db.flush()
+
+    # Audit
+    _write_audit(
+        db,
+        new_user.id,
+        "user.register.google.invite",
+        details={"invite_code_id": invite.id},
+    )
+
+    resp = _issue_tokens_response(response, new_user, db, action="user.login.google")
+    db.commit()
+
+    logger.info("auth.google.complete", user_id=new_user.id)
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Google OAuth helper utilities
+# ---------------------------------------------------------------------------
+
+
+def _build_login_hash(user: User, db: Session) -> str:
+    """Build the access_token fragment for the redirect URL.
+
+    Returns the URL-encoded fragment string (just the token value).
+    Hash-based redirect avoids access_token appearing in server logs.
+    """
+    access_token = create_access_token(user.id)
+    # Append expires_in for the frontend
+    expires_in = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    return f"{access_token}&expires_in={expires_in}"
+
+
+def _write_audit(
+    db: Session,
+    user_id: Optional[str],
+    action: str,
+    details: Optional[dict] = None,
+) -> None:
+    """Insert an AuditLog row (user_id may be None for pre-registration events)."""
+    audit = AuditLog(
+        id=generate_uuid(),
+        user_id=user_id,
+        action=action,
+        resource_type="user",
+        resource_id=user_id,
+        details=details or {},
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(audit)
+    db.flush()
+
+
+def _generate_unique_username(email: str, db: Session) -> str:
+    """Derive a username from the email local-part; retry once on collision."""
+    local_part = email.split("@")[0]
+    # Sanitise: keep only alphanum + underscore, cap at 40 chars
+    import re as _re
+    base = _re.sub(r"[^a-zA-Z0-9_]", "_", local_part)[:40] or "user"
+
+    if db.query(User).filter(User.username == base).first() is None:
+        return base
+
+    # Collision — append short random suffix
+    candidate = f"{base[:34]}_{secrets.token_hex(3)}"
+    if db.query(User).filter(User.username == candidate).first() is None:
+        return candidate
+
+    # Second collision (very unlikely) — full random
+    return f"u_{secrets.token_hex(6)}"

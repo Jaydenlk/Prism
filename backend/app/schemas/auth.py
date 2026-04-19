@@ -247,3 +247,15 @@ class AuthConfigPatchBody(BaseModel):
 
     key: str
     value_json: Any  # bool, str, int, dict — whatever the key stores
+
+
+# ---------------------------------------------------------------------------
+# Google OAuth schemas
+# ---------------------------------------------------------------------------
+
+
+class GoogleCompleteBody(BaseModel):
+    """POST /auth/google/complete — finish OAuth signup with invite code."""
+
+    tmp_token: str
+    invite_code: str

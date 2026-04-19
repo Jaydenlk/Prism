@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
 
+    # --- Google OAuth (Task B) --------------------------------------------
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8080/api/v1/auth/google/callback"
+    FRONTEND_BASE_URL: str = "http://localhost:8080"
+
     # --- Alert Dispatcher (ADR-120) ---------------------------------------
     # IM 群告警：格式 "{platform}:{chat_id}"，如 "feishu:oc_xxx"
     ALERT_IM_CHANNEL: str = ""
