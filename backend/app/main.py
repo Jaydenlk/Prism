@@ -154,6 +154,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             message="ProcessManager failed to initialize. Subprocess scheduling disabled.",
         )
 
+    # 6b. Initialize IMGateway + FeishuAdapter (Task B-1)
+    try:
+        import redis.asyncio as _aioredis
+        from app.services.im_gateway import IMGateway
+        from app.services.im_feishu import FeishuAdapter
+
+        _redis_for_im = _aioredis.from_url(settings.REDIS_URL, decode_responses=False)
+        feishu_adapter = FeishuAdapter(
+            config={},
+            settings=settings,
+            redis_client=_redis_for_im,
+        )
+        im_gateway = IMGateway(settings)
+        im_gateway.register_adapter(feishu_adapter)
+        app.state.im_gateway = im_gateway
+        await im_gateway.start_all()
+        logger.info(
+            "prism.im_gateway_started",
+            message="IMGateway initialized with FeishuAdapter (Task B-1).",
+            feishu_configured=feishu_adapter.is_configured(),
+        )
+    except Exception as exc:
+        app.state.im_gateway = None
+        logger.warning(
+            "prism.im_gateway_failed",
+            error=str(exc),
+            message="IMGateway failed to initialize. Feishu bot disabled.",
+        )
+
     logger.info("prism.ready", message="Prism v2 is ready to serve requests.")
 
     # 7. Start HeartbeatMonitor background task (ADR-065)
@@ -185,6 +214,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     yield  # application serves requests here
+
+    # Shutdown: stop IMGateway adapters
+    try:
+        _gw = getattr(app.state, "im_gateway", None)
+        if _gw is not None:
+            await _gw.stop_all()
+            logger.info("prism.im_gateway_shutdown", message="IMGateway stopped.")
+    except Exception as exc:
+        logger.warning("prism.im_gateway_shutdown_failed", error=str(exc))
 
     # Shutdown: stop ProcessManager (ADR-066) — kill all subprocesses
     try:

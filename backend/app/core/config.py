@@ -97,6 +97,14 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8080/api/v1/auth/google/callback"
     FRONTEND_BASE_URL: str = "http://localhost:8080"
 
+    # --- Feishu (Lark) IM Bot (Task B-1) ---------------------------------
+    # Register at https://open.feishu.cn/app → 事件订阅 → 请求URL配置
+    # Leave all blank to disable Feishu bot (webhook returns 503).
+    FEISHU_APP_ID: str = ""
+    FEISHU_APP_SECRET: str = ""
+    FEISHU_ENCRYPT_KEY: str = ""
+    FEISHU_VERIFICATION_TOKEN: str = ""
+
     # --- Alert Dispatcher (ADR-120) ---------------------------------------
     # IM 群告警：格式 "{platform}:{chat_id}"，如 "feishu:oc_xxx"
     ALERT_IM_CHANNEL: str = ""

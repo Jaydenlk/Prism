@@ -262,9 +262,11 @@ class IMGateway:
         )
 
         if session is None:
+            # Build a descriptive title with the IM channel prefix
+            _channel_prefix = f"[{channel.capitalize()}]" if channel else "[IM]"
             session = SessionModel(
                 user_id=user_id,
-                title=None,
+                title=_channel_prefix,
                 status="idle",
                 config_snapshot={},
                 im_channel=channel,

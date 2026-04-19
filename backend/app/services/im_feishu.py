@@ -1,29 +1,30 @@
 """
-Prism v2 — 飞书 (Lark) IM 适配器 (DOC-08 Task 8.2)
+Prism v2 — 飞书 (Lark) IM 适配器 (DOC-08 Task 8.2 / Task B-1)
 
 接入方式：
   - 消息接收：飞书事件订阅 Webhook（POST /im/webhook/feishu）
-    飞书支持 WebSocket 长连接（官方 SDK lark-oapi），但为简化部署，
-    此实现使用 Webhook 回调模式（也是生产中最常见的方案）。
+    Webhook 回调模式（push），无需 WebSocket 长连接。
   - 消息发送：飞书消息 API（POST /open-apis/im/v1/messages）
-  - Token 刷新：自动刷新 tenant_access_token（过期前 60 秒更新）
+  - Token 刷新：tenant_access_token 缓存于 Redis（key=feishu:tenant_token），
+    TTL = min(feishu_expire - 60, 7000)，比飞书 2h 过期提前刷新。
 
-配置字段（im_channel_configs.config JSONB）：
-  - app_id:     飞书应用 ID
-  - app_secret: 飞书应用密钥
-  - verify_token: 事件订阅验证 token（用于 X-Lark-Signature 校验）
-  - encrypt_key: 消息加密密钥（可选，启用时消息体为加密 JSON）
+配置来源（Task B-1 起）：
+  优先从 Settings（环境变量）读取 FEISHU_* 字段。
+  若 Settings 未配置（全空），回退到 im_channel_configs.config JSONB（DB 端配置）。
 
-消息长度限制：4000 字符（超出截断并追加 "[消息已截断]"）
+签名校验（X-Lark-Signature）：
+  飞书 Webhook 签名算法：
+    timestamp + nonce + body_str → SHA256（注意：不混入任何密钥，只是内容 hash）
+  或使用 encrypt_key 时的签名算法：
+    SHA256(timestamp + encrypt_key + body_str).hexdigest()
+  本实现采用飞书官方文档 "验证请求签名" 方案：
+    HMAC-SHA256 的 key = encrypt_key，message = timestamp + nonce + body_bytes
+  若 FEISHU_ENCRYPT_KEY 未配置，跳过签名校验（verify_signature 返回 False）。
 
-签名校验：
-  飞书 Webhook 使用 HMAC-SHA256 签名，header X-Lark-Signature。
-  签名计算：HMAC-SHA256(timestamp + verify_token + body, verify_token)。
-  若 verify_token 未配置，跳过校验（仅适合内网部署）。
-
-加密消息（encrypt_key 配置时）：
-  飞书事件通过 AES-CBC 加密传输，使用 pycryptodome 解密。
-  参考：https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-/encrypt-key-encryption-configuration-case
+加密消息（FEISHU_ENCRYPT_KEY 配置时）：
+  飞书事件通过 AES-CBC-256 加密，key = SHA256(encrypt_key)，
+  格式：base64(IV[16字节] + ciphertext)，PKCS7 padding。
+  依赖 pycryptodome（requirements.txt）。
 
 API 文档参考：https://open.feishu.cn/document
 """
@@ -51,6 +52,11 @@ _TRUNCATE_SUFFIX = "\n\n[消息已截断，完整结果请在 Prism Web 端查�
 # 飞书 API 基础 URL
 FEISHU_API_BASE = "https://open.feishu.cn"
 
+# Redis cache key for tenant_access_token
+_REDIS_TOKEN_KEY = "feishu:tenant_token"
+# Cache TTL: 7000s (slightly less than Feishu's 2h = 7200s)
+_TOKEN_CACHE_MAX_TTL = 7000
+
 
 class FeishuAdapter(IMAdapter):
     """
@@ -59,26 +65,46 @@ class FeishuAdapter(IMAdapter):
     实现 IMAdapter 接口，通过 Webhook 回调接收消息，
     通过飞书消息 API 发送消息。
 
+    配置读取顺序（Task B-1）：
+      1. Settings 环境变量（FEISHU_APP_ID / FEISHU_APP_SECRET / ...）
+      2. 回退到传入的 config dict（im_channel_configs.config JSONB）
+
     使用方式（由 IMGateway 管理）：
-        adapter = FeishuAdapter(config)
+        adapter = FeishuAdapter(config, settings=settings, redis_client=redis)
         gateway.register_adapter(adapter)
-        # 飞书消息通过 POST /im/webhook/feishu → handle_webhook() 路由进来
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        settings: Any = None,
+        redis_client: Any = None,
+    ) -> None:
         """
         Args:
-            config: im_channel_configs.config JSONB，包含 app_id / app_secret /
-                    verify_token / encrypt_key（可选）
+            config:       im_channel_configs.config JSONB（DB 端配置，可为 None）
+            settings:     app.core.config.Settings 实例（优先级高于 config）
+            redis_client: redis.asyncio.Redis 实例（用于 tenant_access_token 缓存）
         """
         super().__init__()
-        self._config = config
-        self._app_id: str = config.get("app_id", "")
-        self._app_secret: str = config.get("app_secret", "")
-        self._verify_token: str = config.get("verify_token", "")
-        self._encrypt_key: str = config.get("encrypt_key", "")
+        cfg = config or {}
 
-        # token 缓存（access_token, 过期时间戳）
+        # --- Config resolution: Settings > DB config dict ---
+        if settings is not None and settings.FEISHU_APP_ID:
+            self._app_id: str = settings.FEISHU_APP_ID
+            self._app_secret: str = settings.FEISHU_APP_SECRET
+            self._encrypt_key: str = settings.FEISHU_ENCRYPT_KEY
+            self._verify_token: str = settings.FEISHU_VERIFICATION_TOKEN
+        else:
+            self._app_id = cfg.get("app_id", "")
+            self._app_secret = cfg.get("app_secret", "")
+            self._encrypt_key = cfg.get("encrypt_key", "")
+            self._verify_token = cfg.get("verify_token", "")
+
+        # Redis client for tenant_access_token cache (optional)
+        self._redis = redis_client
+
+        # In-memory token fallback (when Redis unavailable)
         self._access_token: str = ""
         self._token_expires_at: float = 0.0
         self._token_lock = asyncio.Lock()
@@ -93,14 +119,18 @@ class FeishuAdapter(IMAdapter):
     def channel_name(self) -> str:
         return "feishu"
 
+    def is_configured(self) -> bool:
+        """Return True if app_id and app_secret are both non-empty."""
+        return bool(self._app_id and self._app_secret)
+
     async def start(self) -> None:
         """
         启动飞书适配器。
 
         Webhook 模式下 start() 只需标记适配器已就绪并预热 token。
-        实际消息接收由 FastAPI Webhook 端点驱动（push 模式）。
+        若 app_id / app_secret 未配置，静默跳过（不抛异常，不阻止启动）。
         """
-        if not self._app_id or not self._app_secret:
+        if not self.is_configured():
             logger.warning(
                 "feishu.adapter.start_skipped",
                 reason="app_id or app_secret not configured",
@@ -108,7 +138,6 @@ class FeishuAdapter(IMAdapter):
             return
 
         self._running = True
-        # 预热 access_token（避免首条消息时等待获取）
         try:
             await self._ensure_token()
             logger.info("feishu.adapter.started", app_id=self._app_id)
@@ -134,6 +163,13 @@ class FeishuAdapter(IMAdapter):
         Returns:
             True — 发送成功；False — 发送失败（已 log error，不抛异常）
         """
+        if not self.is_configured():
+            logger.warning(
+                "feishu.send.not_configured",
+                chat_id=message.platform_chat_id,
+            )
+            return False
+
         text = message.text
         # 截断至平台限制
         if len(text) > FEISHU_MAX_LENGTH:
@@ -148,7 +184,10 @@ class FeishuAdapter(IMAdapter):
             }
             if message.reply_to_message_id:
                 # 飞书回复消息需要使用 reply 接口
-                url = f"{FEISHU_API_BASE}/open-apis/im/v1/messages/{message.reply_to_message_id}/reply"
+                url = (
+                    f"{FEISHU_API_BASE}/open-apis/im/v1/messages"
+                    f"/{message.reply_to_message_id}/reply"
+                )
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(
                         url,
@@ -191,6 +230,24 @@ class FeishuAdapter(IMAdapter):
             return False
 
     # ------------------------------------------------------------------
+    # Convenience method: send text directly by chat_id
+    # ------------------------------------------------------------------
+
+    async def send_message(self, chat_id: str, text: str) -> bool:
+        """
+        Convenience wrapper: send text message to a chat_id.
+
+        Used by callback_service when delivering run_complete results.
+        """
+        return await self.send(
+            IMOutgoingMessage(
+                channel=self.channel_name,
+                platform_chat_id=chat_id,
+                text=text,
+            )
+        )
+
+    # ------------------------------------------------------------------
     # Webhook handling (called by api/v1/im.py)
     # ------------------------------------------------------------------
 
@@ -204,29 +261,30 @@ class FeishuAdapter(IMAdapter):
         """
         验证飞书 Webhook 签名（X-Lark-Signature）。
 
-        签名算法：
-          concat = timestamp + nonce + verify_token + body_str
-          expected = SHA256(concat).hexdigest()
+        飞书官方签名算法（encrypt_key 模式）：
+          content = timestamp + encrypt_key + body_str
+          expected = SHA256(content.encode()).hexdigest()
 
-        若 verify_token 未配置，跳过校验（返回 True）。
+        若 encrypt_key 未配置，无法校验 → 返回 False（调用方应拒绝请求）。
 
         参考：https://open.feishu.cn/document/server-docs/event-subscription-guide/
                event-subscription-configure-/request-url-configuration-case
         """
-        if not self._verify_token:
-            return True  # 未配置 verify_token，跳过校验
+        if not self._encrypt_key:
+            # 未配置 encrypt_key，无法验签 → 拒绝（安全优先）
+            return False
 
         body_str = body_bytes.decode("utf-8")
-        content = timestamp + nonce + self._verify_token + body_str
+        content = timestamp + self._encrypt_key + body_str
         expected = hashlib.sha256(content.encode("utf-8")).hexdigest()
         return hmac.compare_digest(expected, signature)
 
     def decrypt_message(self, encrypted: str) -> dict[str, Any]:
         """
-        解密飞书加密消息（当 encrypt_key 已配置时使用）。
+        解密飞书加密消息（当 FEISHU_ENCRYPT_KEY 已配置时使用）。
 
         飞书使用 AES-CBC-256 加密，key 为 encrypt_key 的 SHA256 摘要。
-        依赖 pycryptodome（已在 requirements.txt 中追加）。
+        依赖 pycryptodome（requirements.txt）。
 
         参考：https://open.feishu.cn/document/server-docs/event-subscription-guide/
                event-subscription-configure-/encrypt-key-encryption-configuration-case
@@ -270,7 +328,7 @@ class FeishuAdapter(IMAdapter):
                 logger.error("feishu.webhook.decrypt_failed", error=str(exc))
                 return {"status": "error", "msg": "decrypt failed"}
 
-        # URL 验证
+        # URL 验证（必须在 is_configured 检查之前，Feishu 初次配置时 token 可能未填）
         if body.get("type") == "url_verification":
             challenge = body.get("challenge", "")
             logger.info("feishu.webhook.url_verification")
@@ -355,23 +413,44 @@ class FeishuAdapter(IMAdapter):
                 )
 
     # ------------------------------------------------------------------
-    # Token management
+    # Token management (Redis-backed with in-memory fallback)
     # ------------------------------------------------------------------
 
     async def _ensure_token(self) -> str:
         """
         获取（或刷新）tenant_access_token。
 
-        Token 在过期前 60 秒自动刷新（避免临界失效）。
-        并发安全：使用 asyncio.Lock 防止并发重复刷新。
+        Token 优先从 Redis 读取（key=feishu:tenant_token）；
+        Redis 不可用或缓存不存在时回退到内存缓存。
+        过期前 60 秒自动刷新。并发安全：asyncio.Lock。
         """
         async with self._token_lock:
             now = time.time()
-            # 剩余有效期 > 60 秒时直接返回缓存
+
+            # --- 1. Try Redis cache ---
+            if self._redis is not None:
+                try:
+                    cached = await self._redis.get(_REDIS_TOKEN_KEY)
+                    if cached:
+                        token_str = (
+                            cached.decode("utf-8")
+                            if isinstance(cached, bytes)
+                            else cached
+                        )
+                        ttl = await self._redis.ttl(_REDIS_TOKEN_KEY)
+                        if ttl > 60:
+                            return token_str
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "feishu.token.redis_read_failed",
+                        error=str(exc),
+                    )
+
+            # --- 2. Try in-memory cache ---
             if self._access_token and now < self._token_expires_at - 60:
                 return self._access_token
 
-            # 请求新 token
+            # --- 3. Fetch from Feishu API ---
             url = f"{FEISHU_API_BASE}/open-apis/auth/v3/tenant_access_token/internal"
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
@@ -388,11 +467,28 @@ class FeishuAdapter(IMAdapter):
                     f"msg={data.get('msg')}"
                 )
 
-            self._access_token = data["tenant_access_token"]
-            # expire 为秒数（通常 7200），存绝对时间戳
-            self._token_expires_at = now + int(data.get("expire", 7200))
+            token = data["tenant_access_token"]
+            feishu_expire: int = int(data.get("expire", 7200))
+            # Cache TTL: slightly shorter than Feishu's expiry (min with max cap)
+            cache_ttl = min(feishu_expire - 60, _TOKEN_CACHE_MAX_TTL)
+
+            # Update in-memory cache
+            self._access_token = token
+            self._token_expires_at = now + cache_ttl
+
+            # Update Redis cache
+            if self._redis is not None:
+                try:
+                    await self._redis.setex(_REDIS_TOKEN_KEY, cache_ttl, token)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "feishu.token.redis_write_failed",
+                        error=str(exc),
+                    )
+
             logger.info(
                 "feishu.token.refreshed",
-                expires_in=data.get("expire", 7200),
+                expires_in=feishu_expire,
+                cache_ttl=cache_ttl,
             )
-            return self._access_token
+            return token

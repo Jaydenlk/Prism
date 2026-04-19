@@ -303,7 +303,12 @@ class CallbackService:
         Run 正常完成：RunLifecycle.complete_and_promote() + SSE。
 
         返回 {"promoted_run_id": new_run_id} 供 internal.py 启动新子进程。
+
+        Task B-1 追加：若 run 所在 session 来自 Feishu（im_channel=='feishu'），
+        提取最终 assistant message 文本 → 通过 IMGateway.send_run_result() 回传飞书。
         """
+        from app.models.session import Session as SessionModel
+
         lifecycle = RunLifecycle(self._db)
         new_run_id = lifecycle.complete_and_promote(
             run_id=run.id,
@@ -325,7 +330,73 @@ class CallbackService:
                 })
             )
 
+        # --- Task B-1: IM outbound delivery for Feishu sessions ---
+        session: SessionModel | None = self._db.get(SessionModel, run.session_id)
+        if session is not None and session.im_channel == "feishu":
+            # Extract the last assistant message text for this run
+            reply_text = self._extract_run_reply_text(run.id)
+            asyncio.create_task(
+                self._send_im_run_result(run.session_id, reply_text, run_status="completed")
+            )
+
         return {"promoted_run_id": new_run_id}
+
+    def _extract_run_reply_text(self, run_id: str) -> str:
+        """
+        从 DB 中提取指定 run 的最后一条 assistant message 文本。
+
+        若无 assistant message（如纯工具调用），返回空串（调用方会用默认提示替换）。
+        """
+        last_msg = (
+            self._db.query(Message)
+            .filter(
+                Message.run_id == run_id,
+                Message.role == "assistant",
+            )
+            .order_by(Message.sequence_no.desc())
+            .first()
+        )
+        if last_msg is None:
+            return ""
+
+        # Extract text from content blocks
+        for block in (last_msg.content or []):
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text":
+                return block.get("text", "")
+
+        return ""
+
+    @staticmethod
+    async def _send_im_run_result(session_id: str, text: str, run_status: str) -> None:
+        """
+        向 IM 平台回传 run 结果（fire-and-forget，Task B-1）。
+
+        通过 app.state.im_gateway.send_run_result() 发送；
+        若 gateway 不可用，仅记录 warning。
+        """
+        try:
+            from app.main import app
+
+            gateway = getattr(app.state, "im_gateway", None)
+            if gateway is not None:
+                await gateway.send_run_result(
+                    session_id=session_id,
+                    text=text,
+                    run_status=run_status,
+                )
+            else:
+                logger.warning(
+                    "callback.im_gateway_unavailable",
+                    session_id=session_id,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "callback.im_send_failed",
+                session_id=session_id,
+                error=str(exc),
+            )
 
     def _handle_run_error(self, run: Run, data: dict) -> dict:
         """

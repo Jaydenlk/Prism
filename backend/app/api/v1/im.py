@@ -42,6 +42,7 @@ from app.schemas.im import (
     PairingCodeResponse,
 )
 from app.services.im_binding_service import IMBindingService
+from app.services.im_feishu import FeishuAdapter
 
 logger = structlog.get_logger(__name__)
 
@@ -165,22 +166,34 @@ async def webhook_feishu(
     """
     body_bytes = await request.body()
 
-    # 获取 FeishuAdapter 实例（从 IMGateway 中查找）
-    adapter = _get_feishu_adapter(request)
+    # --- Parse body first (needed for URL verification fast path) ---
+    try:
+        import json as _json
+        body: dict[str, Any] = _json.loads(body_bytes) if body_bytes else {}
+    except Exception:
+        body = {}
 
-    # 快速路径：若无适配器（未配置），兼容 URL 验证
-    if adapter is None:
-        try:
-            import json as _json
-            body: dict[str, Any] = _json.loads(body_bytes) if body_bytes else {}
-        except Exception:
-            body = {}
-        if body.get("type") == "url_verification":
-            return {"challenge": body.get("challenge", "")}
-        logger.warning("im.webhook.feishu.adapter_not_found")
-        return {"status": "ok"}
+    # --- Fast path: URL verification challenge (Feishu initial setup) ---
+    # Must be handled before 503/401 checks — Feishu sends this with no
+    # signature and before any app_id is necessarily configured.
+    if body.get("type") == "url_verification":
+        challenge = body.get("challenge", "")
+        logger.info("im.webhook.feishu.url_verification_fast_path")
+        return {"challenge": challenge}
 
-    # 签名验证（X-Lark-Signature 存在时）
+    # --- Check adapter is present and configured ---
+    adapter: FeishuAdapter | None = _get_feishu_adapter(request)
+    if adapter is None or not adapter.is_configured():
+        logger.warning(
+            "im.webhook.feishu.not_configured",
+            has_adapter=adapter is not None,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Feishu bot not configured. Set FEISHU_APP_ID and FEISHU_APP_SECRET.",
+        )
+
+    # --- Signature verification (X-Lark-Signature present) ---
     signature = request.headers.get("X-Lark-Signature", "")
     timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
     nonce = request.headers.get("X-Lark-Request-Nonce", "")
@@ -191,15 +204,10 @@ async def webhook_feishu(
                 "im.webhook.feishu.signature_mismatch",
                 timestamp=timestamp,
             )
-            # 返回 200 OK 避免飞书重试风暴，但不处理消息
-            return {"status": "ok"}
-
-    # 解析 body JSON（可能含 encrypt 字段，handle_webhook 内部处理）
-    try:
-        import json as _json
-        body = _json.loads(body_bytes) if body_bytes else {}
-    except Exception:
-        body = {}
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Feishu webhook signature.",
+            )
 
     result = await adapter.handle_webhook(body)
     logger.info(
