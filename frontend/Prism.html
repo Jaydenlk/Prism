@@ -234,7 +234,6 @@ const NAV = [
   { id: "usage", icon: "usage" },
   { id: "skills", icon: "skills" },
   { id: "plugins", icon: "plugin" },
-  { id: "admin", icon: "admin" },
   { id: "observability", icon: "flow" },
   { id: "settings", icon: "settings" }
 ];
@@ -365,7 +364,7 @@ function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm, session
   const titles = {
     chat: sessionTitle || "对话",
     sessions: t.nav.sessions, usage: t.nav.usage, skills: t.nav.skills,
-    plugins: t.nav.plugins, admin: t.nav.admin, observability: t.nav.observability, settings: t.nav.settings
+    plugins: t.nav.plugins, observability: t.nav.observability, settings: t.nav.settings
   };
   return (
     <div className="topbar">
@@ -1567,49 +1566,6 @@ budget:
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function AdminPage() {
-  return (
-    <div className="page">
-      <div className="page-head">
-        <div className="page-title">管理</div>
-        <div className="page-sub">工作区、座位、预算、审计。</div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 28 }}>
-        <div className="stat-card"><div className="label">成员</div><div className="val">24</div><div className="trend" style={{ color: "var(--ink-3)" }}>3 个待激活</div></div>
-        <div className="stat-card"><div className="label">本月花费</div><div className="val">¥1,247</div><div className="trend">-12%</div></div>
-        <div className="stat-card"><div className="label">审计事件 (30d)</div><div className="val">18,420</div><div className="trend" style={{ color: "var(--ink-3)" }}>14 次被拒</div></div>
-      </div>
-      <div className="section-title">成员</div>
-      <table className="table">
-        <thead><tr><th>名字</th><th>邮箱</th><th>角色</th><th>预算</th><th>用了</th><th>最后</th></tr></thead>
-        <tbody>
-          {[
-            { n: "Alice Chen", e: "alice@…", r: "admin", b: 500, u: 328, l: "刚才", me: true },
-            { n: "Ben Wu", e: "ben@…", r: "成员", b: 200, u: 142, l: "2h 前" },
-            { n: "Cat Liu", e: "cat@…", r: "成员", b: 200, u: 198, l: "4h 前" },
-            { n: "Dan Zhou", e: "dan@…", r: "访客", b: 50, u: 12, l: "昨天" },
-            { n: "Esther Yin", e: "esther@…", r: "成员", b: 200, u: 87, l: "2d 前" }
-          ].map((m, i) => (
-            <tr key={i}>
-              <td style={{ color: "var(--ink)", fontWeight: 500 }}>{m.n} {m.me && <span className="badge" style={{ marginLeft: 6, fontSize: 10 }}>你</span>}</td>
-              <td className="mono" style={{ color: "var(--ink-3)" }}>{m.e}</td>
-              <td><span className={`badge ${m.r === "admin" ? "ink" : ""}`}>{m.r}</span></td>
-              <td className="mono">¥{m.b}</td>
-              <td>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div className="progress" style={{ width: 80 }}><div className="bar" style={{ width: `${Math.min(100, m.u / m.b * 100)}%`, background: m.u / m.b > 0.8 ? "var(--amber)" : "var(--ink)" }}/></div>
-                  <span className="mono" style={{ fontSize: 11.5 }}>¥{m.u}</span>
-                </div>
-              </td>
-              <td style={{ color: "var(--ink-3)" }}>{m.l}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -3063,7 +3019,6 @@ function App() {
           {page === "usage" && <UsagePage/>}
           {page === "skills" && <SkillsPage/>}
           {page === "plugins" && <PluginsPage/>}
-          {page === "admin" && <AdminPage/>}
           {page === "observability" && <ObsPage/>}
           {page === "settings" && <SettingsPage onToast={addToast}/>}
           {page !== "chat" && (
