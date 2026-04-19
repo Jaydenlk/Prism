@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { loginAsAdmin } from '../fixtures/auth';
+import { startNewChatSession } from '../fixtures/chat';
 
 /**
  * Session 1 fixes — Bug 1 (user message disappears) + Bug 2 (markdown not rendered).
@@ -7,16 +8,7 @@ import { loginAsAdmin } from '../fixtures/auth';
  * Bug 1 is a chat-flow bug; tested through the real UI with login + send + assert.
  * Bug 2 is a renderer bug; tested in isolation via a production-guarded mount
  * helper at /?__e2e=1 — does NOT depend on LLM fidelity.
- *
- * Both tests must FAIL before implementation (TDD red phase).
  */
-
-async function startNewChatSession(page: any) {
-  const newChatBtn = page.locator('button:has-text("新对话")').first();
-  await expect(newChatBtn).toBeVisible({ timeout: 8_000 });
-  await newChatBtn.click();
-  await expect(page.locator('.composer-wrap textarea, .composer textarea').first()).toBeVisible({ timeout: 8_000 });
-}
 
 test.describe('Bug 1: user bubble persists after run_complete', () => {
   test.beforeEach(async ({ page }) => {

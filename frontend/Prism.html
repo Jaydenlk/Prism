@@ -418,7 +418,7 @@ function HarnessNotice({ kind, title, detail }) {
   );
 }
 
-function MarkdownBody({ content, streaming }) {
+const MarkdownBody = React.memo(function MarkdownBody({ content, streaming }) {
   const html = useMemo(() => {
     if (!content) return "";
     try {
@@ -436,7 +436,7 @@ function MarkdownBody({ content, streaming }) {
       {streaming && <span className="caret"/>}
     </div>
   );
-}
+});
 
 function Msg({ m, first }) {
   const isUser = m.role === "user";
