@@ -10,9 +10,10 @@ Indexes:
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
 from sqlalchemy import (
     DateTime,
     ForeignKey,
@@ -67,7 +68,10 @@ class AuditLog(Base):
     details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("NOW()"),
     )
 
     # Relationship (nullable — system events have no user)

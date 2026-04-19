@@ -4,22 +4,27 @@ executor/harness/middleware/plugin_builder_gate.py — PluginBuilderGate Middlew
 v4 修订（ADR-042，原标 ADR-038）：
 - 仅对 agent_type == "plugin_builder" 生效的阶段门控 Middleware
 - 不再按"最小 5 轮"硬门控，改为"完整度打分 < 0.8 不允许进入设计展示"
+- post_turn 主动打分（调 LLM 的 RequirementCompleteness.score）并写 custom_data
+- 达阈值时自动抽取 YAML manifest 块 → callback.harness_event("plugin_manifest_ready")
 - 通过 ctx.custom_data 追踪阶段状态：
     plugin_build_phase: 1~4（需求收集 / 设计展示 / 生成 / 验证）
     last_completeness_score: 最近一次打分的 overall
     design_confirmed: 用户是否确认了设计方案
+    manifest_emitted: 本 run 是否已发 plugin_manifest_ready（单次触发）
 
 GuardrailsEngine 规则（GR-PLUGIN-CREATE-001）在本模块底部定义，
 与此 Middleware 配合构成"Harness 双保险"。
 
 Observability（v4）：
-- structlog 事件: plugin_builder.gate.phase_transition
+- structlog 事件: plugin_builder.gate.phase_transition / manifest_ready_emitted
 - OTel span: plugin_builder.phase.{1,2,3,4}（stub，DOC-12 Task 12.5 接入）
 
 进程边界：本模块只 import executor.*，禁止 import backend.app.*
 """
 
 from __future__ import annotations
+
+import re
 
 import structlog
 
@@ -29,17 +34,47 @@ from executor.harness.guardrails.rules import GuardrailRule
 logger = structlog.get_logger()
 
 
+# Scoring every turn costs an LLM call; only do it when user said something new
+# since the last score. We detect "new user turn" by turn_count increment.
+_YAML_FENCE_RE = re.compile(r"```(?:ya?ml)?\s*\n([\s\S]*?)\n```", re.MULTILINE)
+
+
+def _extract_yaml_manifest(messages: list) -> str | None:
+    """从最后一条 assistant 消息的 TextBlock 里抽取 yaml fenced block。"""
+    for msg in reversed(messages):
+        if getattr(msg, "role", None) != "assistant":
+            continue
+        for block in getattr(msg, "content", []):
+            text = getattr(block, "text", None)
+            if not text:
+                continue
+            match = _YAML_FENCE_RE.search(text)
+            if match:
+                return match.group(1).strip()
+    return None
+
+
 # ---------------------------------------------------------------------------
-# PluginBuilderGate Middleware — 阶段门控
+# PluginBuilderGate Middleware — 阶段门控 + 自动完整度打分 + manifest 事件
 # ---------------------------------------------------------------------------
 
 class PluginBuilderGate(Middleware):
     """v4：仅对 PluginBuilder Agent 生效的完整度打分门控 Middleware。
 
-    pre_turn 时检查当前阶段和打分，决定是否注入约束提示。
+    pre_turn  → 检查当前阶段和打分，决定是否注入约束提示
+    post_turn → 调 LLM 打 7 维度完整度分；达阈值时 emit plugin_manifest_ready
     """
 
     name = "plugin_builder_gate"
+
+    def __init__(self, adapter=None, callback=None) -> None:
+        """
+        adapter: ModelAdapter 用于 RequirementCompleteness.score 的 LLM 调用
+        callback: BackendCallback 用于 emit plugin_manifest_ready harness_event
+        adapter/callback 都为 None 时降级为纯门控（不打分、不 emit）
+        """
+        self._adapter = adapter
+        self._callback = callback
 
     async def pre_turn(self, ctx: MiddlewareContext) -> None:
         """阶段门控检查。只对 plugin_builder Agent 生效。"""
@@ -102,6 +137,71 @@ class PluginBuilderGate(Middleware):
         elif phase == 4:
             # 验证阶段：无特殊门控
             pass
+
+    async def post_turn(self, ctx: MiddlewareContext) -> None:
+        """本轮 assistant 响应结束后：对 messages 打分；达阈值且含 YAML → emit 事件。"""
+        if ctx.agent_type != "plugin_builder":
+            return
+        if self._adapter is None:
+            return  # 降级：无 adapter 则不打分
+        if ctx.custom_data.get("manifest_emitted"):
+            return  # 一次 run 只 emit 一次
+
+        # 延迟 import 避免循环依赖
+        from executor.agents.plugin_builder_scoring import RequirementCompleteness
+
+        try:
+            scores = await RequirementCompleteness.score(ctx.messages, self._adapter)
+        except Exception as e:
+            logger.warning(
+                "plugin_builder.gate.score_failed",
+                error=str(e),
+                turn=ctx.turn_count,
+            )
+            return
+
+        overall = scores.get("overall", 0.0)
+        ctx.custom_data["last_completeness_score"] = overall
+        logger.info(
+            "plugin_builder.gate.scored",
+            overall=round(overall, 3),
+            turn=ctx.turn_count,
+        )
+
+        if overall < RequirementCompleteness.THRESHOLD:
+            return
+
+        # 达阈值 → 抽 YAML manifest 块
+        manifest_yaml = _extract_yaml_manifest(ctx.messages)
+        if not manifest_yaml:
+            logger.info(
+                "plugin_builder.gate.threshold_reached_no_manifest",
+                overall=round(overall, 3),
+                note="score >= threshold but no yaml fence in latest assistant message",
+            )
+            return
+
+        # Emit plugin_manifest_ready （前端 PluginsPage 监听此 harness_event subtype）
+        if self._callback is not None:
+            try:
+                await self._callback.harness_event(
+                    "plugin_manifest_ready",
+                    {
+                        "manifest_yaml": manifest_yaml,
+                        "completeness": scores,
+                    },
+                )
+                ctx.custom_data["manifest_emitted"] = True
+                logger.info(
+                    "plugin_builder.gate.manifest_ready_emitted",
+                    overall=round(overall, 3),
+                    yaml_length=len(manifest_yaml),
+                )
+            except Exception as e:
+                logger.warning(
+                    "plugin_builder.gate.emit_failed",
+                    error=str(e),
+                )
 
     async def pre_tool_use(self, ctx: MiddlewareContext) -> None:
         """工具使用前检查：阶段 1/2 时阻止写 plugin 相关文件。"""

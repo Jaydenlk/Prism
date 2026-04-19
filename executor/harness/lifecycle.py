@@ -38,6 +38,7 @@ from executor.harness.middleware.feedback_capture import FeedbackCaptureMiddlewa
 from executor.harness.middleware.loop_detection import LoopDetectionMiddleware
 from executor.harness.middleware.observability import ObservabilityMiddleware
 from executor.harness.middleware.pipeline import MiddlewarePipeline
+from executor.harness.middleware.plugin_builder_gate import PluginBuilderGate
 from executor.harness.permissions.ask_protocol import PermissionAskProtocol
 from executor.harness.permissions.engine import PermissionEngine
 
@@ -144,6 +145,12 @@ class HarnessRuntime:
         self.middleware.register(self.loop_mw)
         self.middleware.register(self.observability_mw)
         self.middleware.register(self.feedback_mw)
+
+        # 8b. PluginBuilderGate — 仅对 agent_type=plugin_builder 生效
+        # 中间件本身会先检查 ctx.agent_type 跳过非 plugin_builder；无副作用
+        # ADR-042: post_turn 打完整度分 + 达阈值自动 emit plugin_manifest_ready
+        self.plugin_builder_gate = PluginBuilderGate(adapter=adapter, callback=callback)
+        self.middleware.register(self.plugin_builder_gate)
 
         # Task 4.1: 若 agent_def.read_only=True，追加只读护栏规则（AGENT-READONLY）
         if agent_def is not None and agent_def.read_only:

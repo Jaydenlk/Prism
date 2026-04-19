@@ -509,9 +509,32 @@ async def main() -> None:
         pipeline = ToolExecutionPipeline(registry, context_budget=budget)
 
         # ----------------------------------------------------------------
-        # Step 5: Harness Runtime（HARNESS_INTEGRATION_POINT：Task 3.2 注入）
-        # 本 Task 不注入中间件，middleware_pipeline=None（no-op）
+        # Step 5: Harness Runtime — wires middleware pipeline + permission
+        # engine + guardrails. ADR-025 requires middleware to run for every
+        # agent (loop detection, observability, feedback, plugin_builder gate).
         # ----------------------------------------------------------------
+        from executor.harness.lifecycle import HarnessRuntime
+        from executor.agents.pool import AgentPool
+        import redis.asyncio as aioredis
+
+        _redis_client = aioredis.from_url(args.redis_url, decode_responses=False)
+
+        class _Settings:
+            LOOP_DETECTION_WINDOW = int(os.environ.get("LOOP_DETECTION_WINDOW", "5"))
+
+        _agent_def = AgentPool().get(agent_type)
+        harness = HarnessRuntime(
+            run_id=args.run_id,
+            session_id=args.session_id,
+            user_id=args.user_id,
+            callback=callback,
+            redis_client=_redis_client,
+            redis_url=args.redis_url,
+            adapter=adapter,
+            settings=_Settings(),
+            budget=budget,
+            agent_def=_agent_def,
+        )
 
         # ----------------------------------------------------------------
         # Step 6: QueryEngine（按 agent_type 选 MAX_TURNS，ADR-024）
@@ -531,7 +554,7 @@ async def main() -> None:
             callback=callback,
             run_context=run_context,
             max_turns=max_turns,
-            middleware_pipeline=None,
+            middleware_pipeline=harness.middleware,
             agent_type=agent_type,
         )
 

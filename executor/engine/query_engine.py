@@ -229,6 +229,26 @@ class QueryEngine:
                 except Exception:
                     pass  # metrics 降级不影响主路径
 
+                # ADR-025: MiddlewarePipeline.post_turn() fires at the END of EVERY
+                # turn, regardless of stop_reason. Moving this before the break so
+                # end_turn responses (pure text replies, no tool calls) still
+                # trigger loop detection, observability, feedback, and plugin
+                # builder scoring.
+                if self._middleware is not None:
+                    if _mw_ctx is None:
+                        _mw_ctx = MiddlewareContext(
+                            run_id=self._run_context.run_id,
+                            session_id=self._run_context.session_id,
+                            user_id=self._run_context.user_id,
+                            turn_count=self._turn_count,
+                            agent_type=getattr(self._run_context, "agent_type", self._agent_type),
+                            messages=self._messages,
+                            system_prompt="",
+                        )
+                    _mw_ctx.custom_data["tool_call_count"] = len(tool_use_blocks)
+                    _mw_ctx.custom_data["stop_reason"] = stop_reason
+                    await self._middleware.run_post_turn(_mw_ctx)
+
                 # 判断是否继续
                 if stop_reason in ("end_turn", "max_tokens"):
                     break
@@ -273,21 +293,7 @@ class QueryEngine:
                             except Exception:
                                 pass
 
-                    # Task 3.2: MiddlewarePipeline.post_turn() 钩点
-                    if self._middleware is not None:
-                        # 将本轮工具调用数写入 ctx.custom_data 供 ObservabilityMiddleware 使用
-                        if _mw_ctx is None:
-                            _mw_ctx = MiddlewareContext(
-                                run_id=self._run_context.run_id,
-                                session_id=self._run_context.session_id,
-                                user_id=self._run_context.user_id,
-                                turn_count=self._turn_count,
-                                agent_type=getattr(self._run_context, "agent_type", self._agent_type),
-                                messages=self._messages,
-                                system_prompt="",
-                            )
-                        _mw_ctx.custom_data["tool_call_count"] = len(tool_use_blocks)
-                        await self._middleware.run_post_turn(_mw_ctx)
+                    # post_turn already invoked above (before the branch); just continue
                     continue
 
                 # 未知 stop_reason（例如模型返回空或自定义 stop）

@@ -271,10 +271,20 @@ class ProcessManager:
                 f"Process exited with code {returncode}: {stderr_text}",
             )
         else:
+            # Capture a tail of stderr even on success so subprocess structlog
+            # output (which writes to stderr by default) isn't lost — aids
+            # observability for middleware / harness events debugging.
+            stderr_tail = ""
+            if proc.stderr:
+                try:
+                    stderr_tail = proc.stderr.read().decode(errors="replace")[-4000:]
+                except OSError:
+                    pass
             logger.info(
                 "process_manager.subprocess_done",
                 run_id=run_id,
                 returncode=returncode,
+                stderr_tail=stderr_tail,
             )
 
     # ------------------------------------------------------------------
