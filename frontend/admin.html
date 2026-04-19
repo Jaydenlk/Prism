@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Prism · Control Room</title>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+/* Admin-specific overrides — desk-tool feel, same palette */
+:root {
+  --admin-bg: #EDE6D6;
+  --admin-rail: #1C1B18;
+  --admin-rail-ink: #C8C3B8;
+  --admin-rail-ink-dim: #6B675E;
+  --admin-rail-active: #F5F1EA;
+}
+html, body { background: var(--admin-bg); }
+.admin-app {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  height: 100vh; width: 100vw; overflow: hidden;
+}
+.rail {
+  background: var(--admin-rail);
+  color: var(--admin-rail-ink);
+  display: flex; flex-direction: column;
+  padding: 18px 0;
+  border-right: 1px solid #000;
+}
+.rail .brand {
+  padding: 0 0 16px; display: flex; justify-content: center;
+  border-bottom: 1px solid #2C2B28; margin-bottom: 14px; color: var(--admin-rail-active);
+}
+.rail-item {
+  width: 40px; height: 40px; margin: 3px auto; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--admin-rail-ink-dim); cursor: pointer;
+  transition: all 0.15s; position: relative;
+}
+.rail-item:hover { color: var(--admin-rail-active); background: #2C2B28; }
+.rail-item.active { color: var(--admin-rail-active); background: #2C2B28; }
+.rail-item.active::before {
+  content: ""; position: absolute; left: -12px; width: 3px; height: 22px;
+  background: var(--amber); border-radius: 0 3px 3px 0;
+}
+.rail-item .lbl {
+  position: absolute; left: 54px; background: var(--admin-rail); color: var(--admin-rail-active);
+  padding: 5px 10px; border-radius: 6px; font-size: 12px; white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s;
+  font-family: var(--serif); font-style: italic; z-index: 50;
+  box-shadow: var(--shadow-3);
+}
+.rail-item:hover .lbl { opacity: 1; }
+
+.admin-main { display: flex; flex-direction: column; overflow: hidden; background: var(--admin-bg); }
+.admin-top {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--admin-bg);
+  flex-shrink: 0;
+}
+.admin-top h1 {
+  font-family: var(--serif); font-size: 22px; margin: 0;
+  font-weight: 500; letter-spacing: -0.01em; color: var(--ink);
+}
+.admin-top .sub { font-family: var(--serif); font-style: italic; color: var(--ink-3); font-size: 13px; }
+.admin-top .spacer { flex: 1; }
+.admin-top .search {
+  display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
+  font-size: 12.5px; color: var(--ink-3); min-width: 240px;
+}
+.admin-top .kbd { font-family: var(--mono); font-size: 10px; color: var(--ink-4); margin-left: auto;
+  padding: 1px 6px; background: var(--bg); border-radius: 4px; }
+.admin-top .env-chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px 5px 10px;
+  font-size: 11.5px; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: 999px;
+}
+.admin-top .env-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+
+.admin-tabs {
+  display: flex; gap: 2px; padding: 0 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--admin-bg); flex-shrink: 0;
+  overflow-x: auto;
+}
+.admin-tabs .tab {
+  padding: 10px 14px; font-size: 12.5px; color: var(--ink-3);
+  border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
+}
+.admin-tabs .tab:hover { color: var(--ink); }
+.admin-tabs .tab.active { color: var(--ink); border-bottom-color: var(--amber); font-weight: 500; }
+
+.admin-body { flex: 1; overflow-y: auto; padding: 22px 28px 48px; }
+
+/* Override main page title */
+.admin-body .page-head { margin-bottom: 22px; }
+.admin-body .page-title { font-size: 24px; }
+
+/* Mini stat strip — denser than user-side */
+.strip {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.strip .cell {
+  background: var(--paper);
+  padding: 14px 16px;
+}
+.strip .cell .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-3); font-weight: 500; margin-bottom: 5px; }
+.strip .cell .val { font-family: var(--serif); font-size: 22px; color: var(--ink); letter-spacing: -0.01em; }
+.strip .cell .delta { font-size: 10.5px; font-family: var(--mono); color: var(--ink-4); margin-top: 3px; }
+.strip .cell .delta.up { color: var(--teal); }
+.strip .cell .delta.dn { color: var(--rust); }
+
+.two-col { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+.three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+.panel {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 16px;
+  overflow: hidden;
+}
+.panel-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-head h3 {
+  font-family: var(--serif); font-size: 15px; font-weight: 500; margin: 0;
+  font-style: italic; color: var(--ink);
+}
+.panel-head .eyebrow { margin: 0; font-size: 10px; }
+.panel-head .spacer { flex: 1; }
+.panel-body { padding: 16px 18px; }
+.panel-body.tight { padding: 0; }
+
+/* Table denser */
+.admin-body .table { font-size: 12px; }
+.admin-body .table th { padding: 8px 14px; }
+.admin-body .table td { padding: 9px 14px; }
+
+/* Status badge */
+.st { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; }
+.st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.st.ok { color: var(--teal); }
+.st.warn { color: var(--amber); }
+.st.err { color: var(--rust); }
+.st.idle { color: var(--ink-4); }
+
+/* Provider health "water grid" */
+.health-grid {
+  display: grid; grid-template-columns: 160px repeat(60, 1fr); gap: 2px;
+  font-size: 11px; padding: 4px 0;
+  align-items: center;
+}
+.health-grid .label {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); color: var(--ink-2);
+  padding-right: 10px;
+}
+.health-grid .cell {
+  height: 18px; border-radius: 2px; cursor: pointer;
+}
+.health-ok { background: #C8D9CE; }
+.health-mid { background: #E2D6B3; }
+.health-bad { background: #D9B4A2; }
+.health-out { background: #E8E1CF; }
+
+/* Audit timeline */
+.audit-stream { padding: 0 4px; }
+.audit-day { margin-bottom: 22px; }
+.audit-day-head {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-bottom: 10px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.audit-day-head .d {
+  font-family: var(--serif); font-size: 18px; font-weight: 500; color: var(--ink);
+  font-variant-numeric: oldstyle-nums;
+}
+.audit-day-head .w { font-family: var(--serif); font-style: italic; color: var(--ink-3); font-size: 13px; }
+.audit-day-head .c { margin-left: auto; font-size: 11px; color: var(--ink-4); font-family: var(--mono); }
+
+.audit-row {
+  display: grid; grid-template-columns: 70px 28px 1fr 140px 120px 100px;
+  gap: 14px; align-items: center;
+  padding: 8px 12px; border-radius: 10px;
+  font-size: 12.5px; cursor: pointer;
+}
+.audit-row:hover { background: var(--paper); }
+.audit-row .t { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.audit-row .glyph {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--paper); border: 1px solid var(--line);
+  color: var(--ink-3);
+}
+.audit-row.deny .glyph { color: var(--rust); border-color: var(--rust); background: #F3E1DA; }
+.audit-row.permission .glyph { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
+.audit-row.config .glyph { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
+.audit-row .txt { color: var(--ink); line-height: 1.5; }
+.audit-row .txt em { font-family: var(--serif); font-style: italic; color: var(--ink-3); }
+.audit-row .who { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+.audit-row .tenant { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
+.audit-row .act { text-align: right; }
+
+/* Progress pill */
+.p-pill { height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; width: 100%; }
+.p-pill .fill { height: 100%; background: var(--ink); border-radius: 4px; }
+.p-pill .fill.warn { background: var(--amber); }
+.p-pill .fill.err { background: var(--rust); }
+
+.kv-grid {
+  display: grid; grid-template-columns: 120px 1fr; gap: 8px 16px;
+  font-size: 12.5px;
+}
+.kv-grid .k { color: var(--ink-3); }
+.kv-grid .v { color: var(--ink); font-family: var(--mono); font-size: 12px; }
+
+/* Spark bars */
+.spark {
+  display: inline-flex; align-items: flex-end; gap: 1.5px; height: 22px;
+}
+.spark span { width: 3px; background: var(--ink-3); border-radius: 1px; }
+
+/* Alert card */
+.alert-card {
+  display: flex; gap: 12px; padding: 12px 14px;
+  border-radius: 12px; background: var(--paper);
+  border: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+.alert-card .sev {
+  width: 4px; flex-shrink: 0; border-radius: 4px; background: var(--amber);
+  align-self: stretch;
+}
+.alert-card.critical .sev { background: var(--rust); }
+.alert-card.info .sev { background: var(--ink-4); }
+.alert-card .title { font-family: var(--serif); font-style: italic; font-size: 13.5px; color: var(--ink); }
+.alert-card .meta { font-size: 11px; color: var(--ink-4); font-family: var(--mono); margin-top: 2px; }
+.alert-card .msg { font-size: 12.5px; color: var(--ink-3); margin-top: 4px; line-height: 1.5; }
+.alert-card .t-time { margin-left: auto; font-size: 11px; color: var(--ink-4); font-family: var(--mono); white-space: nowrap; }
+
+/* Tenant row */
+.tenant-row {
+  display: grid; grid-template-columns: 1fr 100px 120px 160px 90px 70px;
+  gap: 14px; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid var(--line);
+  font-size: 12.5px; cursor: pointer;
+}
+.tenant-row:hover { background: var(--bg); }
+.tenant-row:last-child { border-bottom: 0; }
+.tenant-row .name { color: var(--ink); font-weight: 500; display: flex; align-items: center; gap: 10px; }
+.tenant-row .avatar-sq {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--ink); color: var(--paper);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--serif); font-size: 13px;
+}
+.tenant-row .mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect } = React;
+
+/* ================== ICONS ================== */
+const Icon = ({ name, size = 16, stroke = 1.5, style = {} }) => {
+  const s = { width: size, height: size, stroke: "currentColor", fill: "none", strokeWidth: stroke, strokeLinecap: "round", strokeLinejoin: "round", display: "inline-block" };
+  const p = {
+    activity: <><path d="M1 8h3l2-5 4 10 2-5h3"/></>,
+    building: <><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 5v2M5 9v2M8 5v2M8 9v2M11 5v2M11 9v2"/></>,
+    users: <><circle cx="6" cy="6" r="2.5"/><circle cx="12" cy="6.5" r="2"/><path d="M1 14c0-2.2 2.2-4 5-4s5 1.8 5 4M11 14c0-1.5 1-2.5 3-2.5s2 1 2 2.5"/></>,
+    layers: <><path d="M8 2l6 3-6 3-6-3 6-3zM2 8l6 3 6-3M2 11l6 3 6-3"/></>,
+    play: <><circle cx="8" cy="8" r="6"/><path d="M7 5.5l3 2.5-3 2.5z"/></>,
+    shield: <><path d="M8 1l5 2v4c0 3-2 6-5 7-3-1-5-4-5-7V3l5-2zM6 8l1.5 1.5L10 7"/></>,
+    plugin: <><path d="M5 2v3M11 2v3M3 5h10v4a4 4 0 01-4 4H7a4 4 0 01-4-4V5zM8 13v2"/></>,
+    coin: <><circle cx="8" cy="8" r="6"/><path d="M6 6h3a1.5 1.5 0 010 3H6h3a1.5 1.5 0 010 3H6M8 4.5v7"/></>,
+    book: <><path d="M3 2h10v12H5a2 2 0 01-2-2V2zM3 12a2 2 0 012-2h8"/></>,
+    server: <><rect x="2" y="3" width="12" height="4" rx="1"/><rect x="2" y="9" width="12" height="4" rx="1"/><circle cx="4.5" cy="5" r="0.5" fill="currentColor"/><circle cx="4.5" cy="11" r="0.5" fill="currentColor"/></>,
+    lock: <><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></>,
+    key: <><circle cx="6" cy="8" r="3"/><path d="M9 8h6M13 8v2M15 8v2"/></>,
+    search: <><circle cx="7" cy="7" r="5"/><path d="M11 11l4 4"/></>,
+    refresh: <><path d="M2 8a6 6 0 0110-4.5L13 5M14 8a6 6 0 01-10 4.5L3 11M13 2v3h-3M3 14v-3h3"/></>,
+    more: <><circle cx="4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12" cy="8" r="1.2"/></>,
+    check: <><path d="M3 8l3 3 7-7"/></>,
+    x: <><path d="M3 3l10 10M13 3L3 13"/></>,
+    arrowRight: <><path d="M3 8h10M9 4l4 4-4 4"/></>,
+    download: <><path d="M8 2v8M4 7l4 4 4-4M2 14h12"/></>,
+    alert: <><path d="M8 2l7 12H1L8 2zM8 6v4M8 12v0.5"/></>,
+    eye: <><path d="M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></>,
+    fork: <><circle cx="4" cy="3" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="8" cy="13" r="2"/><path d="M4 5v3a2 2 0 002 2h4a2 2 0 002-2V5"/></>,
+    pause: <><path d="M5 3v10M11 3v10"/></>,
+    filter: <><path d="M2 3h12l-4.5 6v4.5L6.5 12V9L2 3z"/></>,
+    flow: <><rect x="2" y="2" width="5" height="4" rx="1.5"/><rect x="9" y="10" width="5" height="4" rx="1.5"/><path d="M4 6v4M4 10h9"/></>,
+    bell: <><path d="M4 7a4 4 0 118 0v3l1.5 2h-11L4 10V7zM6.5 14a1.5 1.5 0 003 0"/></>,
+    clock: <><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></>,
+  };
+  return <svg viewBox="0 0 16 16" style={{ ...s, ...style }}>{p[name] || null}</svg>;
+};
+
+const PrismMark = ({ size = 22 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" style={{ display: 'block' }}>
+    <path d="M4 20 L12 5 L20 20 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+    <line x1="1" y1="14" x2="7" y2="14" stroke="currentColor" strokeWidth="0.8"/>
+    <line x1="17" y1="13" x2="23" y2="11" stroke="#9B4A35" strokeWidth="0.9"/>
+    <line x1="17" y1="14" x2="23" y2="13.5" stroke="#B8803A" strokeWidth="0.9"/>
+    <line x1="17" y1="15" x2="23" y2="15" stroke="#6B7A4A" strokeWidth="0.9"/>
+    <line x1="17" y1="16" x2="23" y2="16.5" stroke="#4E7C6E" strokeWidth="0.9"/>
+    <line x1="17" y1="17" x2="23" y2="19" stroke="#7A4E58" strokeWidth="0.9"/>
+  </svg>
+);
+
+/* ================== NAV ================== */
+const NAV = [
+  { id: "overview", icon: "activity", label: "总览" },
+  { id: "tenants", icon: "building", label: "租户" },
+  { id: "users", icon: "users", label: "用户" },
+  { id: "providers", icon: "layers", label: "Providers" },
+  { id: "runs", icon: "play", label: "Runs" },
+  { id: "guardrails", icon: "shield", label: "护栏" },
+  { id: "plugins", icon: "plugin", label: "Skills" },
+  { id: "billing", icon: "coin", label: "账务" },
+  { id: "audit", icon: "book", label: "审计" },
+  { id: "infra", icon: "server", label: "基础设施" },
+  { id: "observability", icon: "flow", label: "可观测" },
+  { id: "security", icon: "lock", label: "安全" },
+];
+
+/* ================== DATA ================== */
+const TENANTS = [
+  { id: "t1", name: "Hangzhou Research", slug: "hangzhou-research", seats: 24, runs7d: 2840, spend: 1247, quota: 2000, status: "ok", plan: "team", created: "2025-09-14" },
+  { id: "t2", name: "Shanghai Markets", slug: "sh-markets", seats: 41, runs7d: 5120, spend: 3890, quota: 4000, status: "warn", plan: "enterprise", created: "2025-06-02" },
+  { id: "t3", name: "Shenzhen Labs", slug: "sz-labs", seats: 8, runs7d: 412, spend: 184, quota: 500, status: "ok", plan: "team", created: "2026-01-18" },
+  { id: "t4", name: "Beijing Compliance", slug: "bj-compliance", seats: 12, runs7d: 880, spend: 412, quota: 800, status: "ok", plan: "team", created: "2025-11-03" },
+  { id: "t5", name: "Chengdu Pilot", slug: "cd-pilot", seats: 3, runs7d: 28, spend: 14, quota: 100, status: "idle", plan: "starter", created: "2026-03-28" },
+  { id: "t6", name: "Guangzhou Ops", slug: "gz-ops", seats: 18, runs7d: 1902, spend: 870, quota: 1500, status: "ok", plan: "team", created: "2025-10-22" },
+  { id: "t7", name: "Xi'an Research", slug: "xa-research", seats: 6, runs7d: 4, spend: 2, quota: 100, status: "err", plan: "starter", created: "2026-04-01" },
+];
+
+const PROVIDERS = [
+  { n: "Anthropic · sonnet-4-5", region: "us-east", health: "ok", p50: "210ms", p95: "1.8s", rps: 84, err: "0.1%" },
+  { n: "Anthropic · haiku-4-5", region: "us-east", health: "ok", p50: "120ms", p95: "0.9s", rps: 28, err: "0.0%" },
+  { n: "MiniMax · m2", region: "cn-sh", health: "ok", p50: "340ms", p95: "2.1s", rps: 42, err: "0.3%" },
+  { n: "DeepSeek · v3", region: "cn-bj", health: "ok", p50: "280ms", p95: "1.4s", rps: 33, err: "0.1%" },
+  { n: "Kimi · k2", region: "cn-bj", health: "warn", p50: "520ms", p95: "4.2s", rps: 11, err: "2.8%" },
+  { n: "Qwen · max", region: "cn-hz", health: "ok", p50: "290ms", p95: "1.9s", rps: 18, err: "0.2%" },
+];
+
+// Generate a 60-point timeline of health for each provider
+const genHealth = (badAt = []) => Array.from({ length: 60 }, (_, i) => {
+  if (badAt.includes(i)) return "bad";
+  if (Math.abs(badAt[0] - i) <= 2 && badAt[0] != null) return "mid";
+  const r = Math.random();
+  if (r > 0.96) return "mid";
+  return "ok";
+});
+const HEALTH = {
+  "Anthropic · sonnet-4-5": genHealth([]),
+  "Anthropic · haiku-4-5": genHealth([]),
+  "MiniMax · m2": genHealth([28]),
+  "DeepSeek · v3": genHealth([]),
+  "Kimi · k2": genHealth([8, 9, 10, 11, 42, 43, 44, 55, 56, 57, 58]),
+  "Qwen · max": genHealth([37]),
+};
+
+const ALERTS = [
+  { sev: "critical", title: "Kimi k2 连续 502", at: "3 分钟前", tags: "provider · kimi-k2 · cn-bj", msg: "过去 12 分钟里有 18 次 HTTP 502。fallback 已自动切到 deepseek-v3。建议检查 Kimi 状态页。" },
+  { sev: "warn", title: "租户 Shanghai Markets 逼近配额", at: "14 分钟前", tags: "quota · sh-markets", msg: "本月已用 ¥3,890 / ¥4,000 (97%)。按当前速率明天凌晨会触发硬切。" },
+  { sev: "warn", title: "MCP finance-mcp 心跳丢失", at: "32 分钟前", tags: "mcp · t2 · finance-data", msg: "sh-markets 的 finance-data MCP 子进程心跳超时 90s 自动拉起,但 Run r-8f02 已失败。" },
+  { sev: "info", title: "Postgres 主库慢查询 > 2s", at: "1 小时前", tags: "infra · pg-primary", msg: "p95 慢查询 2.4s,命中 runs_by_tenant_idx 的索引下推效率下降,建议周末 REINDEX。" },
+];
+
+const AUDIT = [
+  { d: "2026-04-19", wkd: "Sunday", rows: [
+    { t: "14:28:04", kind: "permission", who: "alice@hz-research", tenant: "hz-research", txt: <>批准执行 <em>rm -rf tmp/cache/</em>,会话 r-5b03,护栏 GR-EXEC-004。</> },
+    { t: "14:22:17", kind: "config", who: "ops@prism", tenant: "—", txt: <>将 Kimi k2 从 Provider fallback 链 <em>第 2 位</em> 移至 <em>第 5 位</em>。</> },
+    { t: "13:47:02", kind: "deny", who: "ben@sh-markets", tenant: "sh-markets", txt: <>拒绝执行 <em>curl -X POST https://external.example.com</em>,触发 GR-PRIVACY-001。</> },
+    { t: "11:05:43", kind: "config", who: "ops@prism", tenant: "hz-research", txt: <>月度预算从 <em>¥500</em> 调至 <em>¥800</em>,理由: Q2 内部研究季。</> },
+    { t: "09:12:55", kind: "permission", who: "cat@hz-research", tenant: "hz-research", txt: <>批准 MCP <em>github</em> 读取私有仓库 <em>prism-core/prompts</em>。</> },
+  ]},
+  { d: "2026-04-18", wkd: "Saturday", rows: [
+    { t: "22:12:08", kind: "deny", who: "system", tenant: "bj-compliance", txt: <>自动拒绝 Agent 输出: 未溯源的数字 <em>38%</em>,触发 GR-COMPLIANCE-002,共 3 次。</> },
+    { t: "19:03:41", kind: "config", who: "ops@prism", tenant: "—", txt: <>新增 IP 白名单 <em>203.0.113.4/29</em>,用途: 杭州 VPN 网关升级。</> },
+    { t: "18:40:00", kind: "permission", who: "esther@sh-markets", tenant: "sh-markets", txt: <>批准 Skill <em>finance-compliance@2.0.0</em> 升级至 v2.0.1。</> },
+    { t: "10:17:22", kind: "deny", who: "dan@visitor", tenant: "cd-pilot", txt: <>拒绝访问 <em>Admin · Users</em> 页面,角色不足 (visitor)。</> },
+  ]},
+  { d: "2026-04-17", wkd: "Friday", rows: [
+    { t: "16:55:10", kind: "config", who: "ops@prism", tenant: "—", txt: <>完成密钥轮换: <em>prism_ws_7f3a…de21</em> → <em>prism_ws_18be…a93c</em>,48 小时双活。</> },
+    { t: "11:02:33", kind: "permission", who: "alice@hz-research", tenant: "hz-research", txt: <>批准 Coordinator 模式的 <em>verifier</em> 子 agent 读取 runs 归档。</> },
+  ]},
+];
+
+/* ================== PAGES ================== */
+function Overview() {
+  return (
+    <div>
+      <div className="page-head">
+        <div className="page-title">Control Room</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>
+          Prism 平台,现在正在发生什么。
+        </div>
+      </div>
+
+      <div className="strip">
+        <div className="cell"><div className="lbl">活跃租户</div><div className="val">7</div><div className="delta up">↑ 1 本月新增</div></div>
+        <div className="cell"><div className="lbl">正在跑的 runs</div><div className="val">12</div><div className="delta">跨 4 个租户</div></div>
+        <div className="cell"><div className="lbl">24h tokens</div><div className="val">14.2M</div><div className="delta up">缓存省下 68%</div></div>
+        <div className="cell"><div className="lbl">24h 花费</div><div className="val">¥412</div><div className="delta dn">↑ 8% vs 昨天</div></div>
+        <div className="cell"><div className="lbl">护栏命中</div><div className="val">89</div><div className="delta">7 次拦截</div></div>
+        <div className="cell"><div className="lbl">未处理告警</div><div className="val" style={{ color: "var(--rust)" }}>3</div><div className="delta" style={{ color: "var(--rust)" }}>1 critical</div></div>
+      </div>
+
+      <div className="two-col">
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="layers" size={14}/>
+            <h3>Providers 健康度</h3>
+            <span className="eyebrow">过去 60 分钟 · 每格 = 1 分钟</span>
+            <div className="spacer"/>
+            <span style={{ display: "flex", gap: 8, fontSize: 11, color: "var(--ink-3)", alignItems: "center" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: "#C8D9CE" }}/> 正常
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: "#E2D6B3", marginLeft: 6 }}/> 抖动
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: "#D9B4A2", marginLeft: 6 }}/> 故障
+            </span>
+          </div>
+          <div className="panel-body">
+            {PROVIDERS.map(p => (
+              <div className="health-grid" key={p.n}>
+                <div className="label">
+                  <span className={`st ${p.health}`}/>
+                  <span style={{ fontSize: 11.5, color: "var(--ink)" }}>{p.n.split(' · ')[1]}</span>
+                  <span style={{ color: "var(--ink-4)", fontSize: 10.5 }}>· {p.region}</span>
+                </div>
+                {HEALTH[p.n].map((v, i) => (
+                  <div key={i} className={`cell health-${v}`} title={`t-${59-i}min`}/>
+                ))}
+              </div>
+            ))}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed var(--line)", display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, fontSize: 11, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
+              {PROVIDERS.map(p => (
+                <div key={p.n}>
+                  <div style={{ color: "var(--ink-4)", fontSize: 10 }}>{p.n.split(' · ')[1]}</div>
+                  <div>p50 {p.p50}</div>
+                  <div>p95 {p.p95}</div>
+                  <div>err {p.err}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="bell" size={14} style={{ color: "var(--rust)" }}/>
+            <h3>告警队列</h3>
+            <span className="eyebrow">未处理 · 4</span>
+            <div className="spacer"/>
+            <button className="btn sm ghost"><Icon name="filter" size={11}/> 全部</button>
+          </div>
+          <div className="panel-body" style={{ padding: 14 }}>
+            {ALERTS.map((a, i) => (
+              <div key={i} className={`alert-card ${a.sev}`}>
+                <div className="sev"/>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "baseline" }}>
+                    <div className="title">{a.title}</div>
+                    <div className="t-time" style={{ marginLeft: "auto" }}>{a.at}</div>
+                  </div>
+                  <div className="meta">{a.tags}</div>
+                  <div className="msg">{a.msg}</div>
+                  <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                    <button className="btn sm">静音 1h</button>
+                    <button className="btn sm ghost">跳去 trace →</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="two-col" style={{ marginTop: 16 }}>
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="building" size={14}/>
+            <h3>租户实时动态</h3>
+            <span className="eyebrow">按 24h 花费排序 · 前 7</span>
+            <div className="spacer"/>
+            <button className="btn sm ghost" onClick={() => window.__setPage?.("tenants")}>全部 →</button>
+          </div>
+          <div className="panel-body tight">
+            {TENANTS.map(t => {
+              const usage = Math.round(t.spend / t.quota * 100);
+              const fillClass = usage > 95 ? "err" : usage > 80 ? "warn" : "";
+              return (
+                <div key={t.id} className="tenant-row">
+                  <div className="name">
+                    <div className="avatar-sq">{t.name.split(' ')[0][0]}</div>
+                    <div>
+                      <div>{t.name}</div>
+                      <div className="mono" style={{ fontWeight: 400, color: "var(--ink-4)" }}>{t.slug}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="badge">{t.plan}</span>
+                  </div>
+                  <div>
+                    <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4 }}>¥{t.spend} / ¥{t.quota}</div>
+                    <div className="p-pill"><div className={`fill ${fillClass}`} style={{ width: `${Math.min(100, usage)}%` }}/></div>
+                  </div>
+                  <div>
+                    <div className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>7d runs</div>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink)" }}>{t.runs7d.toLocaleString()}</div>
+                  </div>
+                  <div><span className={`st ${t.status}`}>{t.status === "ok" ? "正常" : t.status === "warn" ? "逼近" : t.status === "err" ? "故障" : "闲置"}</span></div>
+                  <div style={{ textAlign: "right" }}><Icon name="more" size={14} style={{ color: "var(--ink-4)" }}/></div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="server" size={14}/>
+            <h3>基础设施</h3>
+            <span className="eyebrow">hangzhou-prod</span>
+            <div className="spacer"/>
+            <span className="st ok">整体正常</span>
+          </div>
+          <div className="panel-body">
+            {[
+              { k: "API gateway", v: "4 实例 · p50 38ms · 正常", ok: true },
+              { k: "Coordinator", v: "3 worker · 12 runs 在跑 · 正常", ok: true },
+              { k: "Postgres 16.2", v: "主 42GB · 只读副本 同步滞后 12ms", ok: true },
+              { k: "Redis 7.2", v: "512MB · 命中率 94%", ok: true },
+              { k: "OTel collector", v: "jaeger 1.58 · 吞吐 1.2k span/s", ok: true },
+              { k: "S3 sessions", v: "8.2 GB · 昨天备份 ✓", ok: true },
+              { k: "Subprocess pool", v: "14 活跃 / 20 上限 · 1 次心跳超时", warn: true },
+            ].map((r, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "130px 1fr auto", gap: 14, alignItems: "center", padding: "9px 0", borderBottom: i < 6 ? "1px dashed var(--line)" : "" }}>
+                <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, color: "var(--ink)" }}>{r.k}</div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>{r.v}</div>
+                <span className={`st ${r.warn ? "warn" : "ok"}`}/>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Tenants() {
+  return (
+    <div>
+      <div className="page-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+        <div>
+          <div className="page-title">租户</div>
+          <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>每个租户是一个独立宇宙 —— 数据、配额、provider、密钥,互相看不见。</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn sm"><Icon name="download" size={11}/> 导出</button>
+          <button className="btn sm primary"><Icon name="building" size={11}/> 新建租户</button>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="panel-body tight">
+          <div style={{ padding: "12px 14px", display: "flex", gap: 10, alignItems: "center", borderBottom: "1px solid var(--line)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", background: "var(--bg)", borderRadius: 999, fontSize: 12, color: "var(--ink-3)", flex: 1 }}>
+              <Icon name="search" size={12}/>
+              <span>搜索租户、slug、创建人…</span>
+            </div>
+            <button className="btn sm ghost"><Icon name="filter" size={11}/> plan</button>
+            <button className="btn sm ghost"><Icon name="filter" size={11}/> status</button>
+          </div>
+          <table className="table">
+            <thead><tr><th>租户</th><th>Plan</th><th>座位</th><th>7 天 runs</th><th>本月用量</th><th>护栏</th><th>状态</th><th>创建</th><th></th></tr></thead>
+            <tbody>
+              {TENANTS.map(t => {
+                const pct = Math.round(t.spend / t.quota * 100);
+                return (
+                  <tr key={t.id}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div className="avatar-sq">{t.name.split(' ')[0][0]}</div>
+                        <div>
+                          <div style={{ color: "var(--ink)", fontWeight: 500 }}>{t.name}</div>
+                          <div className="mono" style={{ color: "var(--ink-4)", fontSize: 11 }}>{t.slug}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span className="badge">{t.plan}</span></td>
+                    <td className="mono">{t.seats}</td>
+                    <td className="mono">{t.runs7d.toLocaleString()}</td>
+                    <td>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <div className="mono" style={{ fontSize: 11 }}>¥{t.spend} / ¥{t.quota} · {pct}%</div>
+                        <div className="p-pill" style={{ width: 120 }}>
+                          <div className={`fill ${pct > 95 ? "err" : pct > 80 ? "warn" : ""}`} style={{ width: `${Math.min(100, pct)}%` }}/>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="mono">3 条</td>
+                    <td><span className={`st ${t.status}`}>{t.status === "ok" ? "正常" : t.status === "warn" ? "逼近" : t.status === "err" ? "故障" : "闲置"}</span></td>
+                    <td style={{ color: "var(--ink-3)", fontFamily: "var(--mono)", fontSize: 11 }}>{t.created}</td>
+                    <td><Icon name="more" size={14} style={{ color: "var(--ink-4)", cursor: "pointer" }}/></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Users() {
+  const USERS = [
+    { n: "Alice Chen", e: "alice@hangzhou", r: "workspace-admin", t: "hz-research", last: "刚才", runs: 142, status: "ok" },
+    { n: "Ben Wu", e: "ben@sh-markets", r: "member", t: "sh-markets", last: "2h 前", runs: 88, status: "ok" },
+    { n: "Cat Liu", e: "cat@hz-research", r: "member", t: "hz-research", last: "4h 前", runs: 62, status: "ok" },
+    { n: "Dan Zhou", e: "dan@external", r: "visitor", t: "cd-pilot", last: "昨天", runs: 4, status: "idle" },
+    { n: "Esther Yin", e: "esther@sh-markets", r: "workspace-admin", t: "sh-markets", last: "2 天前", runs: 31, status: "ok" },
+    { n: "Fang Li", e: "fang@bj-compliance", r: "member", t: "bj-compliance", last: "2 天前", runs: 12, status: "ok" },
+    { n: "Gregor Tao", e: "gregor@gz-ops", r: "member", t: "gz-ops", last: "3 天前", runs: 220, status: "ok" },
+    { n: "Helen Ma", e: "helen@xa-research", r: "member", t: "xa-research", last: "7 天前", runs: 2, status: "err" },
+    { n: "Ivan Ge", e: "ivan@external", r: "platform-admin", t: "—", last: "刚才", runs: 0, status: "ok" },
+  ];
+  return (
+    <div>
+      <div className="page-head"><div className="page-title">用户与角色</div><div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>RBAC 三层: 平台 / 工作区 / 成员。Visitor 临时给外部。</div></div>
+      <div className="two-col" style={{ gridTemplateColumns: "1fr 280px" }}>
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="users" size={14}/>
+            <h3>所有用户</h3>
+            <span className="eyebrow">跨全部租户 · {USERS.length}</span>
+            <div className="spacer"/>
+            <button className="btn sm"><Icon name="download" size={11}/> 导出</button>
+            <button className="btn sm primary"><Icon name="users" size={11}/> 邀请</button>
+          </div>
+          <div className="panel-body tight">
+            <table className="table">
+              <thead><tr><th>名字</th><th>邮箱</th><th>角色</th><th>租户</th><th>30d runs</th><th>最后活跃</th><th></th></tr></thead>
+              <tbody>
+                {USERS.map((u, i) => (
+                  <tr key={i}>
+                    <td style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div className="avatar-sq" style={{ width: 24, height: 24, fontSize: 11 }}>{u.n[0]}</div>
+                      <div>
+                        <div style={{ color: "var(--ink)", fontWeight: 500 }}>{u.n}</div>
+                      </div>
+                    </td>
+                    <td className="mono" style={{ color: "var(--ink-3)" }}>{u.e}</td>
+                    <td><span className={`badge ${u.r === "platform-admin" ? "ink" : u.r === "visitor" ? "" : ""}`}>{u.r}</span></td>
+                    <td className="mono" style={{ color: "var(--ink-3)", fontSize: 11 }}>{u.t}</td>
+                    <td className="mono">{u.runs}</td>
+                    <td style={{ color: "var(--ink-3)" }}>{u.last}</td>
+                    <td><Icon name="more" size={14} style={{ color: "var(--ink-4)", cursor: "pointer" }}/></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="panel">
+          <div className="panel-head"><Icon name="shield" size={14}/><h3>角色矩阵</h3></div>
+          <div className="panel-body" style={{ fontSize: 12 }}>
+            {[
+              { r: "platform-admin", c: ["全部租户", "基础设施", "密钥轮换", "审计导出"] },
+              { r: "workspace-admin", c: ["工作区成员", "预算", "Skill", "护栏"] },
+              { r: "member", c: ["自己的会话", "已装 Skill"] },
+              { r: "visitor", c: ["Chat 只读", "30 天自动清理"] },
+            ].map((x, i) => (
+              <div key={i} style={{ paddingBottom: 12, marginBottom: 12, borderBottom: i < 3 ? "1px dashed var(--line)" : "" }}>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink)", marginBottom: 6, fontWeight: 500 }}>{x.r}</div>
+                {x.c.map((y, j) => (
+                  <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--ink-3)", padding: "2px 0" }}>
+                    <Icon name="check" size={11} style={{ color: "var(--teal)" }}/>{y}
+                  </div>
+                ))}
+              </div>
+            ))}
+            <button className="btn sm" style={{ width: "100%", justifyContent: "center" }}>编辑角色矩阵</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Providers() {
+  return (
+    <div>
+      <div className="page-head">
+        <div className="page-title">Providers 与路由</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>大模型只是水龙头。你在这儿决定每个租户喝哪条水、主坏了切哪条。</div>
+      </div>
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-head"><Icon name="layers" size={14}/><h3>全部 providers</h3><div className="spacer"/><button className="btn sm primary"><Icon name="layers" size={11}/> 新增接入</button></div>
+        <div className="panel-body tight">
+          <table className="table">
+            <thead><tr><th>名字</th><th>协议</th><th>Region</th><th>p50</th><th>p95</th><th>RPS</th><th>错误率</th><th>缓存</th><th>状态</th><th></th></tr></thead>
+            <tbody>
+              {PROVIDERS.map((p, i) => (
+                <tr key={i}>
+                  <td style={{ color: "var(--ink)", fontWeight: 500 }}>{p.n}</td>
+                  <td><span className="badge">{p.n.startsWith("Anthropic") ? "anthropic" : "openai"}</span></td>
+                  <td className="mono">{p.region}</td>
+                  <td className="mono">{p.p50}</td>
+                  <td className="mono">{p.p95}</td>
+                  <td className="mono">{p.rps}</td>
+                  <td className="mono" style={{ color: parseFloat(p.err) > 1 ? "var(--rust)" : "var(--ink-3)" }}>{p.err}</td>
+                  <td><Icon name="check" size={11} style={{ color: p.n.startsWith("Anthropic") || p.n.startsWith("MiniMax") ? "var(--teal)" : "var(--ink-4)" }}/></td>
+                  <td><span className={`st ${p.health}`}/></td>
+                  <td><Icon name="more" size={14} style={{ color: "var(--ink-4)", cursor: "pointer" }}/></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <Icon name="flow" size={14}/>
+          <h3>路由策略</h3>
+          <span className="eyebrow">全局默认 · 可按租户覆盖</span>
+          <div className="spacer"/>
+          <button className="btn sm ghost">YAML 编辑 →</button>
+        </div>
+        <div className="panel-body">
+          <div className="kv-grid" style={{ gridTemplateColumns: "140px 1fr" }}>
+            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>默认主链</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              {["sonnet-4-5", "minimax-m2", "deepseek-v3", "qwen-max"].map((x, i) => (
+                <React.Fragment key={x}>
+                  <span className="badge">{x}</span>
+                  {i < 3 && <Icon name="arrowRight" size={11} style={{ color: "var(--ink-4)" }}/>}
+                </React.Fragment>
+              ))}
+            </div>
+            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>切换条件</div>
+            <div style={{ fontSize: 12.5 }}>HTTP 5xx 连续 3 次 <em style={{ color: "var(--ink-3)" }}>或</em> p95 &gt; 5s 持续 2 分钟</div>
+            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>回退行为</div>
+            <div style={{ fontSize: 12.5 }}>切到下一条,<em style={{ color: "var(--ink-3)" }}>同时</em>记一个 warn 级 OTel span + 通知平台 Ops。</div>
+            <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>租户覆盖</div>
+            <div style={{ fontSize: 12.5 }}>
+              <span className="badge">sh-markets</span> 强制 sonnet-4-5 不 fallback,&nbsp;
+              <span className="badge">cd-pilot</span> 只允许 deepseek-v3 (成本硬约束)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Runs() {
+  const RUNS = [
+    { id: "r-5b03", t: "14:32", sess: "Harness 2026 简报", user: "alice", tenant: "hz-research", mode: "coordinator", status: "running", turn: 11, tokens: "28.4k", cache: "72%", cost: "¥0.28" },
+    { id: "r-5b02", t: "14:28", sess: "Kimi k2 健康排查", user: "ops", tenant: "—", mode: "general", status: "running", turn: 3, tokens: "4.1k", cache: "41%", cost: "¥0.03" },
+    { id: "r-5af9", t: "14:12", sess: "沪深合规数字复核", user: "ben", tenant: "sh-markets", mode: "coordinator", status: "failed", turn: 8, tokens: "18.2k", cache: "60%", cost: "¥0.14" },
+    { id: "r-5af4", t: "13:47", sess: "外部接口权限驳回", user: "ben", tenant: "sh-markets", mode: "general", status: "completed", turn: 2, tokens: "1.1k", cache: "—", cost: "¥0.01" },
+    { id: "r-5aef", t: "13:22", sess: "周报生成", user: "cat", tenant: "hz-research", mode: "verifier", status: "completed", turn: 5, tokens: "9.8k", cache: "54%", cost: "¥0.06" },
+    { id: "r-5ae8", t: "11:05", sess: "MiniMax vs DeepSeek 对比", user: "alice", tenant: "hz-research", mode: "general", status: "completed", turn: 5, tokens: "9.8k", cache: "54%", cost: "¥0.06" },
+    { id: "r-5ae0", t: "09:12", sess: "代码审查 · github MCP", user: "cat", tenant: "hz-research", mode: "coordinator", status: "completed", turn: 7, tokens: "14.1k", cache: "68%", cost: "¥0.11" },
+  ];
+  return (
+    <div>
+      <div className="page-head"><div className="page-title">全局 Runs</div><div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>所有租户的所有运行,按时间流过。可以重放、分叉、或者强制停掉。</div></div>
+      <div className="panel">
+        <div className="panel-head" style={{ gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "var(--bg)", borderRadius: 999, fontSize: 12, color: "var(--ink-3)", flex: 1 }}>
+            <Icon name="search" size={12}/>
+            <span>按 run id、会话标题、用户、prompt 片段搜索…</span>
+            <span className="kbd" style={{ fontFamily: "var(--mono)", fontSize: 10, padding: "1px 5px", background: "var(--paper)", borderRadius: 3 }}>⌘ K</span>
+          </div>
+          <button className="btn sm ghost"><Icon name="filter" size={11}/> 租户</button>
+          <button className="btn sm ghost"><Icon name="filter" size={11}/> 状态</button>
+          <button className="btn sm ghost"><Icon name="filter" size={11}/> 时间</button>
+        </div>
+        <div className="panel-body tight">
+          <table className="table">
+            <thead><tr><th>Run</th><th>会话</th><th>用户</th><th>租户</th><th>模式</th><th>状态</th><th>回合</th><th>Tokens</th><th>缓存</th><th>花费</th><th>开始</th><th></th></tr></thead>
+            <tbody>
+              {RUNS.map(r => (
+                <tr key={r.id}>
+                  <td className="mono" style={{ color: "var(--ink)", fontWeight: 500 }}>{r.id}</td>
+                  <td style={{ color: "var(--ink-2)" }}>{r.sess}</td>
+                  <td className="mono" style={{ color: "var(--ink-3)", fontSize: 11.5 }}>{r.user}</td>
+                  <td className="mono" style={{ color: "var(--ink-3)", fontSize: 11.5 }}>{r.tenant}</td>
+                  <td><span className="badge">{r.mode}</span></td>
+                  <td><span className={`st ${r.status === "completed" ? "ok" : r.status === "failed" ? "err" : r.status === "running" ? "warn" : "idle"}`}>{r.status === "completed" ? "完成" : r.status === "failed" ? "失败" : "进行中"}</span></td>
+                  <td className="mono">{r.turn}</td>
+                  <td className="mono">{r.tokens}</td>
+                  <td className="mono" style={{ color: r.cache.includes("%") && parseInt(r.cache) > 60 ? "var(--teal)" : "var(--ink-3)" }}>{r.cache}</td>
+                  <td className="mono">{r.cost}</td>
+                  <td style={{ color: "var(--ink-3)", fontFamily: "var(--mono)", fontSize: 11.5 }}>{r.t}</td>
+                  <td>
+                    <div style={{ display: "flex", gap: 2 }}>
+                      <button className="icon-btn" title="看 trace"><Icon name="eye" size={12}/></button>
+                      <button className="icon-btn" title="重放"><Icon name="refresh" size={12}/></button>
+                      <button className="icon-btn" title="分叉"><Icon name="fork" size={12}/></button>
+                      {r.status === "running" && <button className="icon-btn" title="终止" style={{ color: "var(--rust)" }}><Icon name="x" size={12}/></button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Audit() {
+  const [filt, setFilt] = useState("all");
+  return (
+    <div>
+      <div className="page-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+        <div>
+          <div className="page-title">审计流</div>
+          <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>每一次 ask、每一次 deny、每一次 config 变更 —— 都在这里排成一列,永久保存。</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn sm ghost"><Icon name="filter" size={11}/> 自定义过滤</button>
+          <button className="btn sm"><Icon name="download" size={11}/> CSV</button>
+          <button className="btn sm primary"><Icon name="download" size={11}/> 合规导出 (SOC2)</button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
+        {[
+          { id: "all", label: "全部", c: 428 },
+          { id: "permission", label: "权限", c: 142 },
+          { id: "deny", label: "拦截", c: 14 },
+          { id: "config", label: "配置变更", c: 38 },
+          { id: "key", label: "密钥", c: 6 },
+        ].map(x => (
+          <button key={x.id} onClick={() => setFilt(x.id)} className={`btn sm ${filt === x.id ? "primary" : "ghost"}`}>
+            {x.label}
+            <span style={{ marginLeft: 4, opacity: 0.6, fontFamily: "var(--mono)", fontSize: 10 }}>{x.c}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="two-col" style={{ gridTemplateColumns: "1fr 260px" }}>
+        <div className="panel">
+          <div className="panel-body">
+            <div className="audit-stream">
+              {AUDIT.map((day, i) => (
+                <div key={i} className="audit-day">
+                  <div className="audit-day-head">
+                    <div className="d">{day.d}</div>
+                    <div className="w">· {day.wkd}</div>
+                    <div className="c">{day.rows.length} 条</div>
+                  </div>
+                  {day.rows.filter(r => filt === "all" || r.kind === filt).map((r, j) => (
+                    <div key={j} className={`audit-row ${r.kind}`}>
+                      <div className="t">{r.t}</div>
+                      <div className="glyph">
+                        <Icon name={r.kind === "permission" ? "shield" : r.kind === "deny" ? "x" : "flow"} size={12}/>
+                      </div>
+                      <div className="txt">{r.txt}</div>
+                      <div className="who">{r.who}</div>
+                      <div className="tenant">{r.tenant}</div>
+                      <div className="act"><button className="btn sm ghost" style={{ padding: "3px 8px" }}>详情 →</button></div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              <div style={{ textAlign: "center", padding: 18, fontSize: 12, color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic" }}>
+                往上还有 24,982 条 · 默认保留 90 天 · 合规归档永久
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="panel">
+            <div className="panel-head"><Icon name="clock" size={13}/><h3>30 天概览</h3></div>
+            <div className="panel-body">
+              <div style={{ fontFamily: "var(--serif)", fontSize: 26, color: "var(--ink)", letterSpacing: "-0.01em" }}>18,420</div>
+              <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)", marginBottom: 12 }}>全部审计事件</div>
+              <div className="kv-grid" style={{ gridTemplateColumns: "1fr auto", fontSize: 12 }}>
+                <div className="k">权限 ask</div><div className="v" style={{ color: "var(--ink)" }}>7,104</div>
+                <div className="k">被拦下 (deny)</div><div className="v" style={{ color: "var(--rust)" }}>142</div>
+                <div className="k">配置变更</div><div className="v" style={{ color: "var(--ink)" }}>612</div>
+                <div className="k">密钥事件</div><div className="v" style={{ color: "var(--ink)" }}>48</div>
+                <div className="k">登录</div><div className="v" style={{ color: "var(--ink)" }}>1,284</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-head"><Icon name="alert" size={13} style={{ color: "var(--amber)" }}/><h3>合规钩子</h3></div>
+            <div className="panel-body" style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--ink-2)" }}>
+              <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", color: "var(--ink)", marginBottom: 6 }}>保留策略</div>
+              <div style={{ color: "var(--ink-3)", marginBottom: 14 }}>审计流 90 天热 · 归档 S3 Glacier 永久 · SOC 2 报告季度出一次。</div>
+              <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", color: "var(--ink)", marginBottom: 6 }}>下次导出</div>
+              <div style={{ color: "var(--ink-3)" }}>2026-06-30 · 自动发送给 compliance@</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Placeholder({ title, sub }) {
+  return (
+    <div>
+      <div className="page-head">
+        <div className="page-title">{title}</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>{sub}</div>
+      </div>
+      <div className="panel" style={{ padding: 60, textAlign: "center", color: "var(--ink-3)" }}>
+        <div style={{ display: "inline-flex", color: "var(--ink-4)", marginBottom: 18 }}><PrismMark size={48}/></div>
+        <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 16, color: "var(--ink)" }}>这一页还在草稿里</div>
+        <div style={{ marginTop: 8, fontSize: 13, color: "var(--ink-3)" }}>Overview、租户、用户、Providers、Runs、审计这几页已经能走通了。</div>
+        <button className="btn sm" style={{ marginTop: 14 }} onClick={() => window.__setPage?.("overview")}>回到总览</button>
+      </div>
+    </div>
+  );
+}
+
+const PAGES = {
+  overview: { r: () => <Overview/>, title: "总览" },
+  tenants: { r: () => <Tenants/>, title: "租户" },
+  users: { r: () => <Users/>, title: "用户" },
+  providers: { r: () => <Providers/>, title: "Providers" },
+  runs: { r: () => <Runs/>, title: "Runs" },
+  guardrails: { r: () => <Placeholder title="护栏编辑器" sub="写规则、绑 Skill、按租户分发。编辑器形态跟 Monaco 类似,会落到另一轮设计。"/>, title: "护栏" },
+  plugins: { r: () => <Placeholder title="Skills 与插件审核" sub="私有 registry、待审核队列、签名密钥管理。"/>, title: "Skills" },
+  billing: { r: () => <Placeholder title="账务" sub="租户配额、月度账单、导出到飞书财务 / Stripe。"/>, title: "账务" },
+  audit: { r: () => <Audit/>, title: "审计" },
+  infra: { r: () => <Placeholder title="基础设施" sub="Postgres、Redis、OTel、备份、子进程池。"/>, title: "基础设施" },
+  observability: { r: () => <Placeholder title="可观测性" sub="Trace 瓀布图在用户端的 Observability 页。"/>, title: "可观测" },
+  security: { r: () => <Placeholder title="安全" sub="API Key、IP 白名单、SSO、密钥轮换。"/>, title: "安全" },
+};
+
+function App() {
+  const [page, setPage] = useState(localStorage.getItem("prism-admin-page") || "overview");
+  useEffect(() => { localStorage.setItem("prism-admin-page", page); window.__setPage = setPage; }, [page]);
+  const cur = PAGES[page];
+
+  // Sub-tabs for the current section (overview is alone; others could have tabs)
+  const tabsFor = {
+    overview: [{ id: "live", label: "此刻" }, { id: "24h", label: "过去 24 小时" }, { id: "7d", label: "过去 7 天" }, { id: "30d", label: "过去 30 天" }],
+    tenants: [{ id: "all", label: "全部" }, { id: "team", label: "Team" }, { id: "enterprise", label: "Enterprise" }, { id: "starter", label: "Starter" }],
+    users: [{ id: "all", label: "全部" }, { id: "admins", label: "管理员" }, { id: "visitors", label: "访客" }, { id: "invited", label: "待激活" }],
+    providers: [{ id: "all", label: "全部" }, { id: "anthropic", label: "Anthropic 协议" }, { id: "openai", label: "OpenAI 协议" }, { id: "routing", label: "路由" }],
+    runs: [{ id: "live", label: "正在跑的" }, { id: "all", label: "全部" }, { id: "failed", label: "失败" }, { id: "archived", label: "归档" }],
+    audit: [{ id: "stream", label: "事件流" }, { id: "reports", label: "合规报表" }, { id: "retention", label: "保留策略" }],
+  };
+  const [tab, setTab] = useState(0);
+  useEffect(() => { setTab(0); }, [page]);
+
+  return (
+    <div className="admin-app">
+      <aside className="rail">
+        <div className="brand"><PrismMark size={24}/></div>
+        {NAV.map(n => (
+          <div key={n.id} className={`rail-item ${page === n.id ? "active" : ""}`} onClick={() => setPage(n.id)}>
+            <Icon name={n.icon} size={16}/>
+            <span className="lbl">{n.label}</span>
+          </div>
+        ))}
+        <div style={{ flex: 1 }}/>
+        <div className="rail-item" title="回到用户端" onClick={() => location.href = "Prism.html"}>
+          <Icon name="arrowRight" size={16}/>
+        </div>
+      </aside>
+
+      <main className="admin-main">
+        <div className="admin-top">
+          <div>
+            <h1>{cur.title}</h1>
+            <div className="sub">· prism control room</div>
+          </div>
+          <div className="spacer"/>
+          <div className="env-chip"><span className="dot"/> prod · hangzhou-1</div>
+          <div className="search">
+            <Icon name="search" size={12}/>
+            <span>搜索 runs、租户、user…</span>
+            <span className="kbd">⌘ K</span>
+          </div>
+          <button className="icon-btn"><Icon name="bell" size={14}/></button>
+          <button className="icon-btn"><Icon name="refresh" size={14}/></button>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 13 }}>I</div>
+        </div>
+
+        {tabsFor[page] && (
+          <div className="admin-tabs">
+            {tabsFor[page].map((t, i) => (
+              <div key={i} className={`tab ${i === tab ? "active" : ""}`} onClick={() => setTab(i)}>{t.label}</div>
+            ))}
+          </div>
+        )}
+
+        <div className="admin-body">{cur.r()}</div>
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

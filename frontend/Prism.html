@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-density="comfortable">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Prism · Agent Operating System</title>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="apiClient.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo } = React;
+
+/* ============ ICONS ============ */
+const Icon = ({ name, size = 16, stroke = 1.5, style = {} }) => {
+  const s = { width: size, height: size, stroke: "currentColor", fill: "none", strokeWidth: stroke, strokeLinecap: "round", strokeLinejoin: "round", display: "inline-block" };
+  const paths = {
+    search: <><circle cx="7" cy="7" r="5"/><path d="M11 11l4 4"/></>,
+    plus: <><path d="M8 3v10M3 8h10"/></>,
+    chat: <><path d="M2 4h12v8H6l-3 2V4z"/></>,
+    sessions: <><path d="M3 4h10M3 8h10M3 12h6"/></>,
+    settings: <><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4"/></>,
+    usage: <><path d="M2 13h12M4 10v3M7 7v6M10 9v4M13 4v9"/></>,
+    skills: <><path d="M8 1l6 3-6 3-6-3 6-3zM2 8l6 3 6-3M2 11l6 3 6-3"/></>,
+    plugin: <><path d="M5 2v3M11 2v3M3 5h10v4a4 4 0 01-4 4H7a4 4 0 01-4-4V5zM8 13v2"/></>,
+    admin: <><path d="M8 1l6 2v4c0 4-2.5 7-6 8-3.5-1-6-4-6-8V3l6-2z"/></>,
+    chevron: <><path d="M6 3l5 5-5 5"/></>,
+    close: <><path d="M3 3l10 10M13 3L3 13"/></>,
+    check: <><path d="M3 8l3 3 7-7"/></>,
+    attach: <><path d="M12 7l-5 5a3 3 0 01-4-4l6-6a2 2 0 013 3l-6 6a1 1 0 01-1-1l5-5"/></>,
+    shield: <><path d="M8 1l5 2v4c0 3-2 6-5 7-3-1-5-4-5-7V3l5-2zM6 8l1.5 1.5L10 7"/></>,
+    alert: <><path d="M8 2l7 12H1L8 2zM8 6v4M8 12v0.5"/></>,
+    info: <><circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 5v0.5"/></>,
+    clock: <><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1"/></>,
+    book: <><path d="M3 2h10v12H5a2 2 0 01-2-2V2zM3 12a2 2 0 012-2h8"/></>,
+    terminal: <><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M5 6l2 2-2 2M9 10h3"/></>,
+    folder: <><path d="M2 4h4l1 2h7v7H2V4z"/></>,
+    pin: <><path d="M8 2l3 3-1 1v3l2 2H2l2-2V6l-1-1 3-3h2z"/></>,
+    globe: <><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/></>,
+    copy: <><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M2 11V3a2 2 0 012-2h7"/></>,
+    fork: <><circle cx="4" cy="3" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="8" cy="13" r="2"/><path d="M4 5v3a2 2 0 002 2h4a2 2 0 002-2V5"/></>,
+    refresh: <><path d="M2 8a6 6 0 0110-4.5L13 5M14 8a6 6 0 01-10 4.5L3 11M13 2v3h-3M3 14v-3h3"/></>,
+    arrowUp: <><path d="M8 13V3M3 8l5-5 5 5"/></>,
+    arrowRight: <><path d="M3 8h10M9 4l4 4-4 4"/></>,
+    more: <><circle cx="4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12" cy="8" r="1.2"/></>,
+    layers: <><path d="M8 2l6 3-6 3-6-3 6-3zM2 8l6 3 6-3M2 11l6 3 6-3"/></>,
+    send: <><path d="M2 8l12-5-5 12-2-5-5-2z"/></>,
+    eye: <><path d="M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2"/></>,
+    download: <><path d="M8 2v8M4 7l4 4 4-4M2 14h12"/></>,
+    upload: <><path d="M8 14V6M4 9l4-4 4 4M2 2h12"/></>,
+    filter: <><path d="M2 3h12l-4.5 6v4.5L6.5 12V9L2 3z"/></>,
+    flask: <><path d="M6 2h4M7 2v4l-4 7a1 1 0 001 1.5h8A1 1 0 0013 13L9 6V2"/></>,
+    flow: <><rect x="2" y="2" width="5" height="4" rx="1.5"/><rect x="9" y="10" width="5" height="4" rx="1.5"/><path d="M4 6v4M4 10h9"/></>,
+    link: <><path d="M9 7a3 3 0 00-4 0L3 9a3 3 0 004 4l1-1M7 9a3 3 0 004 0l2-2a3 3 0 00-4-4L8 4"/></>,
+    sparkle: <><path d="M8 2v4M8 10v4M2 8h4M10 8h4M4 4l2 2M10 10l2 2M4 12l2-2M10 6l2-2"/></>,
+  };
+  return <svg viewBox="0 0 16 16" style={{ ...s, ...style }}>{paths[name] || null}</svg>;
+};
+
+const PrismMark = ({ size = 22 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" style={{ display: 'block' }}>
+    <path d="M4 20 L12 5 L20 20 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" fill="none"/>
+    <line x1="1" y1="14" x2="7" y2="14" stroke="currentColor" strokeWidth="0.8"/>
+    <line x1="17" y1="13" x2="23" y2="11" stroke="#9B4A35" strokeWidth="0.9"/>
+    <line x1="17" y1="14" x2="23" y2="13.5" stroke="#B8803A" strokeWidth="0.9"/>
+    <line x1="17" y1="15" x2="23" y2="15" stroke="#6B7A4A" strokeWidth="0.9"/>
+    <line x1="17" y1="16" x2="23" y2="16.5" stroke="#4E7C6E" strokeWidth="0.9"/>
+    <line x1="17" y1="17" x2="23" y2="19" stroke="#7A4E58" strokeWidth="0.9"/>
+  </svg>
+);
+
+const PrismGlyph = ({ size = 140 }) => (
+  <svg viewBox="0 0 180 160" width={size} height={size} fill="none">
+    <line x1="10" y1="90" x2="70" y2="90" stroke="currentColor" strokeWidth="0.8" opacity="0.5"/>
+    <path d="M70 90 L100 35 L130 90 Z" stroke="currentColor" strokeWidth="1.1" fill="none" strokeLinejoin="round"/>
+    <g opacity="0.9">
+      <line x1="130" y1="90" x2="172" y2="66" stroke="#9B4A35" strokeWidth="0.9"/>
+      <line x1="130" y1="90" x2="174" y2="78" stroke="#B8803A" strokeWidth="0.9"/>
+      <line x1="130" y1="90" x2="174" y2="90" stroke="#6B7A4A" strokeWidth="0.9"/>
+      <line x1="130" y1="90" x2="174" y2="102" stroke="#4E7C6E" strokeWidth="0.9"/>
+      <line x1="130" y1="90" x2="172" y2="114" stroke="#7A4E58" strokeWidth="0.9"/>
+    </g>
+    <circle cx="10" cy="90" r="2" fill="currentColor"/>
+  </svg>
+);
+
+/* ============ DATA ============ */
+const I18N = {
+  zh: {
+    brand: "Prism 棱镜",
+    nav: { chat: "对话", sessions: "会话", settings: "设置", usage: "用量", skills: "技能市场", plugins: "插件构建", admin: "管理", observability: "可观测性" },
+    composer_placeholder: "想聊什么…",
+    send: "发送", cancel: "取消", allow: "允许", deny: "拒绝",
+    newChat: "新对话", searchSession: "搜索会话",
+    today: "今天", yesterday: "昨天", thisWeek: "本周", earlier: "更早",
+    permissionTitle: "这一步需要你点头",
+    permissionBody: "我想运行一个会改动磁盘的命令,你看一眼。",
+    planTitle: "这次的计划",
+    loginTitle: "回到 Prism",
+    loginSub: "让大模型变得可靠、可治理、可扩展 —— 而不是只会幻觉的聊天框。",
+    email: "邮箱", password: "密码", signIn: "登录", signUp: "创建账号",
+    emptyTitle: "随便聊点什么。",
+    emptyBody: "我会把你的问题分派给对的 Agent —— 研究、规划、执行或验证。不用想太多。",
+    tryExample: "或者从这里开始",
+    examples: [
+      "读一下 executor/,帮我理解 TAOR 主循环是怎么转的",
+      "上周的 runs 表现如何?哪里花钱最多?",
+      "写一份 2026 年 Harness Engineering 的内部简报",
+      "帮我搞一个只读 shell 的 Skill,就叫 readonly-shell"
+    ]
+  }
+};
+
+const SESSIONS = [
+  { id: "s1", title: "Harness 2026 简报", preview: "嗯,让我先读一下 DOC-00…", time: "14:32", group: "today", pinned: true, status: "running" },
+  { id: "s2", title: "MiniMax vs DeepSeek 的账", preview: "按最近 7 天,DeepSeek 平均每次 run 便宜大概 38%。", time: "11:05", group: "today" },
+  { id: "s3", title: "飞书 bot 配对失败", preview: "看起来是 webhook 回调超时。", time: "昨天", group: "yesterday" },
+  { id: "s4", title: "Compaction 回合组测试", preview: "VERDICT: PASS — 配对完整。", time: "昨天", group: "yesterday" },
+  { id: "s5", title: "只读 shell Skill", preview: "SKILL.md 骨架已经生成好。", time: "3 天前", group: "thisWeek" },
+  { id: "s6", title: "Coordinator 崩溃恢复", preview: "从 step 3 成功恢复。", time: "5 天前", group: "thisWeek" },
+  { id: "s7", title: "4 月用量月报", preview: "总共 412 runs,省了大约 ¥318。", time: "上月", group: "earlier" }
+];
+
+const PROVIDERS = [
+  { id: "p1", name: "Anthropic", protocol: "anthropic", model: "claude-sonnet-4-5", health: "ok", default: true, cache: true, cost: "¥0.021/1K" },
+  { id: "p2", name: "MiniMax", protocol: "anthropic", model: "minimax-m2", health: "ok", cache: true, cost: "¥0.008/1K" },
+  { id: "p3", name: "DeepSeek", protocol: "openai", model: "deepseek-v3", health: "ok", cache: false, cost: "¥0.004/1K" },
+  { id: "p4", name: "Kimi", protocol: "openai", model: "kimi-k2", health: "warn", cache: false, cost: "¥0.012/1K" },
+  { id: "p5", name: "Qwen", protocol: "openai", model: "qwen3-max", health: "ok", cache: false, cost: "¥0.006/1K" }
+];
+
+const MCP_SERVERS = [
+  { id: "m1", name: "fs-local", cmd: "npx -y @mcp/fs", enabled: true, tools: 8, source: "系统" },
+  { id: "m2", name: "github", cmd: "gh-mcp", enabled: true, tools: 14, source: "你" },
+  { id: "m3", name: "finance-data", cmd: "prism-finance-mcp", enabled: false, tools: 22, source: "你" },
+  { id: "m4", name: "postgres-ro", cmd: "mcp-postgres --readonly", enabled: true, tools: 5, source: "你" }
+];
+
+const IM_CHANNELS = [
+  { id: "feishu", name: "飞书 · Lark", status: "bound", user: "alice@example.com", lastAt: "2 分钟前" },
+  { id: "wecom", name: "企业微信", status: "unbound", user: "—", lastAt: "—" },
+  { id: "telegram", name: "Telegram", status: "pairing", user: "@alice_ops", lastAt: "pair code 872193" }
+];
+
+const SKILLS = [
+  { id: "sk1", name: "readonly-shell", desc: "Bash 白名单封装,只让 agent 读不让写。", version: "1.2.0", installed: true, author: "Prism core" },
+  { id: "sk2", name: "markdown-brief", desc: "生成克制的三栏 briefing,附溯源。", version: "0.4.1", installed: false, author: "@tan" },
+  { id: "sk3", name: "finance-compliance", desc: "投研合规护栏 —— 凡是数字必溯源。", version: "2.0.0", installed: true, author: "@prism-finance" },
+  { id: "sk4", name: "otel-diagnose", desc: "从 OTel trace 里挑出慢工具调用。", version: "0.7.3", installed: false, author: "@obs-ops" },
+  { id: "sk5", name: "cache-boundary-opt", desc: "帮你找 prompt cache 的最佳 boundary。", version: "1.0.0", installed: false, author: "Prism core" },
+  { id: "sk6", name: "poco-importer", desc: "把 Poco v1 的会话 JSON 导进来。", version: "0.2.1", installed: false, author: "@farion1231" }
+];
+
+const PLAN_STEPS = [
+  { id: 1, agent: "research", desc: "读一下 DOC-00,找出 Harness 的四个支柱", status: "done", duration: "12 秒" },
+  { id: 2, agent: "research", desc: "跟 Claude Code 的 query.ts 对一下,确认 TAOR 就是它", status: "done", duration: "18 秒" },
+  { id: 3, agent: "planner", desc: "规划一份三段式:问题 → 方案 → 验证", status: "active", duration: "正在做" },
+  { id: 4, agent: "general", desc: "按规划起草正文,带引用", status: "pending" },
+  { id: 5, agent: "verifier", desc: "对抗性验证,挑毛病", status: "pending" }
+];
+
+const RECENT_RUNS = [
+  { session: "Harness 2026 简报", mode: "coordinator", status: "completed", tokens: "28,410", cache: "72%", cost: "¥0.28", turn: 11, at: "14:32" },
+  { session: "MiniMax vs DeepSeek", mode: "general", status: "completed", tokens: "9,820", cache: "54%", cost: "¥0.06", turn: 5, at: "11:05" },
+  { session: "飞书配对排查", mode: "explore", status: "completed", tokens: "4,120", cache: "31%", cost: "¥0.03", turn: 3, at: "09:47" },
+  { session: "Compaction 测试", mode: "verifier", status: "completed", tokens: "12,004", cache: "68%", cost: "¥0.11", turn: 7, at: "昨天 22:12" },
+  { session: "Coordinator 崩溃恢复", mode: "coordinator", status: "failed", tokens: "15,220", cache: "60%", cost: "¥0.14", turn: 8, at: "昨天 19:03" }
+];
+
+/* ============ SHELL ============ */
+const NAV = [
+  { id: "chat", icon: "chat" },
+  { id: "sessions", icon: "sessions" },
+  { id: "usage", icon: "usage" },
+  { id: "skills", icon: "skills" },
+  { id: "plugins", icon: "plugin" },
+  { id: "admin", icon: "admin" },
+  { id: "observability", icon: "flow" },
+  { id: "settings", icon: "settings" }
+];
+
+function Sidebar({ page, setPage, t }) {
+  const [q, setQ] = useState("");
+  const groups = useMemo(() => {
+    const f = SESSIONS.filter(s => s.title.includes(q));
+    const out = {}; f.forEach(s => (out[s.group] = out[s.group] || []).push(s));
+    return out;
+  }, [q]);
+  const gOrder = ["today", "yesterday", "thisWeek", "earlier"];
+
+  return (
+    <aside className="sidebar">
+      <div style={{ padding: "16px 16px 12px" }}>
+        <div className="logo"><PrismMark size={22}/><span>{t.brand}</span><span className="badge" style={{ marginLeft: "auto" }}>v0.4</span></div>
+      </div>
+      <div style={{ padding: "0 12px 10px" }}>
+        <button className="btn primary" style={{ width: "100%", justifyContent: "center" }}>
+          <Icon name="plus" size={12}/> {t.newChat}
+        </button>
+        <div style={{ marginTop: 10, position: "relative" }}>
+          <Icon name="search" size={13} style={{ position: "absolute", left: 14, top: 12, color: "var(--ink-4)" }}/>
+          <input className="input" placeholder={t.searchSession} value={q} onChange={e => setQ(e.target.value)}
+            style={{ paddingLeft: 34, background: "transparent", fontSize: 12.5 }}/>
+        </div>
+      </div>
+      <nav style={{ padding: "2px 10px 4px" }}>
+        {NAV.slice(0, 3).map(it => (
+          <div key={it.id} className={`nav-item ${page === it.id ? "active" : ""}`} onClick={() => setPage(it.id)}>
+            <Icon name={it.icon} size={13}/><span>{t.nav[it.id]}</span>
+          </div>
+        ))}
+      </nav>
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
+        {gOrder.map(g => !groups[g]?.length ? null : (
+          <div key={g} style={{ marginBottom: 8 }}>
+            <div className="eyebrow" style={{ padding: "8px 12px 6px" }}>{t[g]} · {groups[g].length}</div>
+            {groups[g].map((s, i) => (
+              <div key={s.id} className={`session-item ${i === 0 && g === "today" ? "active" : ""}`}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {s.pinned && <Icon name="pin" size={10} style={{ color: "var(--amber)" }}/>}
+                  <span className="title" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.title}</span>
+                  {s.status === "running" && <span className="dot live"/>}
+                </div>
+                <div className="preview">{s.preview}</div>
+                <div className="meta"><span>{s.time}</span></div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div style={{ padding: "8px 10px", borderTop: "1px solid var(--line)" }}>
+        {NAV.slice(3).map(it => (
+          <div key={it.id} className={`nav-item ${page === it.id ? "active" : ""}`} onClick={() => setPage(it.id)}>
+            <Icon name={it.icon} size={13}/><span>{t.nav[it.id]}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ padding: "12px 16px", borderTop: "1px solid var(--line)", display: "flex", gap: 10, alignItems: "center" }}>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 13 }}>A</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>Alice Chen</div>
+          <div style={{ fontSize: 10.5, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>hangzhou-prod</div>
+        </div>
+        <Icon name="more" size={14} style={{ color: "var(--ink-3)", cursor: "pointer" }}/>
+      </div>
+    </aside>
+  );
+}
+
+function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm }) {
+  const titles = { chat: "Harness 2026 简报", sessions: t.nav.sessions, usage: t.nav.usage, skills: t.nav.skills, plugins: t.nav.plugins, admin: t.nav.admin, observability: t.nav.observability, settings: t.nav.settings };
+  return (
+    <div className="topbar">
+      {page === "chat" && <span className="crumb">会话 /</span>}
+      <div className="title">{titles[page]}</div>
+      <div style={{ flex: 1 }}/>
+      {page === "chat" && <>
+        <span className="meta-chip"><span className="dot live"/> sonnet-4-5 · coordinator</span>
+      </>}
+      <button className="icon-btn" onClick={onPerm} title="权限请求"><Icon name="shield" size={14}/></button>
+      {page === "chat" && <button className="icon-btn" onClick={() => setShowPlan(!showPlan)} title="计划面板" style={{ background: showPlan ? "var(--panel)" : "" }}><Icon name="layers" size={14}/></button>}
+      <button className="icon-btn" onClick={() => setLang(lang === "zh" ? "en" : "zh")}><Icon name="globe" size={14}/></button>
+      <button className="icon-btn"><Icon name="more" size={14}/></button>
+    </div>
+  );
+}
+
+/* ============ CHAT ============ */
+function ToolCard({ tool, initOpen = false }) {
+  const [open, setOpen] = useState(initOpen);
+  return (
+    <div className="tool-card" data-open={open}>
+      <div className="tool-head" onClick={() => setOpen(!open)}>
+        <Icon name="chevron" size={11} style={{ transition: "transform 0.2s", transform: open ? "rotate(90deg)" : "" }}/>
+        <Icon name={tool.icon || "terminal"} size={13} style={{ color: "var(--ink-3)" }}/>
+        <span className="name">{tool.name}</span>
+        <span className="preview">{tool.preview}</span>
+        {tool.status === "running" && <span className="tool-status running"><span className="dot warn"/> 进行中</span>}
+        {tool.status === "ok" && <span className="tool-status ok"><Icon name="check" size={11}/> {tool.duration}</span>}
+      </div>
+      <div className="tool-body">
+        {tool.input && <><div className="tool-section-label">输入</div><pre className="tool-code">{tool.input}</pre></>}
+        {tool.output && <><div className="tool-section-label" style={{ marginTop: 10 }}>输出</div><pre className="tool-code">{tool.output}</pre></>}
+        {tool.meta && <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 11, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
+          {Object.entries(tool.meta).map(([k, v]) => <div key={k}><span style={{ color: "var(--ink-4)" }}>{k}</span> <b style={{ color: "var(--ink)", fontWeight: 500 }}>{v}</b></div>)}
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+function HarnessNotice({ kind, title, detail }) {
+  return (
+    <div className={`harness-notice ${kind === "danger" ? "danger" : kind === "muted" ? "muted" : ""}`}>
+      <Icon name={kind === "danger" ? "alert" : kind === "compaction" ? "layers" : "info"} size={14} style={{ marginTop: 2, flexShrink: 0, color: kind === "danger" ? "var(--danger)" : "var(--amber)" }}/>
+      <div><div className="title">{title}</div><div style={{ marginTop: 4, lineHeight: 1.55 }}>{detail}</div></div>
+    </div>
+  );
+}
+
+function Msg({ m, first }) {
+  const isUser = m.role === "user";
+  return (
+    <div className={`msg-wrap ${isUser ? "user-wrap" : "agent-wrap"}`}>
+      <div className={`msg ${isUser ? "user-msg" : "agent-msg"}`}>
+        <div className="body">
+          {!isUser && first && (
+            <div className="agent-tag">
+              <span className="mk"><PrismMark size={14}/></span>
+              <span className="t">Prism</span>
+              <span style={{ opacity: 0.5 }}>·</span>
+              <span>{m.at}</span>
+            </div>
+          )}
+          {isUser ? (
+            <div className="bubble">{m.content}</div>
+          ) : (
+            <div className="content">{m.content}{m.streaming && <span className="caret"/>}</div>
+          )}
+          {m.harness?.map((h, i) => <HarnessNotice key={i} {...h}/>)}
+          {m.tools?.map((t, i) => <ToolCard key={i} tool={t} initOpen={t.initOpen}/>)}
+          {!isUser && !m.streaming && (
+            <div style={{ marginTop: 14, display: "flex", gap: 2, marginLeft: -6 }}>
+              <button className="icon-btn" title="复制"><Icon name="copy" size={12}/></button>
+              <button className="icon-btn" title="再试一次"><Icon name="refresh" size={12}/></button>
+              <button className="icon-btn" title="分叉"><Icon name="fork" size={12}/></button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Composer({ t, onSend }) {
+  const [v, setV] = useState("");
+  const ref = useRef(null);
+  useEffect(() => { if (ref.current) { ref.current.style.height = "auto"; ref.current.style.height = Math.min(180, ref.current.scrollHeight) + "px"; } }, [v]);
+  const submit = () => { if (v.trim()) { onSend(v); setV(""); } };
+  return (
+    <div className="composer-wrap">
+      <div className="composer">
+        <textarea ref={ref} placeholder={t.composer_placeholder} value={v}
+          onChange={e => setV(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}/>
+        <div className="tools">
+          <button className="icon-btn" title="附件"><Icon name="attach" size={14}/></button>
+          <button className="icon-btn" title="技能"><Icon name="skills" size={14}/></button>
+          <button className="icon-btn" title="MCP"><Icon name="plugin" size={14}/></button>
+          <div style={{ flex: 1 }}/>
+          <button className="btn primary sm" onClick={submit} style={{ padding: "7px 14px", borderRadius: 999 }} disabled={!v.trim()}>
+            <Icon name="arrowUp" size={12}/>
+          </button>
+        </div>
+      </div>
+      <div className="hint">Enter 发送 · Shift + Enter 换行</div>
+    </div>
+  );
+}
+
+function PlanPanel({ t }) {
+  return (
+    <aside className="plan-panel">
+      <div style={{ marginBottom: 18 }}>
+        <div className="eyebrow" style={{ marginBottom: 4 }}>正在做</div>
+        <div style={{ fontFamily: "var(--serif)", fontSize: 18, color: "var(--ink)", fontStyle: "italic" }}>{t.planTitle}</div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--ink-3)", marginBottom: 6 }}>
+        <span>2 / 5 已完成</span><span style={{ fontFamily: "var(--mono)" }}>~ 48s</span>
+      </div>
+      <div className="progress" style={{ marginBottom: 14 }}><div className="bar" style={{ width: "48%" }}/></div>
+      {PLAN_STEPS.map(s => (
+        <div key={s.id} className={`plan-step ${s.status}`}>
+          <div className="idx">{s.status === "done" ? "✓" : s.id}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="desc">{s.desc}</div>
+            <div className="meta">{s.agent}{s.duration ? ` · ${s.duration}` : ""}</div>
+          </div>
+        </div>
+      ))}
+      <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--line)" }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>Harness 这边</div>
+        {[
+          { t: "压缩了一轮", d: "Turn 9 的回合组从 18.2k tokens 压到了 9.4k,tool_use↔tool_result 配对没断。", c: "var(--ink-3)" },
+          { t: "护栏响了", d: "数字 '38%' 没溯源,我已经要求它补上引用。", c: "var(--amber)" }
+        ].map((e, i) => (
+          <div key={i} style={{ padding: "10px 0", borderTop: i > 0 ? "1px dashed var(--line)" : "" }}>
+            <div style={{ fontSize: 12.5, color: "var(--ink)", fontFamily: "var(--serif)", fontStyle: "italic" }}>{e.t}</div>
+            <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.55 }}>{e.d}</div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function PermissionModal({ onClose, t }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="head">
+          <div className="eyebrow" style={{ color: "var(--amber)", marginBottom: 6 }}>等一下</div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 22, color: "var(--ink)", fontWeight: 500, letterSpacing: "-0.01em" }}>{t.permissionTitle}</div>
+          <div style={{ fontSize: 13.5, color: "var(--ink-3)", marginTop: 8, fontFamily: "var(--serif)", fontStyle: "italic" }}>{t.permissionBody}</div>
+        </div>
+        <div className="body">
+          <div style={{ background: "var(--bg)", borderRadius: 12, padding: "14px 16px", fontFamily: "var(--mono)", fontSize: 12.5 }}>
+            <div style={{ color: "var(--ink-4)", fontSize: 10.5, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.12em" }}>$ bash</div>
+            <div style={{ color: "var(--ink)" }}>rm -rf tmp/cache/</div>
+          </div>
+          <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 14px", fontSize: 13 }}>
+            <span style={{ color: "var(--ink-3)" }}>谁</span><span style={{ color: "var(--ink)" }}>general · planner</span>
+            <span style={{ color: "var(--ink-3)" }}>依赖</span><span className="mono" style={{ color: "var(--ink)", fontSize: 12 }}>readonly-shell@1.2.0</span>
+            <span style={{ color: "var(--ink-3)" }}>护栏</span><span style={{ color: "var(--ink)" }}>GR-EXEC-004 · 破坏性操作白名单</span>
+            <span style={{ color: "var(--ink-3)" }}>为什么</span><span style={{ color: "var(--ink-2)", fontFamily: "var(--serif)", fontStyle: "italic" }}>清理上次 run 的临时缓存,腾点磁盘空间</span>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 12.5, color: "var(--ink-3)", cursor: "pointer" }}>
+            <input type="checkbox" style={{ accentColor: "var(--ink)" }}/>
+            这个会话内都别再问我 (审计还是会记)
+          </label>
+        </div>
+        <div className="foot">
+          <button className="btn" onClick={onClose}>{t.deny}</button>
+          <button className="btn primary" onClick={onClose}>{t.allow}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatPage({ t }) {
+  const [msgs, setMsgs] = useState([
+    { role: "user", at: "14:31", content: <>帮我写一份 <code>Harness Engineering 2026</code> 的内部简报。参考 <code>docs/DOC-00-v4.md</code>,语气像 Monocle 杂志那种克制,三段式。最后给我溯源。</> },
+    { role: "agent", at: "14:31", content: <><p>好咧。我脑子里的步骤是这样:<em className="aside">先读原文,再想结构,再起草,最后自己挑一遍毛病。</em>分给 research / general / verifier 三个 agent,我这儿收口。</p></>,
+      harness: [{ kind: "compaction", title: "顺手压了一下", detail: "前面那轮对话太长,从 18.2k tokens 压到 9.4k。配对没断,缓存 prefix 也还在 —— 不用担心。" }] },
+    { role: "agent", at: "14:31", content: <><p>读了一下,DOC-00 的结构很清楚。几个关键点我挑出来了:</p></>,
+      tools: [
+        { name: "fs.read", icon: "book", status: "ok", duration: "412ms", preview: "docs/DOC-00-v4.md 头 200 行",
+          input: 'path: "docs/DOC-00-v4.md"\nrange: [1, 200]',
+          output: '# DOC-00 · Prism v2 核心原则\n\n## 1. Harness 不是胶水,是操作系统\n模型给你裸能力,Harness 给你治理。没有 Harness,agent 只是个会幻觉的 shell。\n\n## 2. 可观测性是一等公民\n每一次 tool_use、每一次 compaction、每一次护栏触发,都必须可追溯。',
+          meta: { tokens: 1240, cache: "hit" } },
+        { name: "fs.grep", icon: "search", status: "ok", duration: "89ms", preview: '"TAOR" 在 docs/ 里有 12 处',
+          input: 'pattern: "TAOR|Think→Act→Observe→Reason"\npath: "docs/"',
+          output: 'docs/DOC-00-v4.md:412: ## 4.3 The TAOR loop\ndocs/DOC-04-harness.md:88: TAOR 回合 = 一次 LLM 调用 + 最多 N 次工具调用' }
+      ]
+    },
+    { role: "agent", at: "14:32", content: <><p>四个支柱基本清楚了:</p>
+      <p><strong>Harness Runtime</strong> —— 就是 TAOR 主循环加子进程隔离,对标 Claude Code 的 <code>query.ts</code>。<em className="aside">简单说,就是一个不停转的 while 循环,外加一个不敢乱动磁盘的沙盒。</em></p>
+      <p><strong>四层压缩</strong> —— 从去重到摘要,一层层把上下文瘦身。<strong>Coordinator 模式</strong> —— 一个调度官带一群 agent。<strong>权限引擎</strong> —— 每次写操作都过一遍 <em className="aside">允许 / 拒绝 / 问一下</em>。</p></>,
+      harness: [{ kind: "danger", title: "护栏响了一下", detail: "我刚才打算写个 \"38%\",但没说这个数哪来的。我去找下出处再告诉你。" }] },
+    { role: "agent", at: "14:32", content: <><p>那结构我想这样:</p>
+      <p>一、<em className="aside">问题。</em>为什么 2026 年了,光有大模型还不够。二、<em className="aside">方案。</em>Harness 的四个子系统各自解决什么。三、<em className="aside">验证。</em>对照 Poco v1 的旧数据,Harness 把成本降到了什么水平。</p>
+      <p>正在让 general agent 起草正文,稍等<span className="caret"/></p></>,
+      streaming: true,
+      tools: [{ name: "coordinator.dispatch", icon: "fork", status: "running", preview: "交给 general (writer) —— 已等 4 秒",
+        input: 'target: "general"\ntask: "按三段式起草 Harness 简报,带溯源"\nbudget: 6000 tokens',
+        meta: { parent: "turn 11", child: "r-5b03-c2" } }] }
+  ]);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {msgs.map((m, i) => {
+          const prev = msgs[i-1];
+          const first = m.role === "agent" && (!prev || prev.role !== "agent");
+          return <Msg key={i} m={m} first={first}/>;
+        })}
+      </div>
+      <Composer t={t} onSend={(x) => setMsgs([...msgs, { role: "user", at: "now", content: x }])}/>
+    </div>
+  );
+}
+
+/* ============ SECONDARY PAGES (lean) ============ */
+function SessionsPage() {
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">会话</div>
+        <div className="page-sub">每一次对话都是一次 Run,都能随时回来看、分叉、或者把 trace 打开。</div>
+      </div>
+      <table className="table">
+        <thead><tr><th></th><th>会话</th><th>模式</th><th>状态</th><th>Tokens</th><th>缓存</th><th>花费</th><th>回合</th><th>最后</th></tr></thead>
+        <tbody>
+          {RECENT_RUNS.concat(RECENT_RUNS).map((r, i) => (
+            <tr key={i}>
+              <td>{i % 3 === 0 && <Icon name="pin" size={11} style={{ color: "var(--amber)" }}/>}</td>
+              <td style={{ color: "var(--ink)", fontWeight: 500 }}>{r.session}</td>
+              <td><span className="badge">{r.mode}</span></td>
+              <td>{r.status === "completed" ? <span style={{ color: "var(--teal)" }}>● 完成</span> : <span style={{ color: "var(--danger)" }}>● 失败</span>}</td>
+              <td className="mono">{r.tokens}</td>
+              <td className="mono" style={{ color: parseInt(r.cache) > 60 ? "var(--teal)" : "var(--ink-3)" }}>{r.cache}</td>
+              <td className="mono">{r.cost}</td>
+              <td className="mono" style={{ color: "var(--ink-3)" }}>{r.turn}</td>
+              <td style={{ color: "var(--ink-3)" }}>{r.at}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UsagePage() {
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">用量</div>
+        <div className="page-sub">Prompt cache 帮你省钱。你真正该盯的数字是 <em className="serif-italic">缓存命中率</em>。</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
+        <div className="stat-card feature">
+          <div className="label">缓存命中</div>
+          <div className="val">72.4<span style={{ fontSize: 20, color: "var(--ink-4)" }}>%</span></div>
+          <div className="trend">+6.1 vs 上周</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 3, marginTop: 16, height: 40 }}>
+            {[62, 58, 64, 71, 68, 72, 74].map((v, i) => <div key={i} style={{ flex: 1, background: i === 6 ? "var(--amber)" : "var(--ink-3)", height: `${v}%`, borderRadius: 2 }}/>)}
+          </div>
+        </div>
+        <div className="stat-card"><div className="label">7 天 tokens</div><div className="val">8.42M</div><div className="trend down">+18%</div></div>
+        <div className="stat-card"><div className="label">省下的</div><div className="val">6.10M</div><div className="trend">≈ ¥318</div></div>
+        <div className="stat-card"><div className="label">活跃 runs</div><div className="val">3</div><div className="trend" style={{ color: "var(--ink-3)" }}>本月 412</div></div>
+      </div>
+      <div className="section-title">分模型看</div>
+      <table className="table">
+        <thead><tr><th>Provider</th><th>模型</th><th>输入</th><th>输出</th><th>命中</th><th>花费</th><th>状态</th></tr></thead>
+        <tbody>
+          {PROVIDERS.map(p => (
+            <tr key={p.id}>
+              <td style={{ color: "var(--ink)", fontWeight: 500 }}>{p.name}{p.default && <span className="badge ink" style={{ marginLeft: 8, fontSize: 10 }}>默认</span>}</td>
+              <td className="mono">{p.model}</td>
+              <td className="mono">{Math.floor(Math.random()*900+100)}k</td>
+              <td className="mono">{Math.floor(Math.random()*90+20)}k</td>
+              <td className="mono">{p.cache ? `${Math.floor(Math.random()*30+50)}%` : <span style={{ color: "var(--ink-4)" }}>—</span>}</td>
+              <td className="mono">{p.cost}</td>
+              <td><span className={`dot ${p.health === "ok" ? "live" : "warn"}`}/> <span style={{ marginLeft: 6, fontSize: 12, color: p.health === "ok" ? "var(--teal)" : "var(--amber)" }}>{p.health}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SkillsPage() {
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">技能市场</div>
+        <div className="page-sub">Skill 就是一份 Markdown 加可选的钩子。本地装、GitHub 装、签过名的 registry 装都行。</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+        {SKILLS.map(sk => (
+          <div key={sk.id} className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{sk.name}</div>
+                <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 3, fontFamily: "var(--mono)" }}>{sk.author} · v{sk.version}</div>
+              </div>
+              {sk.installed && <span className="badge teal">装了</span>}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--ink-3)", lineHeight: 1.6, minHeight: 42, fontFamily: "var(--serif)", fontStyle: "italic" }}>{sk.desc}</div>
+            <div style={{ display: "flex", gap: 6, marginTop: "auto", paddingTop: 10 }}>
+              {sk.installed ? <><button className="btn sm ghost"><Icon name="eye" size={11}/> 看看</button><button className="btn sm danger" style={{ marginLeft: "auto" }}>关掉</button></> :
+                <><button className="btn sm ghost"><Icon name="book" size={11}/> 读</button><button className="btn sm primary" style={{ marginLeft: "auto" }}>装</button></>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PluginsPage() {
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">插件构建</div>
+        <div className="page-sub">把 MCP、Skill、Agent 捏成一个包发出去。Prism 会帮你签名。</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 20 }}>
+        <div className="card" style={{ padding: 22 }}>
+          <div className="eyebrow" style={{ marginBottom: 14 }}>Manifest</div>
+          <label><div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>名字</div><input className="input" defaultValue="finance-ops-pack"/></label>
+          <label style={{ display: "block", marginTop: 10 }}><div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>描述</div><textarea className="textarea" defaultValue="给投研团队的一揽子能力:finance-data MCP + 合规护栏 Skill + 只读 shell。"/></label>
+          <div className="eyebrow" style={{ marginTop: 20, marginBottom: 10 }}>里面有什么</div>
+          {["finance-data MCP (22 tools)", "Skill · finance-compliance", "Skill · readonly-shell", "Agent · equity-researcher"].map((l, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", borderRadius: 10, background: "var(--bg)", marginBottom: 6, fontSize: 13, color: "var(--ink-2)" }}>
+              <Icon name="plugin" size={13} style={{ color: "var(--ink-3)" }}/>{l}
+            </div>
+          ))}
+        </div>
+        <div className="card" style={{ padding: 22 }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>生成的 manifest</div>
+          <pre className="tool-code" style={{ maxHeight: 360 }}>{`name: finance-ops-pack
+version: 0.3.1
+license: Apache-2.0
+author: "@prism-finance"
+
+components:
+  mcp:
+    - id: finance-data
+      command: prism-finance-mcp
+  skills:
+    - finance-compliance@2.0.0
+    - readonly-shell@1.2.0
+  agents:
+    - file: agents/equity-researcher.md
+
+guardrails:
+  - GR-COMPLIANCE-002
+  - GR-EXEC-004
+
+budget:
+  per_run_tokens: 60000
+  per_run_cost_rmb: 1.50`}</pre>
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button className="btn"><Icon name="flask" size={12}/> 预演</button>
+            <button className="btn primary" style={{ marginLeft: "auto" }}><Icon name="upload" size={12}/> 发布 v0.3.1</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPage() {
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">管理</div>
+        <div className="page-sub">工作区、座位、预算、审计。</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 28 }}>
+        <div className="stat-card"><div className="label">成员</div><div className="val">24</div><div className="trend" style={{ color: "var(--ink-3)" }}>3 个待激活</div></div>
+        <div className="stat-card"><div className="label">本月花费</div><div className="val">¥1,247</div><div className="trend">-12%</div></div>
+        <div className="stat-card"><div className="label">审计事件 (30d)</div><div className="val">18,420</div><div className="trend" style={{ color: "var(--ink-3)" }}>14 次被拒</div></div>
+      </div>
+      <div className="section-title">成员</div>
+      <table className="table">
+        <thead><tr><th>名字</th><th>邮箱</th><th>角色</th><th>预算</th><th>用了</th><th>最后</th></tr></thead>
+        <tbody>
+          {[
+            { n: "Alice Chen", e: "alice@…", r: "admin", b: 500, u: 328, l: "刚才", me: true },
+            { n: "Ben Wu", e: "ben@…", r: "成员", b: 200, u: 142, l: "2h 前" },
+            { n: "Cat Liu", e: "cat@…", r: "成员", b: 200, u: 198, l: "4h 前" },
+            { n: "Dan Zhou", e: "dan@…", r: "访客", b: 50, u: 12, l: "昨天" },
+            { n: "Esther Yin", e: "esther@…", r: "成员", b: 200, u: 87, l: "2d 前" }
+          ].map((m, i) => (
+            <tr key={i}>
+              <td style={{ color: "var(--ink)", fontWeight: 500 }}>{m.n} {m.me && <span className="badge" style={{ marginLeft: 6, fontSize: 10 }}>你</span>}</td>
+              <td className="mono" style={{ color: "var(--ink-3)" }}>{m.e}</td>
+              <td><span className={`badge ${m.r === "admin" ? "ink" : ""}`}>{m.r}</span></td>
+              <td className="mono">¥{m.b}</td>
+              <td>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div className="progress" style={{ width: 80 }}><div className="bar" style={{ width: `${Math.min(100, m.u / m.b * 100)}%`, background: m.u / m.b > 0.8 ? "var(--amber)" : "var(--ink)" }}/></div>
+                  <span className="mono" style={{ fontSize: 11.5 }}>¥{m.u}</span>
+                </div>
+              </td>
+              <td style={{ color: "var(--ink-3)" }}>{m.l}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ObsPage() {
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">可观测性</div>
+        <div className="page-sub">每一次工具调用,每一次压缩,每一次护栏 —— 都是一个 OTel span。</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
+        <div className="stat-card"><div className="label">p50 工具延迟</div><div className="val">214<span style={{ fontSize: 16, color: "var(--ink-4)" }}>ms</span></div><div className="trend">-18ms</div></div>
+        <div className="stat-card"><div className="label">p95 工具延迟</div><div className="val">1.8<span style={{ fontSize: 16, color: "var(--ink-4)" }}>s</span></div><div className="trend down">+0.3s</div></div>
+        <div className="stat-card"><div className="label">重试风暴 (24h)</div><div className="val">2</div><div className="trend" style={{ color: "var(--amber)" }}>↑ kimi</div></div>
+        <div className="stat-card"><div className="label">崩溃恢复率</div><div className="val">100<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div><div className="trend">3/3</div></div>
+      </div>
+      <div className="section-title">Trace · run r-5b03</div>
+      <div className="card" style={{ padding: 20, fontFamily: "var(--mono)", fontSize: 12 }}>
+        {[
+          { n: "coordinator.turn", d: "1.4s", w: 100, o: 0, c: "var(--ink)" },
+          { n: "  research.agent", d: "620ms", w: 44, o: 2, c: "var(--teal)" },
+          { n: "    fs.read", d: "412ms", w: 29, o: 4, c: "var(--teal-soft)" },
+          { n: "    fs.grep", d: "89ms", w: 6, o: 36, c: "var(--teal-soft)" },
+          { n: "  compaction.T2", d: "180ms", w: 13, o: 46, c: "var(--amber)" },
+          { n: "  planner.agent", d: "380ms", w: 27, o: 60, c: "var(--plum)" },
+          { n: "  guardrail.check", d: "12ms", w: 2, o: 88, c: "var(--amber)" }
+        ].map((s, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "220px 1fr 80px", gap: 10, alignItems: "center", padding: "6px 0" }}>
+            <span style={{ color: "var(--ink)", whiteSpace: "pre" }}>{s.n}</span>
+            <div style={{ position: "relative", height: 8, background: "var(--bg)", borderRadius: 3 }}>
+              <div style={{ position: "absolute", left: `${s.o}%`, width: `${s.w}%`, height: "100%", background: s.c, borderRadius: 3 }}/>
+            </div>
+            <span style={{ color: "var(--ink-3)", textAlign: "right" }}>{s.d}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage() {
+  const [sec, setSec] = useState("providers");
+  const tabs = [
+    { id: "providers", label: "Providers", icon: "layers" },
+    { id: "mcp", label: "MCP", icon: "plugin" },
+    { id: "im", label: "IM", icon: "chat" },
+    { id: "guard", label: "护栏", icon: "shield" },
+    { id: "ws", label: "工作区", icon: "folder" },
+    { id: "keys", label: "API keys", icon: "link" }
+  ];
+  return (
+    <div className="page" style={{ padding: 0, display: "flex", flex: 1, overflow: "hidden" }}>
+      <div style={{ width: 180, padding: "28px 0 20px", flexShrink: 0 }}>
+        <div className="eyebrow" style={{ padding: "0 20px 10px" }}>设置</div>
+        {tabs.map(it => (
+          <div key={it.id} className={`nav-item ${sec === it.id ? "active" : ""}`} onClick={() => setSec(it.id)} style={{ margin: "0 12px" }}>
+            <Icon name={it.icon} size={13}/>{it.label}
+          </div>
+        ))}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "24px 40px 50px" }}>
+        {sec === "providers" && <>
+          <div className="page-head"><div className="page-title">Providers</div><div className="page-sub">带着你自己的 key 来。Anthropic 协议、OpenAI 协议都通。</div></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {PROVIDERS.map(p => (
+              <div key={p.id} className="card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 18 }}>{p.name[0]}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontFamily: "var(--serif)", fontSize: 16, color: "var(--ink)" }}>{p.name}</span>
+                    {p.default && <span className="badge ink">默认</span>}
+                    <span className="badge">{p.protocol}</span>
+                    <span className={`dot ${p.health === "ok" ? "live" : "warn"}`}/>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 4, fontFamily: "var(--mono)" }}>{p.model} · {p.cost} · 缓存 {p.cache ? "✓" : "—"}</div>
+                </div>
+                <button className="btn sm ghost">测一下</button>
+                <button className="btn sm">编辑</button>
+              </div>
+            ))}
+          </div>
+        </>}
+        {sec === "mcp" && <>
+          <div className="page-head"><div className="page-title">MCP servers</div><div className="page-sub">接任何说 MCP 协议的服务 —— 本地子进程或者远程都行。</div></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {MCP_SERVERS.map(s => (
+              <div key={s.id} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{s.name}</span>
+                    <span className="badge">{s.tools} tools</span>
+                    <span className="badge">{s.source}</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4, fontFamily: "var(--mono)" }}>$ {s.cmd}</div>
+                </div>
+                <div className={`switch ${s.enabled ? "on" : ""}`}/>
+              </div>
+            ))}
+          </div>
+        </>}
+        {sec === "im" && <>
+          <div className="page-head"><div className="page-title">IM bots</div><div className="page-sub">把 Prism 接到飞书、企微、Telegram 里。每条消息都变成一个 Session。</div></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {IM_CHANNELS.map(c => (
+              <div key={c.id} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "var(--serif)", fontSize: 15, color: "var(--ink)" }}>{c.name}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 3, fontFamily: "var(--mono)" }}>{c.status} · {c.user} · {c.lastAt}</div>
+                </div>
+                {c.status === "bound" && <span className="badge teal">已绑</span>}
+                {c.status === "pairing" && <span className="badge amber">配对中</span>}
+                {c.status === "unbound" && <button className="btn sm primary">配对</button>}
+              </div>
+            ))}
+          </div>
+        </>}
+        {sec === "guard" && <>
+          <div className="page-head"><div className="page-title">护栏</div><div className="page-sub">工具调用之前过一遍。可以只警告,也可以直接拦下来。</div></div>
+          {[
+            { id: "GR-COMPLIANCE-002", name: "数字必须有出处", mode: "警告", hits: 34 },
+            { id: "GR-EXEC-004", name: "破坏性 shell 操作白名单", mode: "问一下", hits: 12 },
+            { id: "GR-PRIVACY-001", name: "防 PII 泄露", mode: "拦截", hits: 4 },
+            { id: "GR-COST-003", name: "单次 run 预算 ¥1.50", mode: "警告", hits: 2 }
+          ].map(g => (
+            <div key={g.id} className="card" style={{ padding: 16, marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ flex: 1 }}>
+                <div className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{g.id}</div>
+                <div style={{ fontSize: 13.5, color: "var(--ink-2)", marginTop: 2, fontFamily: "var(--serif)", fontStyle: "italic" }}>{g.name}</div>
+              </div>
+              <span className="badge amber">{g.mode}</span>
+              <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{g.hits} 次</span>
+              <div className="switch on"/>
+            </div>
+          ))}
+        </>}
+        {sec === "ws" && <>
+          <div className="page-head"><div className="page-title">工作区</div><div className="page-sub">自部署的那些细节。</div></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {[["部署", "docker-compose · hangzhou-prod"], ["区域", "cn-hangzhou-a"], ["Postgres", "v16.2 · 42 GB"], ["Redis", "v7.2 · 512 MB"], ["OTel", "jaeger 1.58 · 正常"], ["备份", "每天 03:00 · 上次: ✓"], ["存储", "s3://prism-sessions · 8.2 GB"], ["key", "prism_ws_7f3a…de21"]].map(([k, v]) => (
+              <div key={k} className="card" style={{ padding: 16 }}>
+                <div className="eyebrow" style={{ marginBottom: 5 }}>{k}</div>
+                <div className="mono" style={{ fontSize: 12.5, color: "var(--ink)" }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </>}
+        {sec === "keys" && <>
+          <div className="page-head"><div className="page-title">API keys</div><div className="page-sub">给 CLI / SDK / 外部 agent 用的个人 key。</div></div>
+          <table className="table">
+            <thead><tr><th>名字</th><th>前缀</th><th>创建</th><th>上次用</th><th>权限</th><th></th></tr></thead>
+            <tbody>
+              {[["cli-laptop", "pk_live_7f3a…", "2 月前", "14:02", "rw"], ["ci-pipeline", "pk_live_de21…", "1 月前", "昨天", "ro"], ["obs-exporter", "pk_live_18be…", "3 周前", "3 天前", "ro"]].map(([n, p, c, l, s], i) => (
+                <tr key={i}><td style={{ color: "var(--ink)", fontWeight: 500 }}>{n}</td><td className="mono">{p}</td><td style={{ color: "var(--ink-3)" }}>{c}</td><td style={{ color: "var(--ink-3)" }}>{l}</td><td><span className="badge">{s}</span></td><td><button className="btn sm danger">撤销</button></td></tr>
+              ))}
+            </tbody>
+          </table>
+        </>}
+      </div>
+    </div>
+  );
+}
+
+/* ============ LOGIN & EMPTY ============ */
+function LoginScreen({ onSignIn, onToast, t }) {
+  const [mode, setMode]         = useState("login"); // "login" | "register"
+  const [email, setEmail]       = useState("alice@example.com");
+  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [errMsg, setErrMsg]     = useState("");
+
+  async function handleSubmit() {
+    setErrMsg("");
+    if (!email.trim() || !password.trim()) { setErrMsg("邮箱和密码不能为空"); return; }
+    setLoading(true);
+    try {
+      if (mode === "login") {
+        await window.PrismAPI.login(email, password);
+        onSignIn();
+      } else {
+        if (!username.trim()) { setErrMsg("用户名不能为空"); setLoading(false); return; }
+        await window.PrismAPI.register({ email, username, password, invite_code: inviteCode || undefined });
+        // auto-login after register
+        await window.PrismAPI.login(email, password);
+        onSignIn();
+      }
+    } catch (err) {
+      const status = err.status;
+      if (status === 401) setErrMsg("邮箱或密码错误");
+      else if (status === 422) setErrMsg("输入格式有问题,请检查邮箱和密码");
+      else setErrMsg(err.message || "登录失败,请重试");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleForgot(e) {
+    e.preventDefault();
+    if (onToast) onToast({ id: Date.now(), title: "还没做", body: "忘记密码功能还没实现,请联系管理员重置。" });
+  }
+
+  return (
+    <div className="login-wrap">
+      <div className="login-left">
+        <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.28 }} viewBox="0 0 800 900" preserveAspectRatio="xMidYMid slice">
+          <line x1="-50" y1="440" x2="300" y2="440" stroke="#E8E4DB" strokeWidth="0.8" opacity="0.7"/>
+          <path d="M300 440 L460 180 L620 440 Z" stroke="#E8E4DB" strokeWidth="1" fill="none" strokeLinejoin="round"/>
+          {[-120, -70, -20, 30, 80, 130].map((y, i) => {
+            const cs = ["#9B4A35", "#B8803A", "#6B7A4A", "#4E7C6E", "#7A4E58", "#AE8690"];
+            return <line key={i} x1="620" y1="440" x2="900" y2={440 + y} stroke={cs[i]} strokeWidth="0.9" opacity="0.75"/>;
+          })}
+          <circle cx="-50" cy="440" r="3" fill="#E8E4DB"/>
+        </svg>
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <div className="logo" style={{ color: "var(--paper)" }}><PrismMark size={26}/><span style={{ fontSize: 20 }}>Prism · 棱镜</span></div>
+        </div>
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <div className="eyebrow" style={{ color: "rgba(232,228,219,0.55)", marginBottom: 12 }}>No. 04 · 2026</div>
+          <h1 style={{ fontFamily: "var(--serif)", fontSize: 48, fontWeight: 400, lineHeight: 1.15, margin: 0, letterSpacing: "-0.02em", color: "var(--paper)", maxWidth: 520 }}>
+            <em style={{ fontStyle: "italic" }}>Harness</em> 不是胶水,<br/>它是操作系统。
+          </h1>
+          <p style={{ fontFamily: "var(--serif)", fontSize: 16, color: "rgba(232,228,219,0.75)", maxWidth: 460, marginTop: 20, lineHeight: 1.65 }}>
+            把大模型变成可靠、可治理、可扩展的协作者。自托管,协议原生,对每一家 provider 开放。
+          </p>
+          <div style={{ display: "flex", gap: 30, marginTop: 40 }}>
+            {[["412", "每月 runs"], ["72%", "缓存命中"], ["18k", "每天审计事件"]].map(([k, v]) => (
+              <div key={k}>
+                <div style={{ fontFamily: "var(--serif)", fontSize: 28, color: "var(--paper)" }}>{k}</div>
+                <div style={{ fontSize: 11, color: "rgba(232,228,219,0.55)", textTransform: "uppercase", letterSpacing: "0.14em", marginTop: 3 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ position: "relative", zIndex: 1, fontSize: 11.5, color: "rgba(232,228,219,0.5)", fontFamily: "var(--mono)" }}>prism v0.4.2 · self-hosted · hangzhou-prod</div>
+      </div>
+      <div className="login-right">
+        <div style={{ maxWidth: 380, width: "100%", margin: "0 auto" }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>{mode === "login" ? "登录" : "创建账号"}</div>
+          <h2 style={{ fontFamily: "var(--serif)", fontSize: 30, color: "var(--ink)", fontWeight: 400, margin: 0, letterSpacing: "-0.015em" }}>{t.loginTitle}</h2>
+          <p style={{ fontSize: 14, color: "var(--ink-3)", marginTop: 10, lineHeight: 1.6, fontFamily: "var(--serif)", fontStyle: "italic" }}>{t.loginSub}</p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 26 }}>
+            <label>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.email}</div>
+              <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
+            </label>
+            {mode === "register" && (
+              <label>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>用户名</div>
+                <input className="input" value={username} onChange={e => setUsername(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
+              </label>
+            )}
+            <label>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>{t.password}</div>
+              <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
+            </label>
+            {mode === "register" && (
+              <label>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>邀请码 <span style={{ color: "var(--ink-4)" }}>(选填)</span></div>
+                <input className="input" placeholder="PRISM-XXXXXXXX" value={inviteCode} onChange={e => setInviteCode(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleSubmit()}/>
+              </label>
+            )}
+            {mode === "login" && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                <label style={{ display: "flex", gap: 6, color: "var(--ink-3)", cursor: "pointer" }}>
+                  <input type="checkbox" defaultChecked style={{ accentColor: "var(--ink)" }}/>保持登录
+                </label>
+                <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)" }} onClick={handleForgot}>忘了?</a>
+              </div>
+            )}
+          </div>
+
+          {errMsg && (
+            <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--rust-soft)", borderRadius: 8, fontSize: 12.5, color: "var(--rust)", border: "1px solid rgba(155,74,53,0.25)" }}>
+              {errMsg}
+            </div>
+          )}
+
+          <button className="btn primary" style={{ width: "100%", justifyContent: "center", padding: "11px", marginTop: 18 }}
+            onClick={handleSubmit} disabled={loading}>
+            {loading
+              ? <span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>请稍等…</span>
+              : <><Icon name="arrowRight" size={12}/> {mode === "login" ? t.signIn : t.signUp}</>}
+          </button>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0", color: "var(--ink-4)", fontSize: 11 }}>
+            <div className="hr" style={{ flex: 1 }}/><span>或者</span><div className="hr" style={{ flex: 1 }}/>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn" style={{ flex: 1, justifyContent: "center" }}>飞书 SSO</button>
+            <button className="btn" style={{ flex: 1, justifyContent: "center" }}>OIDC</button>
+          </div>
+
+          <div style={{ marginTop: 28, fontSize: 12.5, color: "var(--ink-3)", textAlign: "center" }}>
+            {mode === "login"
+              ? <>还没有工作区? <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)", marginLeft: 4 }} onClick={e => { e.preventDefault(); setMode("register"); setErrMsg(""); }}>{t.signUp}</a></>
+              : <>已有账号? <a href="#" style={{ color: "var(--ink)", borderBottom: "1px solid var(--line-strong)", marginLeft: 4 }} onClick={e => { e.preventDefault(); setMode("login"); setErrMsg(""); }}>回去登录</a></>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyChat({ t, onPick }) {
+  return (
+    <div className="empty">
+      <div style={{ color: "var(--ink-3)" }}><PrismGlyph size={150}/></div>
+      <h3>{t.emptyTitle}</h3>
+      <p>{t.emptyBody}</p>
+      <div className="eyebrow" style={{ marginBottom: 14, marginTop: 4 }}>{t.tryExample}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, maxWidth: 680, width: "100%" }}>
+        {t.examples.map((ex, i) => (
+          <button key={i} className="card" onClick={() => onPick?.(ex)} style={{ padding: "14px 18px", textAlign: "left", cursor: "pointer", display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <Icon name="arrowRight" size={13} style={{ color: "var(--ink-4)", marginTop: 3, flexShrink: 0 }}/>
+            <span style={{ fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.55, fontFamily: "var(--serif)", fontStyle: "italic" }}>{ex}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============ TOASTS & TWEAKS ============ */
+function Toasts({ toasts, onClose }) {
+  return (
+    <div className="toast-stack">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast ${t.kind || ""}`} onClick={() => onClose(t.id)}>
+          <div style={{ flex: 1 }}>
+            <div className="title">{t.title}</div>
+            <div>{t.body}</div>
+          </div>
+          <Icon name="close" size={11} style={{ color: "var(--ink-4)", cursor: "pointer", marginTop: 3 }}/>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Tweaks({ tweaks, setTweaks }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const h = e => { if (e.data?.type === "__activate_edit_mode") setVisible(true); if (e.data?.type === "__deactivate_edit_mode") setVisible(false); };
+    window.addEventListener("message", h);
+    window.parent.postMessage({ type: "__edit_mode_available" }, "*");
+    return () => window.removeEventListener("message", h);
+  }, []);
+  const up = (k, v) => { setTweaks({ ...tweaks, [k]: v }); window.parent.postMessage({ type: "__edit_mode_set_keys", edits: { [k]: v } }, "*"); };
+  if (!visible) return null;
+  return (
+    <div className={`tweaks ${collapsed ? "collapsed" : ""}`}>
+      <div className="head" onClick={() => setCollapsed(!collapsed)}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}><PrismMark size={14}/><span style={{ fontFamily: "var(--serif)", fontSize: 14, color: "var(--ink)", fontStyle: "italic" }}>Tweaks</span></div>
+        <Icon name="chevron" size={11} style={{ transform: collapsed ? "rotate(90deg)" : "" }}/>
+      </div>
+      <div className="body">
+        <div><div className="label">主题</div><div className="seg">{["light", "dark"].map(v => <button key={v} className={tweaks.theme === v ? "on" : ""} onClick={() => up("theme", v)}>{v}</button>)}</div></div>
+        <div><div className="label">密度</div><div className="seg">{["compact", "comfortable", "spacious"].map(v => <button key={v} className={tweaks.density === v ? "on" : ""} onClick={() => up("density", v)}>{v}</button>)}</div></div>
+        <div><div className="label">对话气泡圆角</div><div className="seg">{["soft", "softer", "pill"].map(v => <button key={v} className={tweaks.bubble === v ? "on" : ""} onClick={() => up("bubble", v)}>{v}</button>)}</div></div>
+        <div><div className="label">语气</div><div className="seg">{["同事", "管家", "冷静"].map(v => <button key={v} className={tweaks.tone === v ? "on" : ""} onClick={() => up("tone", v)}>{v}</button>)}</div></div>
+        <div><div className="label">布局</div><div className="seg">{["focus", "split"].map(v => <button key={v} className={tweaks.layout === v ? "on" : ""} onClick={() => up("layout", v)}>{v}</button>)}</div></div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ APP ============ */
+function App() {
+  const [tweaks, setTweaks] = useState({ theme: "light", density: "comfortable", bubble: "soft", tone: "同事", layout: "split" });
+  const [lang, setLang] = useState("zh");
+  // screen: "loading" | "login" | "empty" | "app"
+  const [screen, setScreen] = useState("loading");
+  const [page, setPage] = useState("chat");
+  const [showPlan, setShowPlan] = useState(true);
+  const [perm, setPerm] = useState(false);
+  const [toasts, setToasts] = useState([
+    { id: 1, title: "顺手压了一下", body: "Turn 9 的上下文,9.4k → 4.2k。" },
+    { id: 2, kind: "danger", title: "护栏响了", body: "数字 '38%' 没出处,让 agent 去找一下。" }
+  ]);
+
+  // Auto-restore login from sessionStorage token
+  useEffect(() => {
+    async function bootstrap() {
+      if (window.PrismAPI && window.PrismAPI.isAuthenticated()) {
+        try {
+          await window.PrismAPI.me();
+          setScreen("app");
+        } catch {
+          setScreen("login");
+        }
+      } else {
+        setScreen("login");
+      }
+    }
+    bootstrap();
+
+    // Redirect to login on unauthorized events from apiClient
+    const handler = () => setScreen("login");
+    window.addEventListener("prism:unauthorized", handler);
+    return () => window.removeEventListener("prism:unauthorized", handler);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", tweaks.theme);
+    document.documentElement.setAttribute("data-density", tweaks.density);
+  }, [tweaks]);
+
+  // bubble roundness tweak
+  useEffect(() => {
+    const map = { soft: "18px 18px 6px 18px", softer: "22px 22px 22px 22px", pill: "22px 22px 6px 22px" };
+    document.documentElement.style.setProperty("--bubble-radius", map[tweaks.bubble]);
+  }, [tweaks.bubble]);
+
+  const t = I18N[lang] || I18N.zh;
+
+  function addToast(toast) {
+    setToasts(prev => [...prev, toast]);
+  }
+
+  if (screen === "loading") {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "var(--bg)", gap: 12, color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 16 }}>
+        <PrismMark size={24}/>正在恢复…
+      </div>
+    );
+  }
+
+  if (screen === "login") {
+    return (<><LoginScreen t={t} onSignIn={() => setScreen("app")} onToast={addToast}/><Tweaks tweaks={tweaks} setTweaks={setTweaks}/></>);
+  }
+
+  const sidebarMode = tweaks.layout === "split" && page === "chat" && showPlan ? "split" : "normal";
+
+  return (
+    <>
+      <div className="app" data-sidebar={sidebarMode}>
+        <Sidebar page={page} setPage={setPage} t={t}/>
+        <main className="main">
+          <Topbar page={page} t={t} showPlan={showPlan} setShowPlan={setShowPlan} lang={lang} setLang={setLang} onPerm={() => setPerm(true)}/>
+          {screen === "empty" && page === "chat" ? <EmptyChat t={t} onPick={() => setScreen("app")}/> : (<>
+            {page === "chat" && <ChatPage t={t}/>}
+            {page === "sessions" && <SessionsPage/>}
+            {page === "usage" && <UsagePage/>}
+            {page === "skills" && <SkillsPage/>}
+            {page === "plugins" && <PluginsPage/>}
+            {page === "admin" && <AdminPage/>}
+            {page === "observability" && <ObsPage/>}
+            {page === "settings" && <SettingsPage/>}
+          </>)}
+          {page !== "chat" && (
+            <div className="statusbar">
+              <div className="kv"><span>provider</span> <b>anthropic</b></div>
+              <div className="kv"><span>模型</span> <b>sonnet-4-5</b></div>
+              <div className="kv"><span>缓存</span> <b style={{ color: "var(--teal)" }}>72%</b></div>
+              <div style={{ flex: 1 }}/>
+              <div className="kv"><span>harness</span> <b style={{ color: "var(--teal)" }}>● active</b></div>
+            </div>
+          )}
+        </main>
+        {sidebarMode === "split" && <PlanPanel t={t}/>}
+      </div>
+
+      {/* Demo switcher */}
+      <div style={{ position: "fixed", top: 14, right: 20, zIndex: 70, display: "flex", gap: 4, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 999, padding: 4, boxShadow: "var(--shadow-2)" }}>
+        <button className="icon-btn" onClick={() => setScreen("login")} title="登录页"><Icon name="arrowRight" size={11} style={{ transform: "rotate(180deg)" }}/></button>
+        <button className="icon-btn" onClick={() => { setScreen("empty"); setPage("chat"); }} title="空状态"><Icon name="sparkle" size={11}/></button>
+        <button className="icon-btn" onClick={() => setScreen("app")} title="对话"><Icon name="chat" size={11}/></button>
+      </div>
+
+      {perm && <PermissionModal t={t} onClose={() => setPerm(false)}/>}
+      <Toasts toasts={toasts} onClose={id => setToasts(toasts.filter(x => x.id !== id))}/>
+      <Tweaks tweaks={tweaks} setTweaks={setTweaks}/>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
