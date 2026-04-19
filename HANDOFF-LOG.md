@@ -35,6 +35,65 @@
 
 ---
 
+## 🔴 下一 session 续作指引（Opus/Sonnet 开工先读）
+
+**当前状态** — 全栈 healthy，CloudDream LLM 真实调通，Harness middleware 真实接入 (P1-2 根因级修复完成)。
+
+**最新 commits（倒序）**:
+- `587857a` — fix(harness): wire HarnessRuntime middleware into executor + emit plugin_manifest_ready (P1-2 根因)
+- `0a39d53` — fix(frontend): SessionsPage + UsagePage 接真 API，去除 Math.random (P1-1)
+- `62d5a72` — fix(frontend): SkillsPage data-testid + unskip E2E (P1-5)
+- `587857a` 涉及 6 文件：executor/__main__.py、executor/engine/query_engine.py、executor/harness/middleware/plugin_builder_gate.py、executor/harness/lifecycle.py、backend/app/models/audit.py、backend/app/services/process_manager.py
+
+**Docker 启动**: `cd "E:/Agent program/PrismV3" && docker compose up -d`
+**管理员**: `admin@prism.dev / PrismAdmin!2026`
+**全栈验收**: `bash scripts/final-ops-smoke.sh` → 9 phase 全绿（已跑过）
+**Playwright**: `cd e2e && npx playwright test --project=desktop-chromium` → 11 pass / 5 skip / 0 fail
+
+**用户说有"小 bug 要修"** — 下一 session 接手时：
+1. 收集用户反馈具体 bug 清单
+2. 对每个 bug 走 `superpowers:systematic-debugging` → `verification-before-completion`（根因级，禁止打补丁）
+3. 有变动的模块跑 `scripts/final-ops-smoke.sh` 回归
+4. 产生新 commit + 更新本 handoff 日志
+
+**已知未完成项（code review P2 级）**:
+- Google OAuth token 经 URL fragment 回传（`Prism.html:3365`）有 referrer 泄漏风险 —— 改成后端 cookie 或一次性 ticket
+- `SkillInstallRequest` JSON schema 变更未记 ADR
+- `save_plugin` YAML 解析失败静默（应返 warning）
+- Feishu webhook URL-verification fast path 无 challenge 长度限制
+- `callback_service._send_im_run_result` 内联 `from app.main import app`（循环依赖 workaround，应构造函数注入）
+- executor plugin_builder 自动弹保存模态框 UI 侧（后端已 emit `plugin_manifest_ready`，前端 PluginsPage 已 subscribe，端到端未手测）
+
+---
+
+## 2026-04-19 20:00 — P1 三项根因级修复 + Harness middleware 真正接入 ✅
+
+### 做了什么
+- **P1-5**（5 min）: SkillsPage 3 个 install tab 加 data-testid；同步 unskip Playwright 'install skill via custom Markdown' 测试；desktop+mobile 转绿
+- **P1-1**（30 min）: SessionsPage 重写为 PrismAPI.sessions.list() + 分组渲染；UsagePage 重写为 PrismAPI.providers.usage({group_by, start/end}) + by_provider 表；彻底移除 Math.random 伪造数据（仅保留 toast id 两处合法用途）
+- **P1-2 根因链**（90 min）: code-reviewer 只识别"事件没 emit"，深入挖掘发现三层级联：
+  1. `executor/__main__.py:534` 传 `middleware_pipeline=None` → **所有 ADR-025/029/042 middleware 是死代码**
+  2. `QueryEngine.run()` post_turn 调用嵌在 `if stop_reason == "tool_use"` 分支 → 纯文本回复时 middleware 从不触发
+  3. `audit_logs.created_at` 无默认值 → harness_event 回调全部 500，但 run 已 completed 所以症状被吞
+- 修复全链：wire HarnessRuntime + 提升 post_turn 出分支 + 给 audit_logs.created_at default + process_manager stderr tail + PluginBuilderGate.post_turn 打分并 emit plugin_manifest_ready
+- 每改一处用 curl + audit_logs 端到端验证，最后 final-ops-smoke.sh 9 phase + Playwright 桌面+移动全绿
+
+### 验证结果
+- final-ops-smoke.sh 全部 9 phase PASS（含端到端 LLM：CloudDream 回"OK"）
+- `GET /admin/audit-logs?action=harness` 真实看到 `harness.plugin_manifest_ready` + `harness.turn_complete` 条目
+- Playwright 桌面+移动 11 pass / 5 skip / 0 fail 不变
+
+### Commits
+- `62d5a72` — fix(frontend): SkillsPage data-testid + unskip E2E test
+- `0a39d53` — fix(frontend): SessionsPage + UsagePage wire to real API, drop Math.random mock
+- `587857a` — fix(harness): wire HarnessRuntime middleware into executor + emit plugin_manifest_ready
+
+### 遗留风险
+- code review P2 级别 6 条（见上方"🔴 下一 session 续作指引"块）
+- 用户 feedback 待收集："小 bug 要修"
+
+---
+
 ## 2026-04-19 18:00 — Prism.html 前端改进 A-1/A-2/A-3/A-4 COMPLETED ✅
 
 ### 本次 session 做了什么

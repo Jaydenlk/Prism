@@ -1,9 +1,41 @@
 # Prism v2 前端集成技术手册
 
 > **用途**：前端设计/开发团队集成参考
-> **后端状态**：DOC-02 / DOC-03 / DOC-04 / DOC-05 / DOC-06 / DOC-07 / DOC-08 / DOC-09 / DOC-12 全部实施完成（42/51 Task，仅缺前端部分）。
-> **OpenAPI**：运行时访问 `GET /docs`（Swagger）或 `GET /openapi.json` / `GET /redoc`。
-> **版本**：v4 / 2026-04-19
+> **后端状态**：全栈 healthy，CloudDream LLM 真实调通，Harness middleware 真实接入
+> **OpenAPI**：运行时访问 `GET /docs`（Swagger）或 `GET /openapi.json` / `GET /redoc`
+> **版本**：v4 / 2026-04-19（多通道 auth + 真实 middleware + plugin_manifest_ready 事件已接通）
+
+## 🆕 本轮关键补充
+
+**多通道 Auth**（已实装）
+| Path | Method | 说明 |
+|---|---|---|
+| `/auth/providers` | GET | 返回 `{email_password, email_magic, email_otp, phone_password, google}` 真实状态 |
+| `/auth/email-magic/request` | POST | 邮箱 Magic Link，空值未注册也返 202（防枚举） |
+| `/auth/email-magic/verify` | POST | `{challenge_id, token}` 换 access_token |
+| `/auth/email-otp/request` | POST | 6 位 OTP 邮件 |
+| `/auth/email-otp/verify` | POST | `{email, code}` 验码 |
+| `/auth/forgot-password` | POST | 发重置链接 |
+| `/auth/reset-password` | POST | `{challenge_id, token, new_password}` |
+| `/auth/phone-register` | POST | 手机+密码+邀请码（暂无 SMS） |
+| `/auth/phone-login` | POST | 手机+密码 |
+| `/auth/google/authorize` | GET | 302 跳 Google consent（未配置返 503） |
+| `/auth/google/callback` | GET | OAuth 回调（state CSRF） |
+| `/auth/google/complete` | POST | 邀请码 gate 时补单 |
+| `/admin/auth-config` | GET/PATCH | 管理员切换 `allow_oauth_signup_without_invite` 等 3 开关 |
+
+**SSE 事件新增**
+- `harness_event.plugin_manifest_ready`：plugin_builder Agent 完整度打分 ≥ 0.8 且检测到 YAML fence 时 executor 自动 emit。data: `{manifest_yaml, completeness: {维度打分}}`。前端 `PluginsPage` 监听后弹"保存到插件库"模态框。
+- `harness_event.turn_complete` 现已**可靠触发**（此前因 audit_logs.created_at 无默认 + post_turn 嵌在 tool_use 分支导致 500 + 纯文本回复跳过，已在 `587857a` 根因级修复）
+
+**运维**
+```bash
+docker compose up -d              # 启动
+admin@prism.dev / PrismAdmin!2026  # 默认管理员
+bash scripts/final-ops-smoke.sh   # 9 phase 全栈回归
+cd e2e && npx playwright test --project=desktop-chromium   # 桌面 E2E
+cd e2e && npx playwright test --project=mobile-safari       # 移动 E2E
+```
 
 ---
 
