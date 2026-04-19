@@ -65,7 +65,12 @@
 
     const res = await fetch(url, init);
 
-    if (res.status === 401 && !skipRefresh) {
+    // Auth endpoints must not trigger the refresh loop:
+    // a wrong-password 401 on /auth/login must not fire _doRefresh() or prism:unauthorized.
+    const _noRefreshPaths = ['/auth/login', '/auth/register', '/auth/refresh'];
+    const isAuthPath = _noRefreshPaths.some(p => path === p || path.startsWith(p + '?'));
+
+    if (res.status === 401 && !skipRefresh && !isAuthPath) {
       // Try refresh once
       if (!_refreshing) {
         _refreshing = _doRefresh().finally(() => { _refreshing = null; });
