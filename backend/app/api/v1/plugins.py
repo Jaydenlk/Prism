@@ -27,10 +27,12 @@ import os
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.core.dependencies import get_current_user
+from sqlalchemy.orm import Session
+
+from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
 
 logger = structlog.get_logger()
@@ -339,4 +341,241 @@ async def validate_plugin(
         version=getattr(schema, "version", "1.0.0"),
         format=fmt,
         extra_fields=extra_fields,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Plugin Library schemas (Task A-3)
+# ---------------------------------------------------------------------------
+
+
+class PluginSaveRequest(BaseModel):
+    """POST /plugins/save 请求体 — 保存 Plugin manifest 到用户插件库。"""
+
+    name: str = Field(..., min_length=1, description="插件名称（唯一标识）")
+    version: str = Field(default="1.0.0", description="版本号")
+    description: str = Field(default="", description="描述")
+    manifest_yaml: str = Field(default="", description="Plugin manifest YAML 字符串")
+    manifest_json: dict = Field(default_factory=dict, description="manifest 解析后的 JSON 对象")
+
+
+class PluginLibraryResponse(BaseModel):
+    """单条插件库条目响应。"""
+
+    id: str
+    user_id: str
+    name: str
+    version: str
+    description: str
+    manifest_yaml: str
+    manifest_json: dict
+    enabled: bool
+    created_at: str
+    updated_at: str
+
+
+class PluginLibraryPatchRequest(BaseModel):
+    """PATCH /plugins/library/{plugin_id} 请求体。"""
+
+    enabled: bool = Field(description="true=启用, false=禁用")
+
+
+# ---------------------------------------------------------------------------
+# GET /plugins/library — 用户插件库列表
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/library",
+    response_model=list[PluginLibraryResponse],
+    summary="获取用户插件库（当前用户拥有的插件）",
+)
+async def list_plugin_library(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[PluginLibraryResponse]:
+    """列出当前用户插件库中的所有插件（按 created_at DESC 排序）。"""
+    from app.models.plugin_library import PluginLibrary
+
+    entries = (
+        db.query(PluginLibrary)
+        .filter_by(user_id=current_user.id)
+        .order_by(PluginLibrary.created_at.desc())
+        .all()
+    )
+
+    return [_plugin_library_to_response(e) for e in entries]
+
+
+# ---------------------------------------------------------------------------
+# POST /plugins/save — 保存 Plugin manifest 到用户插件库
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/save",
+    response_model=PluginLibraryResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="保存 Plugin manifest 到用户插件库（UPSERT 语义）",
+)
+async def save_plugin(
+    body: PluginSaveRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PluginLibraryResponse:
+    """将 Plugin manifest 保存到用户插件库（同名则更新，否则新建）。"""
+    from datetime import datetime, timezone
+
+    from app.models.plugin_library import PluginLibrary
+
+    now = datetime.now(timezone.utc)
+
+    existing = (
+        db.query(PluginLibrary)
+        .filter_by(user_id=current_user.id, name=body.name)
+        .first()
+    )
+
+    if existing is not None:
+        existing.version = body.version
+        existing.description = body.description
+        existing.manifest_yaml = body.manifest_yaml
+        existing.manifest_json = body.manifest_json
+        existing.updated_at = now
+        entry = existing
+        logger.info(
+            "plugin.library.updated",
+            user_id=str(current_user.id),
+            plugin=body.name,
+        )
+    else:
+        entry = PluginLibrary(
+            user_id=current_user.id,
+            name=body.name,
+            version=body.version,
+            description=body.description,
+            manifest_yaml=body.manifest_yaml,
+            manifest_json=body.manifest_json,
+            enabled=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(entry)
+        logger.info(
+            "plugin.library.saved",
+            user_id=str(current_user.id),
+            plugin=body.name,
+        )
+
+    db.commit()
+    db.refresh(entry)
+
+    return _plugin_library_to_response(entry)
+
+
+# ---------------------------------------------------------------------------
+# PATCH /plugins/library/{plugin_id} — 启用/禁用插件
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/library/{plugin_id}",
+    response_model=PluginLibraryResponse,
+    summary="启用或禁用用户插件库中的插件",
+)
+async def patch_plugin_library(
+    plugin_id: str,
+    body: PluginLibraryPatchRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PluginLibraryResponse:
+    """切换用户插件库中某插件的启用状态。"""
+    from datetime import datetime, timezone
+
+    from app.models.plugin_library import PluginLibrary
+
+    entry = (
+        db.query(PluginLibrary)
+        .filter_by(id=plugin_id, user_id=current_user.id)
+        .first()
+    )
+
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"插件 '{plugin_id}' 不存在或不属于当前用户。",
+        )
+
+    entry.enabled = body.enabled
+    entry.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(entry)
+
+    logger.info(
+        "plugin.library.patched",
+        user_id=str(current_user.id),
+        plugin_id=plugin_id,
+        enabled=body.enabled,
+    )
+    return _plugin_library_to_response(entry)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /plugins/library/{plugin_id} — 从用户插件库删除
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/library/{plugin_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="从用户插件库删除插件",
+)
+async def delete_plugin_library(
+    plugin_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    """从用户插件库中删除指定插件。"""
+    from app.models.plugin_library import PluginLibrary
+
+    entry = (
+        db.query(PluginLibrary)
+        .filter_by(id=plugin_id, user_id=current_user.id)
+        .first()
+    )
+
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"插件 '{plugin_id}' 不存在或不属于当前用户。",
+        )
+
+    db.delete(entry)
+    db.commit()
+
+    logger.info(
+        "plugin.library.deleted",
+        user_id=str(current_user.id),
+        plugin_id=plugin_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 内部工具
+# ---------------------------------------------------------------------------
+
+
+def _plugin_library_to_response(entry) -> PluginLibraryResponse:
+    """将 PluginLibrary ORM 对象转为 PluginLibraryResponse。"""
+    return PluginLibraryResponse(
+        id=entry.id,
+        user_id=entry.user_id,
+        name=entry.name,
+        version=entry.version,
+        description=entry.description,
+        manifest_yaml=entry.manifest_yaml,
+        manifest_json=entry.manifest_json or {},
+        enabled=entry.enabled,
+        created_at=entry.created_at.isoformat() if entry.created_at else "",
+        updated_at=entry.updated_at.isoformat() if entry.updated_at else "",
     )

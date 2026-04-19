@@ -1572,134 +1572,266 @@ function SkillsPage() {
 }
 
 function PluginsPage() {
-  const [tab, setTab] = useState("build"); // "build" | "installed"
-  const [manifest, setManifest] = useState({
-    name: "finance-ops-pack",
-    description: "给投研团队的一揽子能力:finance-data MCP + 合规护栏 Skill + 只读 shell。",
-    version: "0.3.1",
-    author: "@prism-finance",
-  });
-  const [yamlPreview, setYamlPreview] = useState(`name: finance-ops-pack
-version: 0.3.1
-license: Apache-2.0
-author: "@prism-finance"
+  const { PrismAPI } = window;
 
-components:
-  mcp:
-    - id: finance-data
-      command: prism-finance-mcp
-  skills:
-    - finance-compliance@2.0.0
-    - readonly-shell@1.2.0
-  agents:
-    - file: agents/equity-researcher.md
+  // ── Builder state (left pane) ───────────────────────────────────────────
+  const [builderMsgs, setBuilderMsgs] = useState([]);
+  const [builderSessionId, setBuilderSessionId] = useState(null);
+  const [builderRunning, setBuilderRunning] = useState(false);
+  const [builderProgress, setBuilderProgress] = useState(0); // 0-100
+  const [pendingManifest, setPendingManifest] = useState(null); // { yaml, json, name, version, description } — triggers save modal
 
-guardrails:
-  - GR-COMPLIANCE-002
-  - GR-EXEC-004
+  // ── Library state (right pane) ──────────────────────────────────────────
+  const [library, setLibrary] = useState([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [viewManifest, setViewManifest] = useState(null); // { name, yaml }
+  const [actionLoading, setActionLoading] = useState(null); // plugin id
 
-budget:
-  per_run_tokens: 60000
-  per_run_cost_rmb: 1.50`);
-  const [installed, setInstalled] = useState([]);
-  const [installedLoading, setInstalledLoading] = useState(false);
-  const [installedErr, setInstalledErr] = useState("");
-  const [validateLoading, setValidateLoading] = useState(false);
-  const [publishLoading, setPublishLoading] = useState(false);
-  const [validateResult, setValidateResult] = useState(null); // { ok, detail }
+  // ── Save modal state ────────────────────────────────────────────────────
+  const [saveModal, setSaveModal] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saveDesc, setSaveDesc] = useState("");
+  const [saveYaml, setSaveYaml] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // ── Toasts ─────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState([]);
 
-  function addLocalToast(t) {
-    setToasts(prev => [...prev, t]);
-    setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), 5000);
+  // ── Refs ────────────────────────────────────────────────────────────────
+  const esRef = useRef(null);
+  const streamBuf = useRef({});
+  const rafHandle = useRef(null);
+  const bottomRef = useRef(null);
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+  function addToast(kind, title, body) {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, kind, title, body }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
   }
 
-  useEffect(() => {
-    // Regenerate YAML when form fields change
-    setYamlPreview(`name: ${manifest.name || "my-plugin"}
-version: ${manifest.version || "0.1.0"}
-license: Apache-2.0
-author: "${manifest.author || ""}"
-description: "${(manifest.description || "").replace(/"/g, "'")}"
+  function scrollBottom() { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }
 
-components:
-  mcp:
-    - id: finance-data
-      command: prism-finance-mcp
-  skills:
-    - finance-compliance@2.0.0
-    - readonly-shell@1.2.0
-  agents:
-    - file: agents/equity-researcher.md
-
-budget:
-  per_run_tokens: 60000
-  per_run_cost_rmb: 1.50`);
-  }, [manifest]);
-
-  async function loadInstalled() {
-    setInstalledLoading(true);
-    setInstalledErr("");
+  // ── Library loader ─────────────────────────────────────────────────────
+  async function loadLibrary() {
+    setLibraryLoading(true);
     try {
-      const list = await PrismAPI.request('GET', '/plugins/installed');
-      setInstalled(Array.isArray(list) ? list : []);
+      const resp = await PrismAPI.plugins.listLibrary();
+      setLibrary(Array.isArray(resp) ? resp : []);
     } catch (err) {
-      if (err.status === 404) {
-        setInstalledErr("插件已安装列表功能后续实现");
-        setInstalled([]);
-      } else {
-        setInstalledErr(err.message || "加载失败");
-      }
+      addToast("warn", "插件库加载失败", err.message || String(err));
     }
-    setInstalledLoading(false);
+    setLibraryLoading(false);
   }
 
-  useEffect(() => {
-    if (tab === "installed") loadInstalled();
-  }, [tab]);
+  useEffect(() => { loadLibrary(); }, []);
 
-  async function handleValidate() {
-    setValidateLoading(true);
-    setValidateResult(null);
+  // ── SSE streaming (builder) ────────────────────────────────────────────
+  function closeStream() {
+    if (esRef.current) { esRef.current.es?.close(); esRef.current = null; }
+    if (rafHandle.current) { cancelAnimationFrame(rafHandle.current); rafHandle.current = null; }
+  }
+
+  function scheduleFlush() {
+    if (rafHandle.current) return;
+    rafHandle.current = requestAnimationFrame(() => {
+      rafHandle.current = null;
+      const buf = streamBuf.current;
+      const ids = Object.keys(buf);
+      if (!ids.length) return;
+      setBuilderMsgs(prev => {
+        const next = [...prev];
+        for (const msgId of ids) {
+          const entry = buf[msgId];
+          if (entry.finalized) continue;
+          const idx = next.findIndex(m => m._streamId === msgId);
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], content: entry.text || "…", streaming: true };
+          } else {
+            next.push({ _streamId: msgId, role: "agent", at: "now", content: entry.text || "…", streaming: true });
+          }
+        }
+        return next;
+      });
+      scrollBottom();
+    });
+  }
+
+  function handleSSEEvent(evt) {
+    switch (evt.type) {
+      case "text_delta": {
+        const mid = evt.message_id || "default";
+        if (!streamBuf.current[mid]) streamBuf.current[mid] = { text: "", finalized: false };
+        streamBuf.current[mid].text += evt.text || "";
+        scheduleFlush();
+        break;
+      }
+      case "message_complete": {
+        const blocks = Array.isArray(evt.content) ? evt.content : [];
+        const text = blocks.filter(b => b.type === "text").map(b => b.text).join("\n");
+        setBuilderMsgs(prev => {
+          const next = prev.filter(m => !m.streaming);
+          next.push({ role: "agent", at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), content: text || "…", streaming: false });
+          return next;
+        });
+        for (const k of Object.keys(streamBuf.current)) streamBuf.current[k].finalized = true;
+        streamBuf.current = {};
+        scrollBottom();
+        break;
+      }
+      case "harness_event": {
+        // Track completion percentage from step events
+        if (evt.subtype === "step") {
+          const pct = typeof evt.completion_pct === "number" ? evt.completion_pct : null;
+          if (pct !== null) setBuilderProgress(Math.round(pct));
+        }
+        // Plugin manifest ready
+        if (evt.subtype === "plugin_manifest_ready") {
+          const data = evt.data || {};
+          setPendingManifest({
+            name: data.name || "my-plugin",
+            version: data.version || "1.0.0",
+            description: data.description || "",
+            yaml: data.manifest_yaml || "",
+            json: data.manifest_json || {},
+          });
+          setSaveName(data.name || "my-plugin");
+          setSaveDesc(data.description || "");
+          setSaveYaml(data.manifest_yaml || "");
+          setSaveModal(true);
+        }
+        break;
+      }
+      case "run_complete":
+      case "run_crashed":
+      case "run_error":
+        setBuilderRunning(false);
+        break;
+      default:
+        break;
+    }
+  }
+
+  function openBuilderStream(sid) {
+    closeStream();
+    streamBuf.current = {};
+    PrismAPI.openStream(sid, {
+      onEvent(evt) {
+        if (!esRef.current || esRef.current.sessionId !== sid) return;
+        handleSSEEvent(evt);
+      },
+      onError(err) { console.warn("[PluginsPage] SSE error:", err); setBuilderRunning(false); },
+      onClose() { setBuilderRunning(false); },
+    }).then(es => {
+      if (!esRef.current || esRef.current.sessionId === sid) {
+        esRef.current = { es, sessionId: sid };
+      } else {
+        es.close();
+      }
+    }).catch(err => {
+      console.warn("[PluginsPage] openStream failed:", err);
+      setBuilderRunning(false);
+    });
+    setBuilderRunning(true);
+  }
+
+  // ── Send message to plugin builder ─────────────────────────────────────
+  async function handleBuilderSend(text) {
+    if (!text.trim() || builderRunning) return;
+
+    // Add user message
+    setBuilderMsgs(prev => [...prev, {
+      role: "user",
+      at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+      content: text,
+    }]);
+    scrollBottom();
+
     try {
-      const res = await PrismAPI.request('POST', '/plugins/validate', { json: { yaml: yamlPreview } });
-      setValidateResult({ ok: true, detail: res?.message || "Manifest 格式正确，可以发布。" });
-    } catch (err) {
-      if (err.status === 404) {
-        setValidateResult({ ok: null, detail: "后端 /plugins/validate 端点尚未实现，请继续。" });
-      } else {
-        setValidateResult({ ok: false, detail: err.message || "Manifest 验证失败" });
+      let sid = builderSessionId;
+
+      if (!sid) {
+        // Create a new session for the builder
+        const sessResp = await PrismAPI.sessions.create({ title: "Plugin Builder" });
+        const sess = sessResp.data || sessResp;
+        sid = sess.id || sess.session_id;
+        setBuilderSessionId(sid);
+        setBuilderProgress(0);
       }
+
+      // Submit task with agent_type=plugin_builder so TaskRouter routes to plugin builder
+      await PrismAPI.tasks.submit({ session_id: sid, prompt: text, agent_type: "plugin_builder" });
+
+      // Open SSE stream
+      openBuilderStream(sid);
+    } catch (err) {
+      addToast("danger", "发送失败", err.message || String(err));
+      setBuilderRunning(false);
     }
-    setValidateLoading(false);
   }
 
-  async function handlePublish() {
-    if (!confirm(`确认发布插件 ${manifest.name} v${manifest.version}？`)) return;
-    setPublishLoading(true);
+  // ── Library CRUD ───────────────────────────────────────────────────────
+  async function handleTogglePlugin(plugin) {
+    setActionLoading(plugin.id);
     try {
-      await PrismAPI.request('POST', '/plugins/load', { json: { yaml: yamlPreview } });
-      addLocalToast({ id: Date.now(), kind: "success", title: "发布成功", body: `${manifest.name} v${manifest.version}` });
+      await PrismAPI.plugins.patch(plugin.id, { enabled: !plugin.enabled });
+      addToast("success", plugin.enabled ? "已禁用" : "已启用", plugin.name);
+      await loadLibrary();
     } catch (err) {
-      if (err.status === 404) {
-        addLocalToast({ id: Date.now(), kind: "warning", title: "端点未实现", body: "后端 /plugins/load 后续实现" });
-      } else {
-        addLocalToast({ id: Date.now(), kind: "danger", title: "发布失败", body: err.message });
-      }
+      addToast("danger", "操作失败", err.message || String(err));
     }
-    setPublishLoading(false);
+    setActionLoading(null);
   }
 
+  async function handleDeletePlugin(plugin) {
+    if (!confirm(`确认删除插件 "${plugin.name}"？`)) return;
+    setActionLoading(plugin.id);
+    try {
+      await PrismAPI.plugins.delete(plugin.id);
+      addToast("success", "已删除", plugin.name);
+      await loadLibrary();
+    } catch (err) {
+      addToast("danger", "删除失败", err.message || String(err));
+    }
+    setActionLoading(null);
+  }
+
+  // ── Save manifest to library ───────────────────────────────────────────
+  async function handleSaveToLibrary() {
+    if (!saveName.trim()) { addToast("warn", "请填写插件名", ""); return; }
+    setSaving(true);
+    try {
+      await PrismAPI.plugins.save({
+        name: saveName.trim(),
+        version: pendingManifest?.version || "1.0.0",
+        description: saveDesc.trim(),
+        manifest_yaml: saveYaml,
+        manifest_json: pendingManifest?.json || {},
+      });
+      addToast("success", "已保存到插件库", saveName.trim());
+      setSaveModal(false);
+      setPendingManifest(null);
+      await loadLibrary();
+    } catch (err) {
+      addToast("danger", "保存失败", err.message || String(err));
+    }
+    setSaving(false);
+  }
+
+  // ── Cleanup on unmount ─────────────────────────────────────────────────
+  useEffect(() => () => closeStream(), []);
+
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="page">
+    <div className="page" style={{ paddingBottom: 0 }}>
       <div className="page-head">
-        <div className="page-title">插件构建</div>
-        <div className="page-sub">把 MCP、Skill、Agent 捏成一个包发出去。Prism 会帮你签名。</div>
+        <div className="page-title">插件工坊</div>
+        <div className="page-sub">与 Plugin Builder Agent 对话，自动构建 Plugin manifest；完成后一键保存到插件库。</div>
       </div>
 
-      {/* Toast stack local */}
+      {/* Toast stack */}
       {toasts.length > 0 && (
-        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 200, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 300, display: "flex", flexDirection: "column", gap: 8 }}>
           {toasts.map(t => (
             <div key={t.id} className={`toast ${t.kind || ""}`} style={{ minWidth: 240 }} onClick={() => setToasts(p => p.filter(x => x.id !== t.id))}>
               <div style={{ flex: 1 }}><div className="title">{t.title}</div><div>{t.body}</div></div>
@@ -1708,89 +1840,144 @@ budget:
         </div>
       )}
 
-      {/* Tab bar */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--line)", paddingBottom: 0 }}>
-        {[["build", "构建"], ["installed", "已安装"]].map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} style={{
-            padding: "8px 16px", fontSize: 13, fontFamily: "var(--serif)", background: "none", border: "none",
-            borderBottom: tab === id ? "2px solid var(--ink)" : "2px solid transparent",
-            color: tab === id ? "var(--ink)" : "var(--ink-3)", cursor: "pointer", marginBottom: -1,
-          }}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "installed" && (
-        <div>
-          {installedLoading ? (
-            <div style={{ color: "var(--ink-3)" }}>加载中…</div>
-          ) : installedErr ? (
-            <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 20 }}>{installedErr}</div>
-          ) : installed.length === 0 ? (
-            <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 20 }}>暂无已安装插件</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {installed.map((p, i) => (
-                <div key={p.id || i} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{p.name}</div>
-                    {p.version && <div style={{ fontSize: 11.5, color: "var(--ink-4)", fontFamily: "var(--mono)", marginTop: 3 }}>v{p.version}</div>}
-                  </div>
-                  <span className="badge teal">已安装</span>
-                </div>
-              ))}
+      {/* Save manifest modal */}
+      {saveModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSaveModal(false)}>
+          <div style={{ background: "var(--paper)", borderRadius: 12, padding: 28, maxWidth: 560, width: "90%", display: "flex", flexDirection: "column", gap: 14 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>保存到插件库</div>
+            <label>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>插件名（唯一标识）</div>
+              <input className="input" value={saveName} onChange={e => setSaveName(e.target.value)}/>
+            </label>
+            <label>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>描述</div>
+              <input className="input" value={saveDesc} onChange={e => setSaveDesc(e.target.value)}/>
+            </label>
+            <label>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>Manifest YAML（可编辑）</div>
+              <textarea className="input" rows={10} style={{ fontFamily: "var(--mono)", fontSize: 12, resize: "vertical" }} value={saveYaml} onChange={e => setSaveYaml(e.target.value)}/>
+            </label>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button className="btn primary" style={{ flex: 1, justifyContent: "center" }} onClick={handleSaveToLibrary} disabled={saving}>
+                {saving ? "保存中…" : "保存到插件库"}
+              </button>
+              <button className="btn ghost" onClick={() => setSaveModal(false)}>取消</button>
             </div>
-          )}
+          </div>
         </div>
       )}
 
-      {tab === "build" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 20 }}>
-          <div className="card" style={{ padding: 22 }}>
-            <div className="eyebrow" style={{ marginBottom: 14 }}>Manifest</div>
-            <label style={{ display: "block" }}>
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>名字</div>
-              <input className="input" value={manifest.name} onChange={e => setManifest(m => ({ ...m, name: e.target.value }))}/>
-            </label>
-            <label style={{ display: "block", marginTop: 10 }}>
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>版本</div>
-              <input className="input" value={manifest.version} onChange={e => setManifest(m => ({ ...m, version: e.target.value }))}/>
-            </label>
-            <label style={{ display: "block", marginTop: 10 }}>
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>作者</div>
-              <input className="input" value={manifest.author} onChange={e => setManifest(m => ({ ...m, author: e.target.value }))}/>
-            </label>
-            <label style={{ display: "block", marginTop: 10 }}>
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>描述</div>
-              <textarea className="textarea" value={manifest.description} onChange={e => setManifest(m => ({ ...m, description: e.target.value }))}/>
-            </label>
-            <div className="eyebrow" style={{ marginTop: 20, marginBottom: 10 }}>里面有什么</div>
-            {["finance-data MCP (22 tools)", "Skill · finance-compliance", "Skill · readonly-shell", "Agent · equity-researcher"].map((l, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", borderRadius: 10, background: "var(--bg)", marginBottom: 6, fontSize: 13, color: "var(--ink-2)" }}>
-                <Icon name="plugin" size={13} style={{ color: "var(--ink-3)" }}/>{l}
-              </div>
-            ))}
+      {/* View manifest modal */}
+      {viewManifest && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setViewManifest(null)}>
+          <div style={{ background: "var(--paper)", borderRadius: 12, padding: 28, maxWidth: 560, width: "90%", maxHeight: "80vh", display: "flex", flexDirection: "column", gap: 14 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>{viewManifest.name} / manifest.yaml</div>
+              <button className="btn ghost sm" onClick={() => setViewManifest(null)}>关闭</button>
+            </div>
+            <pre style={{ flex: 1, overflow: "auto", fontSize: 12.5, lineHeight: 1.6, fontFamily: "var(--mono)", background: "var(--bg)", borderRadius: 8, padding: "12px 14px", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {viewManifest.yaml || "（manifest 为空）"}
+            </pre>
           </div>
-          <div className="card" style={{ padding: 22 }}>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>生成的 manifest</div>
-            <pre className="tool-code" style={{ maxHeight: 320 }}>{yamlPreview}</pre>
-            {validateResult && (
-              <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, fontSize: 12.5, background: validateResult.ok === true ? "var(--teal-soft, rgba(78,124,110,0.1))" : validateResult.ok === false ? "var(--rust-soft)" : "var(--bg)", color: validateResult.ok === true ? "var(--teal)" : validateResult.ok === false ? "var(--rust)" : "var(--ink-3)" }}>
-                {validateResult.detail}
+        </div>
+      )}
+
+      {/* Main two-pane layout */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, height: "calc(100vh - 200px)", minHeight: 500 }}>
+
+        {/* ── Left pane: Conversational builder ─────────────────── */}
+        <div style={{ display: "flex", flexDirection: "column", background: "var(--paper)", borderRadius: 12, border: "1px solid var(--line)", overflow: "hidden" }}>
+          {/* Header */}
+          <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>Plugin Builder Agent</div>
+              <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>
+                {builderSessionId ? `session: ${builderSessionId.slice(-8)}` : "新对话"}
+              </div>
+            </div>
+            {builderProgress > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--ink-3)" }}>
+                <div className="progress" style={{ width: 80 }}>
+                  <div className="bar" style={{ width: `${builderProgress}%`, background: builderProgress >= 80 ? "var(--teal)" : "var(--amber)" }}/>
+                </div>
+                <span>完成度 {builderProgress}%</span>
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <button className="btn" onClick={handleValidate} disabled={validateLoading}>
-                <Icon name="flask" size={12}/> {validateLoading ? "验证中…" : "预演"}
-              </button>
-              <button className="btn primary" style={{ marginLeft: "auto" }} onClick={handlePublish} disabled={publishLoading}>
-                <Icon name="upload" size={12}/> {publishLoading ? "发布中…" : `发布 v${manifest.version}`}
-              </button>
-            </div>
+            {builderSessionId && (
+              <button className="btn ghost sm" onClick={() => {
+                closeStream();
+                setBuilderSessionId(null);
+                setBuilderMsgs([]);
+                setBuilderProgress(0);
+                setBuilderRunning(false);
+              }}>新建</button>
+            )}
+          </div>
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 0 }}>
+            {builderMsgs.length === 0 && (
+              <div style={{ margin: "auto", textAlign: "center", color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 14, padding: 32 }}>
+                告诉 Agent 你想构建什么 Plugin——<br/>它会问你几个问题，然后生成 manifest。
+              </div>
+            )}
+            {builderMsgs.map((m, i) => (
+              <Msg key={i} m={m} first={i === 0 || builderMsgs[i - 1]?.role !== m.role}/>
+            ))}
+            <div ref={bottomRef}/>
+          </div>
+
+          {/* Composer */}
+          <div style={{ borderTop: "1px solid var(--line)" }}>
+            <Composer t={{ composer_placeholder: "描述你想构建的 Plugin，例如：金融研究助手，含合规 Skill 和 MCP…" }} onSend={handleBuilderSend} disabled={builderRunning}/>
           </div>
         </div>
-      )}
+
+        {/* ── Right pane: Plugin library ─────────────────────────── */}
+        <div style={{ display: "flex", flexDirection: "column", background: "var(--paper)", borderRadius: 12, border: "1px solid var(--line)", overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>插件库 ({library.length})</div>
+            <button className="btn ghost sm" onClick={loadLibrary} disabled={libraryLoading}>
+              {libraryLoading ? "…" : "刷新"}
+            </button>
+          </div>
+          <div style={{ flex: 1, overflow: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+            {library.length === 0 && !libraryLoading && (
+              <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, padding: "16px 0" }}>
+                暂无保存的插件。通过左侧对话构建 Plugin，完成后保存到这里。
+              </div>
+            )}
+            {library.map(plugin => {
+              const acting = actionLoading === plugin.id;
+              return (
+                <div key={plugin.id} style={{ borderRadius: 8, border: "1px solid var(--line)", padding: "12px 14px", background: plugin.enabled ? "var(--paper)" : "var(--bg)" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: plugin.enabled ? "var(--ink)" : "var(--ink-4)" }}>{plugin.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>v{plugin.version}</div>
+                    </div>
+                    {plugin.enabled ? <span className="badge teal" style={{ fontSize: 10 }}>启用</span> : <span className="badge" style={{ fontSize: 10 }}>禁用</span>}
+                  </div>
+                  {plugin.description && (
+                    <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 8, lineHeight: 1.4, fontFamily: "var(--serif)", fontStyle: "italic" }}>{plugin.description}</div>
+                  )}
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    <button className="btn sm ghost" onClick={() => handleTogglePlugin(plugin)} disabled={acting}>
+                      {plugin.enabled ? "禁用" : "启用"}
+                    </button>
+                    <button className="btn sm ghost" onClick={() => setViewManifest({ name: plugin.name, yaml: plugin.manifest_yaml })} disabled={acting}>
+                      查看 Manifest
+                    </button>
+                    <button className="btn sm danger" onClick={() => handleDeletePlugin(plugin)} disabled={acting}>
+                      {acting ? "…" : "删除"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

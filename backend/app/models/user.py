@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from app.models.audit import AuditLog
     from app.models.skill_install import SkillInstall
     from app.models.user_memory import UserMemory
+    from app.models.plugin_library import PluginLibrary
 
 
 class User(Base, TimestampMixin):
@@ -87,6 +88,9 @@ class User(Base, TimestampMixin):
     )
     memories: Mapped[list["UserMemory"]] = relationship(
         "UserMemory", back_populates="user", cascade="all, delete-orphan"
+    )
+    plugin_library_entries: Mapped[list["PluginLibrary"]] = relationship(
+        "PluginLibrary", back_populates="user", cascade="all, delete-orphan"
     )
     invite_codes: Mapped[list["InviteCode"]] = relationship(
         "InviteCode", back_populates="created_by_user"

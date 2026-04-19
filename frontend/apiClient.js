@@ -541,6 +541,22 @@
     },
   };
 
+  /* ── Plugin Library ──────────────────────────────────────────── */
+  const plugins = {
+    listLibrary() {
+      return request('GET', '/plugins/library');
+    },
+    save({ name, version, description, manifest_yaml, manifest_json } = {}) {
+      return request('POST', '/plugins/save', { json: { name, version, description, manifest_yaml, manifest_json } });
+    },
+    patch(pluginId, { enabled }) {
+      return request('PATCH', `/plugins/library/${pluginId}`, { json: { enabled } });
+    },
+    delete(pluginId) {
+      return request('DELETE', `/plugins/library/${pluginId}`);
+    },
+  };
+
   /* ── IM ───────────────────────────────────────────────────────── */
   const im = {
     listChannels() {
@@ -633,6 +649,7 @@
     providers,
     mcp,
     skills,
+    plugins,
     im,
     harness,
 
