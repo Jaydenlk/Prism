@@ -1,6 +1,10 @@
 import { Page, request as playwrightRequest } from '@playwright/test';
 
-const BASE = 'http://localhost:8080/api/v1';
+// Playwright's baseURL treats leading-slash paths as absolute (drops any
+// path component of baseURL). We therefore keep baseURL to the origin and
+// carry the /api/v1 prefix on each request path explicitly.
+const BASE = 'http://localhost:8080';
+const API_V1 = '/api/v1';
 const ADMIN_EMAIL = 'admin@prism.dev';
 const ADMIN_PASSWORD = 'PrismAdmin!2026';
 
@@ -15,7 +19,7 @@ export interface AdminSession {
  */
 export async function getAdminToken(): Promise<AdminSession> {
   const ctx = await playwrightRequest.newContext({ baseURL: BASE });
-  const resp = await ctx.post('/auth/login', {
+  const resp = await ctx.post(`${API_V1}/auth/login`, {
     data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
   });
   if (!resp.ok()) {
@@ -25,7 +29,7 @@ export async function getAdminToken(): Promise<AdminSession> {
   const envelope = await resp.json();
   const { access_token } = envelope.data;
   // Get userId from /auth/me
-  const me = await ctx.get('/auth/me', {
+  const me = await ctx.get(`${API_V1}/auth/me`, {
     headers: { Authorization: `Bearer ${access_token}` },
   });
   const meEnv = await me.json();
