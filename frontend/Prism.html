@@ -1240,19 +1240,670 @@ function ObsPage() {
   );
 }
 
-function SettingsPage() {
-  const [sec, setSec] = useState("providers");
-  const tabs = [
-    { id: "providers", label: "Providers", icon: "layers" },
-    { id: "mcp", label: "MCP", icon: "plugin" },
-    { id: "im", label: "IM", icon: "chat" },
-    { id: "guard", label: "护栏", icon: "shield" },
-    { id: "ws", label: "工作区", icon: "folder" },
-    { id: "keys", label: "API keys", icon: "link" }
+/* ── Settings sub-tabs ───────────────────────────────────────────── */
+
+function ProfileTab({ onToast }) {
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    PrismAPI.me().then(u => { setProfile(u); setLoading(false); }).catch(err => {
+      onToast({ id: Date.now(), kind: "danger", title: "加载失败", body: err.message });
+      setLoading(false);
+    });
+  }, []);
+
+  async function handleLogout() {
+    await PrismAPI.logout();
+    window.dispatchEvent(new CustomEvent('prism:unauthorized'));
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch { return iso; }
+  }
+
+  if (loading) return <div style={{ padding: 40, color: "var(--ink-3)" }}>加载中…</div>;
+
+  return (
+    <div>
+      <div className="page-head"><div className="page-title">个人资料</div><div className="page-sub">当前登录账号的基本信息。</div></div>
+      <div className="card" style={{ padding: 28, maxWidth: 480 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 24 }}>
+          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 24, flexShrink: 0 }}>
+            {profile?.username?.[0]?.toUpperCase() || "?"}
+          </div>
+          <div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 20, color: "var(--ink)" }}>{profile?.username || "—"}</div>
+            <div style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 3 }}>{profile?.email}</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 24 }}>
+          {[
+            ["角色", profile?.role || "—"],
+            ["注册时间", fmtDate(profile?.created_at)],
+            ["上次登录", fmtDate(profile?.last_login_at)],
+            ["用户 ID", profile?.id?.slice(0, 12) + "…" || "—"],
+          ].map(([k, v]) => (
+            <div key={k} style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px" }}>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>{k}</div>
+              <div className="mono" style={{ fontSize: 12.5, color: "var(--ink)" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="btn ghost" onClick={() => onToast({ id: Date.now(), title: "还没做", body: "修改密码功能尚未实现，请联系管理员重置。" })}>修改密码</button>
+          <button className="btn danger" style={{ marginLeft: "auto" }} onClick={handleLogout}>退出登录</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProvidersTab({ onToast }) {
+  const [providers, setProviders] = useState([]);
+  const [presets, setPresets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingProvider, setEditingProvider] = useState(null);
+  const [form, setForm] = useState({ preset: "", name: "", api_key: "", base_url: "", model_id: "", is_default: false });
+  const [submitting, setSubmitting] = useState(false);
+  const [testing, setTesting] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [pvList, psList] = await Promise.all([PrismAPI.providers.list(), PrismAPI.providers.presets()]);
+      setProviders(Array.isArray(pvList) ? pvList : []);
+      setPresets(Array.isArray(psList) ? psList : []);
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "加载失败", body: err.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  function applyPreset(presetName) {
+    const p = presets.find(x => x.name === presetName);
+    if (!p) { setForm(f => ({ ...f, preset: presetName })); return; }
+    setForm(f => ({ ...f, preset: presetName, name: p.name, base_url: p.base_url, model_id: p.model_id, api_key: "", is_default: false }));
+  }
+
+  function openEdit(p) {
+    setEditingProvider(p);
+    setForm({ preset: "", name: p.name, api_key: "", base_url: p.base_url || "", model_id: p.model_id || "", is_default: p.is_default });
+    setShowForm(true);
+  }
+
+  function closeForm() { setShowForm(false); setEditingProvider(null); setForm({ preset: "", name: "", api_key: "", base_url: "", model_id: "", is_default: false }); }
+
+  async function handleSubmit() {
+    if (!form.name.trim()) { onToast({ id: Date.now(), kind: "warning", title: "缺名字", body: "Provider 名字不能为空" }); return; }
+    const preset = presets.find(p => p.name === form.preset);
+    const protocol = preset?.protocol || "openai";
+    const capabilities = preset?.capabilities || {};
+
+    if (!editingProvider && !form.api_key.trim()) {
+      onToast({ id: Date.now(), kind: "warning", title: "缺 API Key", body: "新建时必须填 API Key" }); return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (editingProvider) {
+        const body = { name: form.name, base_url: form.base_url || undefined, model_id: form.model_id || undefined, is_default: form.is_default };
+        if (form.api_key.trim()) body.api_key = form.api_key;
+        await PrismAPI.providers.update(editingProvider.id, body);
+        onToast({ id: Date.now(), kind: "success", title: "已更新", body: form.name });
+      } else {
+        await PrismAPI.providers.create({
+          name: form.name, protocol, base_url: form.base_url || undefined,
+          model_id: form.model_id || undefined, api_key: form.api_key,
+          is_default: form.is_default,
+          config: { capabilities },
+        });
+        onToast({ id: Date.now(), kind: "success", title: "已新建", body: form.name });
+      }
+      closeForm();
+      load();
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "操作失败", body: err.message });
+    }
+    setSubmitting(false);
+  }
+
+  async function handleDelete(p) {
+    if (!confirm(`确定删除 ${p.name}？`)) return;
+    try {
+      await PrismAPI.providers.delete_(p.id);
+      onToast({ id: Date.now(), title: "已删除", body: p.name });
+      load();
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "删除失败", body: err.message });
+    }
+  }
+
+  async function handleTest(p) {
+    setTesting(p.id);
+    try {
+      await PrismAPI.providers.test(p.id);
+      onToast({ id: Date.now(), kind: "success", title: "连通", body: `${p.name} 测试通过` });
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "测试失败", body: err.message });
+    }
+    setTesting(null);
+  }
+
+  const userProviders = providers.filter(p => p.scope === "user");
+  const systemProviders = providers.filter(p => p.scope === "system");
+
+  return (
+    <div>
+      <div className="page-head" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div>
+          <div className="page-title">我的 Providers</div>
+          <div className="page-sub">带着你自己的 key 来。Anthropic 协议、OpenAI 协议都通。</div>
+        </div>
+        <button className="btn primary" onClick={() => { setShowForm(true); setEditingProvider(null); }}><Icon name="plus" size={13}/> 新建</button>
+      </div>
+
+      {showForm && (
+        <div className="card" style={{ padding: 22, marginBottom: 20 }}>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 15, color: "var(--ink)", marginBottom: 16 }}>{editingProvider ? `编辑 ${editingProvider.name}` : "新建 Provider"}</div>
+          {!editingProvider && (
+            <label style={{ display: "block", marginBottom: 14 }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>从预设开始（可选）</div>
+              <select className="input" value={form.preset} onChange={e => applyPreset(e.target.value)}>
+                <option value="">— 手动填写 —</option>
+                {presets.map(p => <option key={p.name} value={p.name}>{p.name} ({p.protocol})</option>)}
+              </select>
+            </label>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>名字 *</div>
+              <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="My Anthropic"/>
+            </label>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>API Key {editingProvider ? "（留空不改）" : "*"}</div>
+              <input className="input" type="password" value={form.api_key} onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))} placeholder={editingProvider ? "留空表示不修改" : "sk-…"}/>
+            </label>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>Base URL（可选）</div>
+              <input className="input" value={form.base_url} onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} placeholder="https://api.anthropic.com"/>
+            </label>
+            <label style={{ display: "block" }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>Model ID（可选）</div>
+              <input className="input" value={form.model_id} onChange={e => setForm(f => ({ ...f, model_id: e.target.value }))} placeholder="claude-sonnet-4-6"/>
+            </label>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, cursor: "pointer" }}>
+            <input type="checkbox" checked={form.is_default} onChange={e => setForm(f => ({ ...f, is_default: e.target.checked }))}/>
+            <span style={{ fontSize: 13, color: "var(--ink-2)" }}>设为我的默认 Provider</span>
+          </label>
+          <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+            <button className="btn primary" onClick={handleSubmit} disabled={submitting}>{submitting ? "保存中…" : "保存"}</button>
+            <button className="btn ghost" onClick={closeForm}>取消</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div style={{ color: "var(--ink-3)" }}>加载中…</div> : (
+        <>
+          {userProviders.length > 0 && (
+            <>
+              <div className="section-title" style={{ marginBottom: 10 }}>我的配置</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+                {userProviders.map(p => (
+                  <div key={p.id} className="card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 16 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 16, flexShrink: 0 }}>{(p.name || "?")[0]}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: "var(--serif)", fontSize: 15, color: "var(--ink)" }}>{p.name}</span>
+                        {p.is_default && <span className="badge ink">默认</span>}
+                        <span className="badge">{p.protocol}</span>
+                        <span className={`dot ${p.is_healthy ? "live" : "warn"}`}/>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4, fontFamily: "var(--mono)" }}>
+                        {p.api_key_masked} · {p.model_id}
+                      </div>
+                    </div>
+                    <button className="btn sm ghost" onClick={() => handleTest(p)} disabled={testing === p.id}>{testing === p.id ? "…" : "测一下"}</button>
+                    <button className="btn sm" onClick={() => openEdit(p)}>编辑</button>
+                    <button className="btn sm danger" onClick={() => handleDelete(p)}>删除</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {systemProviders.length > 0 && (
+            <>
+              <div className="section-title" style={{ marginBottom: 10 }}>平台 Providers（只读）</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {systemProviders.map(p => (
+                  <div key={p.id} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14, opacity: 0.72 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: "var(--ink-3)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 14, flexShrink: 0 }}>{(p.name || "?")[0]}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: "var(--serif)", fontSize: 14, color: "var(--ink-2)" }}>{p.name}</span>
+                        {p.is_default && <span className="badge">默认</span>}
+                        <span className="badge">{p.protocol}</span>
+                        <span className={`dot ${p.is_healthy ? "live" : "warn"}`}/>
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 3, fontFamily: "var(--mono)" }}>{p.model_id}</div>
+                    </div>
+                    <span style={{ fontSize: 11.5, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>system</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {providers.length === 0 && <div style={{ color: "var(--ink-3)", padding: 20 }}>暂无 provider</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function McpTab({ onToast }) {
+  const [servers, setServers] = useState([]);
+  const [installs, setInstalls] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [installing, setInstalling] = useState(null);
+  const [toggling, setToggling] = useState(null);
+  const [uninstalling, setUninstalling] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [srvList, instList] = await Promise.all([PrismAPI.mcp.listServers(), PrismAPI.mcp.listInstalls()]);
+      setServers(Array.isArray(srvList) ? srvList : []);
+      setInstalls(Array.isArray(instList) ? instList : []);
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "加载失败", body: err.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  function isInstalled(serverId) { return installs.some(i => i.mcp_server_id === serverId); }
+  function getInstall(serverId) { return installs.find(i => i.mcp_server_id === serverId); }
+
+  async function handleInstall(server) {
+    setInstalling(server.id);
+    try {
+      await PrismAPI.mcp.install({ mcp_server_id: server.id });
+      onToast({ id: Date.now(), kind: "success", title: "已安装", body: server.name });
+      load();
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "安装失败", body: err.message });
+    }
+    setInstalling(null);
+  }
+
+  async function handleToggle(install) {
+    setToggling(install.id);
+    try {
+      await PrismAPI.mcp.updateInstall(install.id, { is_enabled: !install.is_enabled });
+      setInstalls(prev => prev.map(i => i.id === install.id ? { ...i, is_enabled: !i.is_enabled } : i));
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "切换失败", body: err.message });
+    }
+    setToggling(null);
+  }
+
+  async function handleUninstall(install) {
+    if (!confirm(`卸载 ${install.mcp_server_name}？`)) return;
+    setUninstalling(install.id);
+    try {
+      await PrismAPI.mcp.uninstall(install.id);
+      onToast({ id: Date.now(), title: "已卸载", body: install.mcp_server_name });
+      load();
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "卸载失败", body: err.message });
+    }
+    setUninstalling(null);
+  }
+
+  if (loading) return <div style={{ color: "var(--ink-3)" }}>加载中…</div>;
+
+  const notInstalled = servers.filter(s => !isInstalled(s.id));
+
+  return (
+    <div>
+      <div className="page-head"><div className="page-title">我的 MCP</div><div className="page-sub">安装 MCP Server 后，Agent 可以调用它提供的工具。</div></div>
+
+      {installs.length > 0 && (
+        <>
+          <div className="section-title" style={{ marginBottom: 10 }}>已安装</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+            {installs.map(inst => {
+              const srv = servers.find(s => s.id === inst.mcp_server_id);
+              return (
+                <div key={inst.id} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{inst.mcp_server_name}</span>
+                      {srv?.scope === "system" && <span className="badge">系统</span>}
+                      <span className={`dot ${inst.is_enabled ? "live" : "warn"}`}/>
+                    </div>
+                    {srv && <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4, fontFamily: "var(--mono)" }}>$ {srv.command} {(srv.args || []).join(" ")}</div>}
+                  </div>
+                  <div
+                    className={`switch ${inst.is_enabled ? "on" : ""}`}
+                    style={{ cursor: toggling === inst.id ? "wait" : "pointer" }}
+                    onClick={() => toggling !== inst.id && handleToggle(inst)}
+                  />
+                  <button className="btn sm danger" onClick={() => handleUninstall(inst)} disabled={uninstalling === inst.id}>{uninstalling === inst.id ? "…" : "卸载"}</button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {notInstalled.length > 0 && (
+        <>
+          <div className="section-title" style={{ marginBottom: 10 }}>可安装</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {notInstalled.map(s => (
+              <div key={s.id} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{s.name}</span>
+                    <span className="badge">系统</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3, fontFamily: "var(--serif)", fontStyle: "italic" }}>{s.description}</div>
+                </div>
+                <button className="btn sm primary" onClick={() => handleInstall(s)} disabled={installing === s.id}>{installing === s.id ? "安装中…" : "安装"}</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {servers.length === 0 && <div style={{ color: "var(--ink-3)", padding: 20 }}>暂无可用 MCP Server</div>}
+    </div>
+  );
+}
+
+function SkillsSettingsTab({ onToast }) {
+  const [installed, setInstalled] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [uninstalling, setUninstalling] = useState(null);
+
+  async function loadInstalled() {
+    setLoading(true);
+    try {
+      const list = await PrismAPI.skills.listInstalled();
+      setInstalled(Array.isArray(list) ? list : []);
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "加载失败", body: err.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadInstalled(); }, []);
+
+  async function handleSearch() {
+    if (!q.trim()) { setSearchResults([]); return; }
+    setSearching(true);
+    try {
+      const results = await PrismAPI.skills.search({ q: q.trim() });
+      setSearchResults(Array.isArray(results) ? results : []);
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "搜索失败", body: err.message });
+      setSearchResults([]);
+    }
+    setSearching(false);
+  }
+
+  async function handleUninstall(sk) {
+    const name = sk.skill_name || sk.name;
+    if (!confirm(`卸载 ${name}？`)) return;
+    setUninstalling(name);
+    try {
+      await PrismAPI.skills.uninstall(name);
+      onToast({ id: Date.now(), title: "已卸载", body: name });
+      loadInstalled();
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "卸载失败", body: err.message });
+    }
+    setUninstalling(null);
+  }
+
+  return (
+    <div>
+      <div className="page-head"><div className="page-title">技能（Skills）</div><div className="page-sub">Skill 是 Markdown + 钩子的组合，装上后 Agent 可以使用。</div></div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <input className="input" style={{ flex: 1 }} placeholder="搜索技能名…" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()}/>
+        <button className="btn" onClick={handleSearch} disabled={searching}>{searching ? "搜索中…" : "搜索"}</button>
+      </div>
+
+      {searchResults.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div className="section-title" style={{ marginBottom: 10 }}>搜索结果</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {searchResults.map((sk, i) => {
+              const name = sk.skill_name || sk.name;
+              const isInst = installed.some(s => (s.skill_name || s.name) === name);
+              return (
+                <div key={i} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{name}</div>
+                    {sk.description && <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3, fontFamily: "var(--serif)", fontStyle: "italic" }}>{sk.description}</div>}
+                  </div>
+                  {isInst ? <span className="badge teal">已装</span> : (
+                    <button className="btn sm primary" onClick={() => onToast({ id: Date.now(), title: "暂不支持", body: "从搜索结果安装需要提供 source_url/version，请联系管理员操作。" })}>安装</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {q && !searching && searchResults.length === 0 && <div style={{ color: "var(--ink-3)", marginBottom: 20 }}>无匹配技能</div>}
+
+      <div className="section-title" style={{ marginBottom: 10 }}>已安装</div>
+      {loading ? <div style={{ color: "var(--ink-3)" }}>加载中…</div> : installed.length === 0 ? (
+        <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic" }}>暂未安装任何 Skill</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {installed.map((sk, i) => {
+            const name = sk.skill_name || sk.name;
+            return (
+              <div key={i} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{name}</div>
+                  {sk.version && <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 3, fontFamily: "var(--mono)" }}>v{sk.version} · {sk.source || "local"}</div>}
+                </div>
+                <span className="badge teal">已装</span>
+                <button className="btn sm danger" onClick={() => handleUninstall(sk)} disabled={uninstalling === name}>{uninstalling === name ? "…" : "卸载"}</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImTab({ onToast }) {
+  const [bindings, setBindings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [pairingChannel, setPairingChannel] = useState("");
+  const [pairResult, setPairResult] = useState(null);
+  const [countdown, setCountdown] = useState(0);
+  const [generating, setGenerating] = useState(false);
+  const [unbinding, setUnbinding] = useState(null);
+  const countdownRef = useRef(null);
+
+  async function loadBindings() {
+    setLoading(true);
+    try {
+      const list = await PrismAPI.im.listBindings();
+      setBindings(Array.isArray(list) ? list : []);
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "加载失败", body: err.message });
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadBindings(); return () => { if (countdownRef.current) clearInterval(countdownRef.current); }; }, []);
+
+  async function handleGeneratePair() {
+    if (!pairingChannel) { onToast({ id: Date.now(), kind: "warning", title: "选择渠道", body: "请先选择要绑定的 IM 渠道" }); return; }
+    setGenerating(true);
+    try {
+      const result = await PrismAPI.im.generatePairingCode({ channel: pairingChannel });
+      setPairResult(result);
+      const exp = new Date(result.expires_at);
+      const secs = Math.max(0, Math.floor((exp - Date.now()) / 1000));
+      setCountdown(secs);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      countdownRef.current = setInterval(() => {
+        setCountdown(c => { if (c <= 1) { clearInterval(countdownRef.current); setPairResult(null); return 0; } return c - 1; });
+      }, 1000);
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "生成失败", body: err.message });
+    }
+    setGenerating(false);
+  }
+
+  async function handleUnbind(b) {
+    if (!confirm(`解绑 ${b.channel || b.id}？`)) return;
+    setUnbinding(b.id);
+    try {
+      await PrismAPI.im.unbind(b.id);
+      onToast({ id: Date.now(), title: "已解绑", body: b.channel || b.id });
+      loadBindings();
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "解绑失败", body: err.message });
+    }
+    setUnbinding(null);
+  }
+
+  const CHANNELS = [
+    { value: "feishu", label: "飞书 · Lark" },
+    { value: "wecom", label: "企业微信" },
+    { value: "telegram", label: "Telegram" },
   ];
+
+  return (
+    <div>
+      <div className="page-head"><div className="page-title">IM 绑定</div><div className="page-sub">把 Prism 接到飞书、企微、Telegram 里。每条消息都变成一个 Session。</div></div>
+
+      <div className="card" style={{ padding: 22, marginBottom: 20 }}>
+        <div style={{ fontFamily: "var(--serif)", fontSize: 14, color: "var(--ink-2)", marginBottom: 14 }}>生成配对码</div>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>选择渠道</div>
+            <select className="input" value={pairingChannel} onChange={e => setPairingChannel(e.target.value)}>
+              <option value="">— 选择渠道 —</option>
+              {CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+          <button className="btn primary" onClick={handleGeneratePair} disabled={generating}>{generating ? "生成中…" : "生成配对码"}</button>
+        </div>
+        {pairResult && (
+          <div style={{ marginTop: 16, padding: "16px 20px", background: "var(--bg)", borderRadius: 12, display: "flex", alignItems: "center", gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4 }}>配对码</div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 32, color: "var(--ink)", letterSpacing: "0.12em", fontWeight: 600 }}>{pairResult.pairing_code}</div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4 }}>有效期</div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 20, color: countdown < 60 ? "var(--red, #c0392b)" : "var(--teal)" }}>{Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}</div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", maxWidth: 160 }}>在 {CHANNELS.find(c => c.value === pairResult.channel)?.label || pairResult.channel} 中向 Bot 发送此码完成绑定</div>
+          </div>
+        )}
+      </div>
+
+      <div className="section-title" style={{ marginBottom: 10 }}>已绑定</div>
+      {loading ? <div style={{ color: "var(--ink-3)" }}>加载中…</div> : bindings.length === 0 ? (
+        <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic" }}>暂无绑定</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {bindings.map(b => (
+            <div key={b.id} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: "var(--serif)", fontSize: 14, color: "var(--ink)" }}>
+                  {CHANNELS.find(c => c.value === b.channel)?.label || b.channel || "未知渠道"}
+                </div>
+                {b.external_id && <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 3, fontFamily: "var(--mono)" }}>{b.external_id}</div>}
+              </div>
+              <span className="badge teal">已绑</span>
+              <button className="btn sm danger" onClick={() => handleUnbind(b)} disabled={unbinding === b.id}>{unbinding === b.id ? "…" : "解绑"}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PrefsTab({ onToast }) {
+  const [theme, setTheme] = useState(() => localStorage.getItem("prism_theme") || "light");
+  const [lang, setLang] = useState(() => localStorage.getItem("prism_lang") || "zh");
+
+  function applyTheme(t) {
+    setTheme(t);
+    localStorage.setItem("prism_theme", t);
+    document.documentElement.setAttribute("data-theme", t);
+    onToast({ id: Date.now(), title: "已切换主题", body: t === "dark" ? "深色" : "浅色" });
+  }
+
+  function applyLang(l) {
+    setLang(l);
+    localStorage.setItem("prism_lang", l);
+    onToast({ id: Date.now(), title: "语言设置已保存", body: "刷新页面后生效" });
+  }
+
+  return (
+    <div>
+      <div className="page-head"><div className="page-title">偏好设置</div><div className="page-sub">存在浏览器本地，不同步到服务端。</div></div>
+      <div className="card" style={{ padding: 22, maxWidth: 400 }}>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.12em" }}>主题</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[["light", "浅色"], ["dark", "深色"]].map(([val, label]) => (
+              <button key={val} className={`btn ${theme === val ? "primary" : "ghost"}`} onClick={() => applyTheme(val)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.12em" }}>语言</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[["zh", "中文"], ["en", "English"]].map(([val, label]) => (
+              <button key={val} className={`btn ${lang === val ? "primary" : "ghost"}`} onClick={() => applyLang(val)}>{label}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage({ onToast }) {
+  const [sec, setSec] = useState("profile");
+  const tabs = [
+    { id: "profile", label: "个人资料", icon: "shield" },
+    { id: "providers", label: "我的 Providers", icon: "layers" },
+    { id: "mcp", label: "我的 MCP", icon: "plugin" },
+    { id: "skills", label: "技能", icon: "skills" },
+    { id: "im", label: "IM 绑定", icon: "chat" },
+    { id: "prefs", label: "偏好", icon: "settings" },
+  ];
+  const toast = onToast || (() => {});
   return (
     <div className="page" style={{ padding: 0, display: "flex", flex: 1, overflow: "hidden" }}>
-      <div style={{ width: 180, padding: "28px 0 20px", flexShrink: 0 }}>
+      <div style={{ width: 180, padding: "28px 0 20px", flexShrink: 0, borderRight: "1px solid var(--line)" }}>
         <div className="eyebrow" style={{ padding: "0 20px 10px" }}>设置</div>
         {tabs.map(it => (
           <div key={it.id} className={`nav-item ${sec === it.id ? "active" : ""}`} onClick={() => setSec(it.id)} style={{ margin: "0 12px" }}>
@@ -1261,102 +1912,12 @@ function SettingsPage() {
         ))}
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 40px 50px" }}>
-        {sec === "providers" && <>
-          <div className="page-head"><div className="page-title">Providers</div><div className="page-sub">带着你自己的 key 来。Anthropic 协议、OpenAI 协议都通。</div></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {PROVIDERS.map(p => (
-              <div key={p.id} className="card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 16 }}>
-                <div style={{ width: 44, height: 44, borderRadius: "50%", background: "var(--ink)", color: "var(--paper)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--serif)", fontSize: 18 }}>{p.name[0]}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontFamily: "var(--serif)", fontSize: 16, color: "var(--ink)" }}>{p.name}</span>
-                    {p.default && <span className="badge ink">默认</span>}
-                    <span className="badge">{p.protocol}</span>
-                    <span className={`dot ${p.health === "ok" ? "live" : "warn"}`}/>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 4, fontFamily: "var(--mono)" }}>{p.model} · {p.cost} · 缓存 {p.cache ? "✓" : "—"}</div>
-                </div>
-                <button className="btn sm ghost">测一下</button>
-                <button className="btn sm">编辑</button>
-              </div>
-            ))}
-          </div>
-        </>}
-        {sec === "mcp" && <>
-          <div className="page-head"><div className="page-title">MCP servers</div><div className="page-sub">接任何说 MCP 协议的服务 —— 本地子进程或者远程都行。</div></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {MCP_SERVERS.map(s => (
-              <div key={s.id} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span className="mono" style={{ fontSize: 13, color: "var(--ink)", fontWeight: 500 }}>{s.name}</span>
-                    <span className="badge">{s.tools} tools</span>
-                    <span className="badge">{s.source}</span>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4, fontFamily: "var(--mono)" }}>$ {s.cmd}</div>
-                </div>
-                <div className={`switch ${s.enabled ? "on" : ""}`}/>
-              </div>
-            ))}
-          </div>
-        </>}
-        {sec === "im" && <>
-          <div className="page-head"><div className="page-title">IM bots</div><div className="page-sub">把 Prism 接到飞书、企微、Telegram 里。每条消息都变成一个 Session。</div></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {IM_CHANNELS.map(c => (
-              <div key={c.id} className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: "var(--serif)", fontSize: 15, color: "var(--ink)" }}>{c.name}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 3, fontFamily: "var(--mono)" }}>{c.status} · {c.user} · {c.lastAt}</div>
-                </div>
-                {c.status === "bound" && <span className="badge teal">已绑</span>}
-                {c.status === "pairing" && <span className="badge amber">配对中</span>}
-                {c.status === "unbound" && <button className="btn sm primary">配对</button>}
-              </div>
-            ))}
-          </div>
-        </>}
-        {sec === "guard" && <>
-          <div className="page-head"><div className="page-title">护栏</div><div className="page-sub">工具调用之前过一遍。可以只警告,也可以直接拦下来。</div></div>
-          {[
-            { id: "GR-COMPLIANCE-002", name: "数字必须有出处", mode: "警告", hits: 34 },
-            { id: "GR-EXEC-004", name: "破坏性 shell 操作白名单", mode: "问一下", hits: 12 },
-            { id: "GR-PRIVACY-001", name: "防 PII 泄露", mode: "拦截", hits: 4 },
-            { id: "GR-COST-003", name: "单次 run 预算 ¥1.50", mode: "警告", hits: 2 }
-          ].map(g => (
-            <div key={g.id} className="card" style={{ padding: 16, marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ flex: 1 }}>
-                <div className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{g.id}</div>
-                <div style={{ fontSize: 13.5, color: "var(--ink-2)", marginTop: 2, fontFamily: "var(--serif)", fontStyle: "italic" }}>{g.name}</div>
-              </div>
-              <span className="badge amber">{g.mode}</span>
-              <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{g.hits} 次</span>
-              <div className="switch on"/>
-            </div>
-          ))}
-        </>}
-        {sec === "ws" && <>
-          <div className="page-head"><div className="page-title">工作区</div><div className="page-sub">自部署的那些细节。</div></div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            {[["部署", "docker-compose · hangzhou-prod"], ["区域", "cn-hangzhou-a"], ["Postgres", "v16.2 · 42 GB"], ["Redis", "v7.2 · 512 MB"], ["OTel", "jaeger 1.58 · 正常"], ["备份", "每天 03:00 · 上次: ✓"], ["存储", "s3://prism-sessions · 8.2 GB"], ["key", "prism_ws_7f3a…de21"]].map(([k, v]) => (
-              <div key={k} className="card" style={{ padding: 16 }}>
-                <div className="eyebrow" style={{ marginBottom: 5 }}>{k}</div>
-                <div className="mono" style={{ fontSize: 12.5, color: "var(--ink)" }}>{v}</div>
-              </div>
-            ))}
-          </div>
-        </>}
-        {sec === "keys" && <>
-          <div className="page-head"><div className="page-title">API keys</div><div className="page-sub">给 CLI / SDK / 外部 agent 用的个人 key。</div></div>
-          <table className="table">
-            <thead><tr><th>名字</th><th>前缀</th><th>创建</th><th>上次用</th><th>权限</th><th></th></tr></thead>
-            <tbody>
-              {[["cli-laptop", "pk_live_7f3a…", "2 月前", "14:02", "rw"], ["ci-pipeline", "pk_live_de21…", "1 月前", "昨天", "ro"], ["obs-exporter", "pk_live_18be…", "3 周前", "3 天前", "ro"]].map(([n, p, c, l, s], i) => (
-                <tr key={i}><td style={{ color: "var(--ink)", fontWeight: 500 }}>{n}</td><td className="mono">{p}</td><td style={{ color: "var(--ink-3)" }}>{c}</td><td style={{ color: "var(--ink-3)" }}>{l}</td><td><span className="badge">{s}</span></td><td><button className="btn sm danger">撤销</button></td></tr>
-              ))}
-            </tbody>
-          </table>
-        </>}
+        {sec === "profile" && <ProfileTab onToast={toast}/>}
+        {sec === "providers" && <ProvidersTab onToast={toast}/>}
+        {sec === "mcp" && <McpTab onToast={toast}/>}
+        {sec === "skills" && <SkillsSettingsTab onToast={toast}/>}
+        {sec === "im" && <ImTab onToast={toast}/>}
+        {sec === "prefs" && <PrefsTab onToast={toast}/>}
       </div>
     </div>
   );
@@ -1664,7 +2225,7 @@ function App() {
           {page === "plugins" && <PluginsPage/>}
           {page === "admin" && <AdminPage/>}
           {page === "observability" && <ObsPage/>}
-          {page === "settings" && <SettingsPage/>}
+          {page === "settings" && <SettingsPage onToast={addToast}/>}
           {page !== "chat" && (
             <div className="statusbar">
               <div className="kv"><span>provider</span> <b>anthropic</b></div>

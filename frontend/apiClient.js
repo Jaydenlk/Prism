@@ -406,6 +406,81 @@
     },
   };
 
+  /* ── MCP ──────────────────────────────────────────────────────── */
+  const mcp = {
+    listServers() {
+      return request('GET', '/mcp-servers');
+    },
+    getServer(id) {
+      return request('GET', `/mcp-servers/${id}`);
+    },
+    createServer(body) {
+      return request('POST', '/mcp-servers', { json: body });
+    },
+    deleteServer(id) {
+      return request('DELETE', `/mcp-servers/${id}`);
+    },
+    testServer(id) {
+      return request('POST', `/mcp-servers/${id}/test`);
+    },
+    listInstalls() {
+      return request('GET', '/mcp-installs');
+    },
+    install(body) {
+      // body: { mcp_server_id }
+      return request('POST', '/mcp-installs', { json: body });
+    },
+    updateInstall(id, body) {
+      // body: { is_enabled?, config_override? }
+      return request('PATCH', `/mcp-installs/${id}`, { json: body });
+    },
+    uninstall(id) {
+      return request('DELETE', `/mcp-installs/${id}`);
+    },
+  };
+
+  /* ── Skills ───────────────────────────────────────────────────── */
+  const skills = {
+    search({ q, source, limit } = {}) {
+      return request('GET', '/skills/search', { query: { q, source, limit } });
+    },
+    listInstalled() {
+      return request('GET', '/skills/installed');
+    },
+    get(name) {
+      return request('GET', `/skills/${name}`);
+    },
+    install({ skill_name, source, source_url, version, install_path }) {
+      return request('POST', '/skills/install', { json: { skill_name, source, source_url, version, install_path } });
+    },
+    update(name) {
+      return request('POST', `/skills/${name}/update`);
+    },
+    uninstall(name) {
+      return request('DELETE', `/skills/${name}`);
+    },
+  };
+
+  /* ── IM ───────────────────────────────────────────────────────── */
+  const im = {
+    listChannels() {
+      return request('GET', '/im/channels');
+    },
+    updateChannel(channel, body) {
+      return request('PATCH', `/im/channels/${channel}`, { json: body });
+    },
+    listBindings() {
+      return request('GET', '/im/bindings');
+    },
+    generatePairingCode({ channel }) {
+      // Backend expects channel as query param, not body
+      return request('POST', '/im/bindings/pair', { query: { channel } });
+    },
+    unbind(bindingId) {
+      return request('DELETE', `/im/bindings/${bindingId}`);
+    },
+  };
+
   /* ── Harness ──────────────────────────────────────────────────── */
   const harness = {
     config() {
@@ -476,6 +551,9 @@
     runs,
     admin,
     providers,
+    mcp,
+    skills,
+    im,
     harness,
 
     auth: {
