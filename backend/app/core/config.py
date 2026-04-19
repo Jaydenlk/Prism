@@ -69,6 +69,26 @@ class Settings(BaseSettings):
     OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
     OTEL_SERVICE_NAME: str = "prism-backend"
 
+    # --- LLM Provider API Keys (default seeds for scope=system providers) -
+    # Admin 可在 UI 中调整；用户可在个人设置中 override (scope=user)。
+    # 空值 → 留 SYSTEM_PRESET_NO_KEY 占位，需要手动配置才能使用该 Provider。
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_BASE_URL: str = "https://api.anthropic.com"
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
+    MINIMAX_API_KEY: str = ""
+    MINIMAX_BASE_URL: str = "https://api.minimaxi.com/anthropic"
+    KIMI_API_KEY: str = ""
+    KIMI_BASE_URL: str = "https://api.moonshot.cn/v1"
+    QWEN_API_KEY: str = ""
+    QWEN_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    GLM_API_KEY: str = ""
+    GLM_BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4"
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+
     # --- Alert Dispatcher (ADR-120) ---------------------------------------
     # IM 群告警：格式 "{platform}:{chat_id}"，如 "feishu:oc_xxx"
     ALERT_IM_CHANNEL: str = ""

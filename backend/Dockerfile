@@ -2,18 +2,27 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    curl wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
+# Python deps (build context = repo root so we can COPY executor/)
+COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source
-COPY . .
+# Copy backend package + executor package so subprocess can import executor
+COPY backend /app/backend
+COPY executor /app/executor
+
+# Make both importable: cwd = /app means `from app.*` (via backend/app) still
+# resolves if we cd into backend, AND `from executor.*` resolves directly.
+# We chose: run uvicorn from /app with PYTHONPATH=/app:/app/backend so both
+# `app.*` (FastAPI router imports) and `executor.*` (subprocess imports) work.
+ENV PYTHONPATH=/app:/app/backend
+WORKDIR /app/backend
 
 EXPOSE 8000
 
+# Alembic uses backend/alembic.ini (runs from /app/backend cwd)
 ENTRYPOINT ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

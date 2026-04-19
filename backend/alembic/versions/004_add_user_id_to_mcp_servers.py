@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "004_add_user_id_to_mcp_servers"
-down_revision: str = "003_add_decision_to_permission_requests"
+revision: str = "004"
+down_revision: str = "003"
 branch_labels = None
 depends_on = None
 

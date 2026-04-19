@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "003_add_decision_to_permission_requests"
+revision: str = "003"
 down_revision: str = "002"
 branch_labels = None
 depends_on = None

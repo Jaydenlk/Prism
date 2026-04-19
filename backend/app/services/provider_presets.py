@@ -22,6 +22,24 @@ except ImportError:
     # Allow import when running tests from repo root with backend/ on sys.path
     from backend.app.schemas.provider import ProviderCapabilitiesSchema, ProviderPreset  # type: ignore[no-redef]
 
+
+# ---------------------------------------------------------------------------
+# Preset key → env var mapping — used by bootstrap_presets() to seed the real
+# API keys / base URLs from the .env file (see Settings in app/core/config.py).
+# Admin-edited values (via /api/v1/providers PATCH on scope=system) ultimately
+# override env seeds because bootstrap skips existing rows.
+# ---------------------------------------------------------------------------
+PRESET_ENV_MAP: dict[str, dict[str, str]] = {
+    "Anthropic Claude":  {"api_key": "ANTHROPIC_API_KEY",  "base_url": "ANTHROPIC_BASE_URL"},
+    "OpenAI GPT":        {"api_key": "OPENAI_API_KEY",     "base_url": "OPENAI_BASE_URL"},
+    "MiniMax":           {"api_key": "MINIMAX_API_KEY",    "base_url": "MINIMAX_BASE_URL"},
+    "DeepSeek":          {"api_key": "DEEPSEEK_API_KEY",   "base_url": "DEEPSEEK_BASE_URL"},
+    "Kimi (Moonshot)":   {"api_key": "KIMI_API_KEY",       "base_url": "KIMI_BASE_URL"},
+    "Qwen (通义千问)":    {"api_key": "QWEN_API_KEY",       "base_url": "QWEN_BASE_URL"},
+    "智谱 AI (GLM)":      {"api_key": "GLM_API_KEY",        "base_url": "GLM_BASE_URL"},
+    "Google Gemini":     {"api_key": "GEMINI_API_KEY",     "base_url": "GEMINI_BASE_URL"},
+}
+
 # ---------------------------------------------------------------------------
 # 内置预设清单 (ADR-011: 每个 ProviderPreset 必须含 capabilities)
 # ---------------------------------------------------------------------------

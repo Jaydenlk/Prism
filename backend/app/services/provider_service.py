@@ -33,7 +33,7 @@ from app.schemas.provider import (
     UpdateProviderRequest,
     _mask_key,
 )
-from app.services.provider_presets import BUILTIN_PRESETS
+from app.services.provider_presets import BUILTIN_PRESETS, PRESET_ENV_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -360,23 +360,27 @@ class ProviderService:
                 )
                 continue
 
-            # 系统预设不需要真实 API Key — 存一个占位符
-            # 用户使用前需在个人设置中配置 API Key
-            placeholder_key = encrypt_value(
-                "SYSTEM_PRESET_NO_KEY", settings.ENCRYPTION_KEY
-            )
+            # 读 .env 提供的默认 API Key / base_url（管理员后续可在 UI 改）
+            # 空 key → 占位符，用户/管理员未配置时该 Provider 不可用
+            env_map = PRESET_ENV_MAP.get(preset.name, {})
+            env_api_key = getattr(settings, env_map.get("api_key", ""), "") if env_map else ""
+            env_base_url = getattr(settings, env_map.get("base_url", ""), "") if env_map else ""
+            real_key = env_api_key.strip() if env_api_key else ""
+            key_value = real_key if real_key else "SYSTEM_PRESET_NO_KEY"
+            api_key_encrypted = encrypt_value(key_value, settings.ENCRYPTION_KEY)
+            base_url_final = (env_base_url or preset.base_url).rstrip("/")
 
             provider = Provider(
                 scope="system",
                 user_id=None,
                 name=preset.name,
                 protocol=preset.protocol,
-                base_url=preset.base_url.rstrip("/"),
-                api_key_encrypted=placeholder_key,
+                base_url=base_url_final,
+                api_key_encrypted=api_key_encrypted,
                 model_id=preset.model_id,
                 is_default=False,
                 priority=0,
-                is_healthy=True,
+                is_healthy=bool(real_key),
                 config={"capabilities": preset.capabilities.model_dump()},
             )
             db.add(provider)

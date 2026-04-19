@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "005_add_is_active_to_users"
-down_revision: str = "004_add_user_id_to_mcp_servers"
+revision: str = "005"
+down_revision: str = "004"
 branch_labels = None
 depends_on = None
 
