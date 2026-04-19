@@ -24,7 +24,7 @@ Prism v2 Agent 执行器入口（v4）
 
 生命周期：
 1. 解析命令行参数
-2. FROM_DB: 从 DB 读取 Run 配置 + Provider（独立 DB session，DOC-07 Task 7.4）
+2. 从 DB 读取 Run 配置 + Provider（独立 DB session，裸 SQL，DOC-07 Task 7.4）
 3. 初始化 Adapter + PromptAssembler + ToolRegistry + Pipeline + Budget
 4. v4：启动 heartbeat writer task（asyncio.create_task，每 5s SETEX harness:heartbeat:*）
 5. 初始化 Harness Runtime（Middleware + Hook + Permission + Guardrails，Task 3.2-3.4）
@@ -46,7 +46,9 @@ import argparse
 import asyncio
 import os
 import signal
+import sys
 import time
+from dataclasses import dataclass, field
 
 import redis.asyncio as redis_async
 import structlog
@@ -72,6 +74,157 @@ MAX_TURNS_BY_AGENT_TYPE: dict[str, int] = {
     "plugin_builder": 40,
 }
 
+# ---------------------------------------------------------------------------
+# 纯 executor 侧 dataclass（不 import backend ORM，裸 SQL 填充）
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RunRow:
+    """从 runs 表裸 SQL SELECT 填充的极简 dataclass"""
+    id: str
+    prompt: str
+    model: str
+    provider_id: str | None
+    agent_type: str | None
+    status: str
+
+
+@dataclass
+class ProviderRow:
+    """从 providers 表裸 SQL SELECT 填充的极简 dataclass"""
+    id: str
+    name: str
+    protocol: str
+    base_url: str
+    api_key_encrypted: str
+    model_id: str
+    is_default: bool
+    priority: int
+    is_healthy: bool
+    config: dict = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# AES-256-GCM 解密（与 backend/app/core/security.py decrypt_value 等价实现）
+# 独立副本，避免 import backend.app —— 进程边界（ADR-020）
+# ---------------------------------------------------------------------------
+
+def _decrypt_api_key(envelope: str, key_hex: str) -> str:
+    """解密 AES-256-GCM 信封格式 '<nonce_hex>:<ciphertext_hex>'"""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    parts = envelope.split(":", 1)
+    if len(parts) != 2:
+        raise ValueError(
+            f"Invalid encryption envelope format (expected '<nonce_hex>:<ciphertext_hex>'): {envelope[:20]!r}"
+        )
+    nonce_hex, ciphertext_hex = parts
+    key_bytes = bytes.fromhex(key_hex)
+    if len(key_bytes) != 32:
+        raise ValueError(
+            f"ENCRYPTION_KEY must decode to exactly 32 bytes; got {len(key_bytes)}."
+        )
+    aesgcm = AESGCM(key_bytes)
+    plaintext_bytes = aesgcm.decrypt(
+        bytes.fromhex(nonce_hex),
+        bytes.fromhex(ciphertext_hex),
+        None,
+    )
+    return plaintext_bytes.decode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# DB 读取函数（裸 SQL，同步，sqlalchemy.create_engine）
+# ---------------------------------------------------------------------------
+
+def _fetch_run_and_provider(run_id: str) -> tuple[RunRow, ProviderRow]:
+    """从 DB 读取 Run 行 + Provider 行.
+
+    1. 按 run_id 查 runs 表
+    2. 按 run.provider_id 查 providers 表；若 NULL 取最高 priority 的 scope=system provider
+    返回 (RunRow, ProviderRow)，失败时抛 RuntimeError。
+    """
+    from sqlalchemy import create_engine, text as sa_text
+
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL environment variable is not set")
+
+    engine = create_engine(database_url, pool_pre_ping=True)
+
+    try:
+        with engine.connect() as conn:
+            # 1. 读取 Run
+            run_result = conn.execute(
+                sa_text(
+                    "SELECT id, prompt, model, provider_id, agent_type, status "
+                    "FROM runs WHERE id = :run_id"
+                ),
+                {"run_id": run_id},
+            ).fetchone()
+
+            if run_result is None:
+                raise RuntimeError(f"Run not found: {run_id}")
+
+            run = RunRow(
+                id=run_result[0],
+                prompt=run_result[1],
+                model=run_result[2],
+                provider_id=run_result[3],
+                agent_type=run_result[4],
+                status=run_result[5],
+            )
+
+            # 2. 读取 Provider
+            if run.provider_id:
+                prov_result = conn.execute(
+                    sa_text(
+                        "SELECT id, name, protocol, base_url, api_key_encrypted, "
+                        "model_id, is_default, priority, is_healthy, config "
+                        "FROM providers WHERE id = :provider_id"
+                    ),
+                    {"provider_id": run.provider_id},
+                ).fetchone()
+                if prov_result is None:
+                    raise RuntimeError(f"Provider not found: {run.provider_id}")
+            else:
+                # NULL provider_id: 取最高 priority 的 scope=system provider
+                prov_result = conn.execute(
+                    sa_text(
+                        "SELECT id, name, protocol, base_url, api_key_encrypted, "
+                        "model_id, is_default, priority, is_healthy, config "
+                        "FROM providers WHERE scope = 'system' "
+                        "ORDER BY priority DESC, is_default DESC "
+                        "LIMIT 1"
+                    )
+                ).fetchone()
+                if prov_result is None:
+                    raise RuntimeError(
+                        "No system provider available (run.provider_id is NULL and no scope=system provider found)"
+                    )
+
+            provider = ProviderRow(
+                id=prov_result[0],
+                name=prov_result[1],
+                protocol=prov_result[2],
+                base_url=prov_result[3],
+                api_key_encrypted=prov_result[4],
+                model_id=prov_result[5],
+                is_default=bool(prov_result[6]),
+                priority=int(prov_result[7]),
+                is_healthy=bool(prov_result[8]),
+                config=prov_result[9] if prov_result[9] else {},
+            )
+
+    finally:
+        engine.dispose()
+
+    return run, provider
+
+
+# ---------------------------------------------------------------------------
+# 心跳 writer（ADR-023）
+# ---------------------------------------------------------------------------
 
 async def heartbeat_writer(
     run_id: str, redis_url: str, stop_event: asyncio.Event
@@ -120,6 +273,10 @@ async def heartbeat_writer(
         await r.aclose()
 
 
+# ---------------------------------------------------------------------------
+# 主入口
+# ---------------------------------------------------------------------------
+
 async def main() -> None:
     """执行器主入口"""
     parser = argparse.ArgumentParser(
@@ -146,31 +303,6 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    # FROM_DB: 从 DB 读取 Run 配置（独立 session，DOC-07 Task 7.4 实现）
-    # async with AsyncSessionFactory() as db:
-    #     run = await db.get(Run, args.run_id)
-    #     provider = await db.get(Provider, run.provider_id)
-
-    # FROM_DB: Adapter 初始化（ProviderManager 用 ENCRYPTION_KEY 解密 API Key）
-    # from executor.adapters.provider_manager import ProviderManager
-    # adapter = ProviderManager.get_adapter(provider)
-
-    # FROM_DB: 组件装配
-    # from executor.engine.token_estimator_adapter import DriverTokenEstimator
-    # from executor.engine.context_budget import ContextBudgetManager
-    # from executor.engine.prompt_assembler import PromptAssembler
-    # from executor.tools.registry import ToolRegistry
-    # from executor.tools.builtin import register_builtin_tools
-    # from executor.tools.pipeline import ToolExecutionPipeline
-    # from executor.engine.query_engine import QueryEngine, RunContext
-    #
-    # estimator = DriverTokenEstimator(adapter)
-    # budget = ContextBudgetManager(estimator=estimator, max_context_tokens=provider.max_context_tokens)
-    # registry = ToolRegistry()
-    # register_builtin_tools(registry)
-    # assembler = PromptAssembler(agent_type=run.agent_type, tools=registry.list_definitions())
-    # pipeline = ToolExecutionPipeline(registry, budget)
-
     # 1b. Structured logging (ADR-118, DOC-12 Task 12.6)
     # Must be initialised before any other logging so all log records are JSON.
     from executor.observability.logging import bind_run_context, init_logging as _init_logging
@@ -185,13 +317,11 @@ async def main() -> None:
         run_id=args.run_id,
         session_id=args.session_id,
         user_id=args.user_id,
-        agent_type="general",  # updated after DB read / TaskRouter in full integration
+        agent_type="general",  # updated after DB read / TaskRouter
         trace_id=args.otel_trace_id,
     )
 
     # 1c. OTel Tracing setup (ADR-117, DOC-12 Task 12.5)
-    # init_tracing() returns a Context derived from the traceparent argv so all
-    # spans in this process are children of the Backend "run" span.
     from executor.observability.tracing import SpanAttr, SpanName, init_tracing  # noqa: F401
 
     _otel_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
@@ -207,15 +337,9 @@ async def main() -> None:
     )
 
     # 3. BackendCallback（双通道：Redis 高频直通 + HTTP 关键事件重试）
+    # NOTE: 在 DB 读取之前初始化，确保任何错误都能通过 callback 报告
     from executor.callbacks.backend_callback import BackendCallback
     from executor.router import TaskRouter
-
-    # 5. TaskRouter 路由决策（ADR-041 Phase 1 关键词匹配）
-    # FROM_DB: prompt = run.prompt, explicit_agent_type = run.agent_type (if pre-set)
-    # _router = TaskRouter()
-    # _route = _router.route(run.prompt, explicit_agent_type=run.agent_type or None)
-    # agent_type = _route.agent_type
-    # use_coordinator = (_route.mode == "coordinator")
 
     callback = BackendCallback(
         callback_url=args.callback_url,
@@ -231,50 +355,207 @@ async def main() -> None:
         heartbeat_writer(args.run_id, args.redis_url, stop_event)
     )
 
-    # 5. Harness Runtime（Task 3.2-3.4 实现）
-    # HARNESS_INTEGRATION_POINT: MiddlewarePipeline 在 Task 3.2 注入
-    # from executor.harness.middleware.pipeline import MiddlewarePipeline
-    # from executor.harness.hooks.system import HookSystem
-    # from executor.harness.permissions.engine import PermissionEngine
-    # from executor.harness.guardrails.engine import GuardrailsEngine
-    # middleware = MiddlewarePipeline([...])
-    # hook_system = HookSystem.load_from_config(...)
-    # permission_engine = PermissionEngine(redis_url=args.redis_url, callback=callback)
-
-    # 6. QueryEngine（按 agent_type 选 MAX_TURNS，ADR-024）
-    # FROM_DB: agent_type = run.agent_type
-    # max_turns = MAX_TURNS_BY_AGENT_TYPE.get(agent_type, 50)
-    # run_context = RunContext(run_id=args.run_id, session_id=args.session_id, user_id=args.user_id)
-    # engine = QueryEngine(
-    #     adapter=adapter,
-    #     assembler=assembler,
-    #     pipeline=pipeline,
-    #     budget=budget,
-    #     callback=callback,
-    #     run_context=run_context,
-    #     max_turns=max_turns,
-    # )
-
-    # 7. SIGTERM 处理（graceful cancel）
-    # engine 暂为占位（DOC-07 Task 7.4 接入 DB 后实例化）
-    # 此处定义 _sigterm 但 engine 引用在真正连接 DB 后才有效
-    _engine_holder: list = []  # mutable container for closure
-
-    def _sigterm(*_: object) -> None:
-        logger.info("harness.subprocess.sigterm_received", run_id=args.run_id)
-        stop_event.set()
-        # graceful cancel：若 engine 已实例化则通知其取消
-        if _engine_holder:
-            loop = asyncio.get_event_loop()
-            loop.create_task(_engine_holder[0].cancel(graceful=True))
-
-    signal.signal(signal.SIGTERM, _sigterm)
-
-    # 8. 执行 — root span wraps the entire run (ADR-117 span tree)
-    from opentelemetry import trace as _otel_trace
-
-    _tracer = _otel_trace.get_tracer("prism-executor")
+    # 全局 try/except：所有异常走 callback.run_error()，正常 sys.exit(0)
     try:
+        # ----------------------------------------------------------------
+        # Step 2: 从 DB 读取 Run 配置 + Provider（裸 SQL，同步）
+        # ----------------------------------------------------------------
+        logger.info(
+            "harness.subprocess.db_fetch.start",
+            run_id=args.run_id,
+        )
+
+        try:
+            run, provider = await asyncio.to_thread(
+                _fetch_run_and_provider, args.run_id
+            )
+        except Exception as db_exc:
+            logger.error(
+                "harness.subprocess.db_fetch.failed",
+                run_id=args.run_id,
+                error=str(db_exc),
+                exc_info=True,
+            )
+            await callback.run_error(f"DB fetch failed: {db_exc}")
+            return
+
+        logger.info(
+            "harness.subprocess.db_fetch.done",
+            run_id=args.run_id,
+            provider_id=provider.id,
+            provider_name=provider.name,
+            protocol=provider.protocol,
+        )
+
+        # ----------------------------------------------------------------
+        # Step 3a: 解密 API Key（SYSTEM_PRESET_NO_KEY 优雅处理）
+        # ----------------------------------------------------------------
+        PRESET_SENTINEL = "SYSTEM_PRESET_NO_KEY"
+
+        # 检查未加密的 sentinel（admin 还没填 key 的情况）
+        if provider.api_key_encrypted == PRESET_SENTINEL:
+            error_msg = f"Provider {provider.name!r} has no API key configured (SYSTEM_PRESET_NO_KEY)"
+            logger.warning(
+                "harness.subprocess.provider.no_key",
+                provider_id=provider.id,
+                provider_name=provider.name,
+            )
+            await callback.run_error(error_msg)
+            return
+
+        encryption_key = os.environ.get("ENCRYPTION_KEY", "")
+        if not encryption_key:
+            await callback.run_error("ENCRYPTION_KEY environment variable is not set")
+            return
+
+        try:
+            decrypted_api_key = _decrypt_api_key(provider.api_key_encrypted, encryption_key)
+        except Exception as dec_exc:
+            logger.error(
+                "harness.subprocess.decrypt.failed",
+                provider_id=provider.id,
+                error=str(dec_exc),
+                exc_info=True,
+            )
+            await callback.run_error(f"Failed to decrypt API key for provider {provider.name!r}: {dec_exc}")
+            return
+
+        # 解密后再次检查 sentinel（encrypted sentinel 场景）
+        if decrypted_api_key == PRESET_SENTINEL:
+            error_msg = f"Provider {provider.name!r} has no API key configured (SYSTEM_PRESET_NO_KEY)"
+            logger.warning(
+                "harness.subprocess.provider.no_key",
+                provider_id=provider.id,
+                provider_name=provider.name,
+            )
+            await callback.run_error(error_msg)
+            return
+
+        # ----------------------------------------------------------------
+        # Step 3b: TaskRouter 路由决策
+        # ----------------------------------------------------------------
+        _router = TaskRouter()
+        _route = _router.route(run.prompt, explicit_agent_type=run.agent_type or None)
+        agent_type = _route.agent_type
+
+        logger.info(
+            "harness.subprocess.route",
+            run_id=args.run_id,
+            agent_type=agent_type,
+            route_mode=_route.mode,
+            route_reason=_route.reason,
+        )
+
+        # ----------------------------------------------------------------
+        # Step 3c: 初始化 Adapter
+        # ----------------------------------------------------------------
+        from executor.adapters.base import ProviderCapabilities
+        from executor.adapters.anthropic_driver import AnthropicDriver
+        from executor.adapters.openai_driver import OpenAIDriver
+
+        caps_dict = provider.config.get("capabilities", {})
+        capabilities = ProviderCapabilities(
+            prompt_cache=caps_dict.get("prompt_cache", False),
+            streaming_tools=caps_dict.get("streaming_tools", True),
+            extended_thinking=caps_dict.get("extended_thinking", False),
+            vision=caps_dict.get("vision", False),
+        )
+
+        if provider.protocol == "anthropic":
+            adapter = AnthropicDriver(
+                base_url=provider.base_url,
+                api_key=decrypted_api_key,
+                model=provider.model_id,
+                capabilities=capabilities,
+            )
+        elif provider.protocol == "openai":
+            adapter = OpenAIDriver(
+                base_url=provider.base_url,
+                api_key=decrypted_api_key,
+                model=provider.model_id,
+                capabilities=capabilities,
+            )
+        else:
+            await callback.run_error(
+                f"Unknown provider protocol {provider.protocol!r} for provider {provider.name!r}"
+            )
+            return
+
+        logger.info(
+            "harness.subprocess.adapter.initialized",
+            run_id=args.run_id,
+            protocol=provider.protocol,
+            model=provider.model_id,
+        )
+
+        # ----------------------------------------------------------------
+        # Step 3d: 组件装配
+        # ----------------------------------------------------------------
+        from executor.engine.token_estimator_adapter import DriverTokenEstimator
+        from executor.engine.context_budget import ContextBudgetManager
+        from executor.engine.prompt_assembler import PromptAssembler
+        from executor.tools.registry import ToolRegistry
+        from executor.tools.pipeline import ToolExecutionPipeline
+        from executor.engine.query_engine import QueryEngine, RunContext
+
+        estimator = DriverTokenEstimator(adapter)
+        max_context_tokens = provider.config.get("max_context_tokens", 200_000)
+        budget = ContextBudgetManager(estimator=estimator, max_context_tokens=max_context_tokens)
+
+        registry = ToolRegistry()
+        # NOTE: register_builtin_tools not yet implemented — empty registry is fine for Phase 1
+
+        assembler = PromptAssembler(agent_type=agent_type, tools=registry.list_definitions())
+        pipeline = ToolExecutionPipeline(registry, context_budget=budget)
+
+        # ----------------------------------------------------------------
+        # Step 5: Harness Runtime（HARNESS_INTEGRATION_POINT：Task 3.2 注入）
+        # 本 Task 不注入中间件，middleware_pipeline=None（no-op）
+        # ----------------------------------------------------------------
+
+        # ----------------------------------------------------------------
+        # Step 6: QueryEngine（按 agent_type 选 MAX_TURNS，ADR-024）
+        # ----------------------------------------------------------------
+        max_turns = MAX_TURNS_BY_AGENT_TYPE.get(agent_type, 50)
+        run_context = RunContext(
+            run_id=args.run_id,
+            session_id=args.session_id,
+            user_id=args.user_id,
+            agent_type=agent_type,
+        )
+        engine = QueryEngine(
+            adapter=adapter,
+            assembler=assembler,
+            pipeline=pipeline,
+            budget=budget,
+            callback=callback,
+            run_context=run_context,
+            max_turns=max_turns,
+            middleware_pipeline=None,
+            agent_type=agent_type,
+        )
+
+        # ----------------------------------------------------------------
+        # Step 7: SIGTERM 处理（graceful cancel）
+        # ----------------------------------------------------------------
+        _engine_holder: list = [engine]  # mutable container for closure
+
+        def _sigterm(*_: object) -> None:
+            logger.info("harness.subprocess.sigterm_received", run_id=args.run_id)
+            stop_event.set()
+            if _engine_holder:
+                loop = asyncio.get_event_loop()
+                loop.create_task(_engine_holder[0].cancel(graceful=True))
+
+        signal.signal(signal.SIGTERM, _sigterm)
+
+        # ----------------------------------------------------------------
+        # Step 8: 执行 — root span wraps the entire run (ADR-117 span tree)
+        # ----------------------------------------------------------------
+        from opentelemetry import trace as _otel_trace
+
+        _tracer = _otel_trace.get_tracer("prism-executor")
+
         with _tracer.start_as_current_span(
             SpanName.RUN,
             context=_parent_ctx,
@@ -282,22 +563,44 @@ async def main() -> None:
                 SpanAttr.RUN_ID: args.run_id,
                 SpanAttr.SESSION_ID: args.session_id,
                 SpanAttr.USER_ID: args.user_id,
-                # agent_type / route_mode populated from DB in full integration
+                SpanAttr.AGENT_TYPE: agent_type,
             },
         ):
-            # FROM_DB: 执行入口（DOC-07 Task 7.4 实现）
-            # if args.resume_from_step is not None:
-            #     # Coordinator Recovery（DOC-04 v4 Task 4.3，DOC-07 v4 Task 7.4）
-            #     await engine.resume(from_step=args.resume_from_step)
-            # else:
-            #     await engine.run(run.prompt)
             logger.info(
-                "harness.subprocess.started",
+                "harness.subprocess.engine.run.start",
                 run_id=args.run_id,
                 session_id=args.session_id,
-                otel_traceparent=args.otel_trace_id or "none",
-                note="DB integration pending DOC-07 Task 7.4",
+                agent_type=agent_type,
+                max_turns=max_turns,
+                prompt_preview=run.prompt[:80],
             )
+
+            if args.resume_from_step is not None:
+                # Coordinator Recovery（DOC-04 v4 Task 4.3，DOC-07 v4 Task 7.4）
+                # resume() not yet implemented; fall back to engine.run()
+                logger.warning(
+                    "harness.subprocess.resume.fallback",
+                    run_id=args.run_id,
+                    resume_from_step=args.resume_from_step,
+                    note="engine.resume() not implemented; falling back to engine.run()",
+                )
+                await engine.run(run.prompt)
+            else:
+                await engine.run(run.prompt)
+
+    except Exception as top_exc:
+        # 全局兜底：所有未被内层 except 捕获的异常
+        logger.error(
+            "harness.subprocess.fatal",
+            run_id=args.run_id,
+            error=str(top_exc),
+            exc_info=True,
+        )
+        try:
+            await callback.run_error(f"Executor fatal error: {top_exc}")
+        except Exception:
+            pass  # callback 本身失败时也不 crash
+
     finally:
         stop_event.set()
         await heartbeat_task
