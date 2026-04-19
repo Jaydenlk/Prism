@@ -1,0 +1,15 @@
+{
+  "name": "prism-e2e",
+  "version": "1.0.0",
+  "description": "Prism v2 Playwright E2E test suite",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:desktop": "npx playwright test --project=desktop-chromium",
+    "test:mobile": "npx playwright test --project=mobile-safari",
+    "test:headed": "npx playwright test --headed",
+    "report": "npx playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
