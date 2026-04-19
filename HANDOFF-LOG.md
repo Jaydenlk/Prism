@@ -35,6 +35,48 @@
 
 ---
 
+## 2026-04-19 05:25 — Task A (multi-channel auth backend) COMPLETED ✅
+
+**本 Task 执行策略**（Part B 有两处歧义，记录决策）：
+1. challenge_id vs token 设计：challenge_id = uuid4 key suffix（稳定的 Redis key 后缀），token = 存在 JSON value 里的随机串。OTP 因 verify 只有 {email, code}，用 identifier 作 key（`auth:challenge:otp_email:{email}`），challenge_id 仍生成供审计。
+2. phone-register username：auto-gen `u_` + hex8，一次 collision retry，phone 用户 email 设为 `phone_{digits}@phone.prism.local` 占位。
+
+### 本次 session 做了什么
+1. migration 006：users 加 phone/phone_verified/google_id/email_verified；新建 auth_config 表 + 3 行 bootstrap
+2. `AuthConfig` ORM model 新增到 `user.py`；`models/__init__.py` 注册
+3. `AuthChallengeService`（Redis 一次性 token，magic/OTP/password-reset）
+4. `EmailService`（SMTP 有配置则发送；无配置降级 `email.dev_log`）
+5. `AuthConfigService`（读写 auth_config 表）
+6. `schemas/auth.py` 扩充所有新 request/response model
+7. `auth.py` 新增 9 个端点（providers + 8 个 multi-channel）
+8. `admin.py` 新增 auth-config GET + PATCH
+
+### 验证结果
+- 全部 8 个验证步骤 PASS
+- migration 006 成功 (`005 -> 006`)
+- /auth/providers 返回正确 JSON
+- phone-register + phone-login PASS
+- email-magic/request → `email.dev_log` 有 challenge_id+token → verify → access_token PASS
+- email-otp/request → `email.dev_log` 有 6 位码 → verify → access_token PASS
+- /admin/auth-config GET (3 rows) + PATCH PASS
+- forgot-password → reset-password → login with new password PASS
+- admin 密码已恢复为 PrismAdmin!2026 ✅
+
+### 下一个 Task 需要注意
+- Task B (Google OAuth): 需要 `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` env 配置才能启用
+- Redis key 格式: `auth:challenge:{type}:{challenge_id}` for magic/reset；`auth:challenge:{type}:{identifier}` for OTP
+- `AuthConfig` 已注册到 `models/__init__.py`，Task B 可直接 import
+- `UserResponse.from_user()` 是新的工厂方法，`model_validate()` 不含 `has_google` 字段计算
+
+### 遗留风险 / 未决事项
+- EmailService SMTP 未测试实际发送（Docker 环境无 SMTP 服务器），仅验证 dev-log 路径
+- phone 用户的 email 字段是占位 `phone_{digits}@phone.prism.local`，Task C 前端注册需知道这个
+
+### Commit
+- TBD after commit
+
+---
+
 ## 2026-04-19 -- 前端阶段 2 COMPLETED ✅ | Prism.html 主业务 API 对接
 
 ### 本次 session 做了什么

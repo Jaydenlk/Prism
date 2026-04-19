@@ -4,9 +4,9 @@ Prism v2 — User & InviteCode ORM models (DOC-01 v4 §4.2 — 用户域)
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Integer
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Integer, JSON, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, generate_uuid
@@ -50,6 +50,20 @@ class User(Base, TimestampMixin):
     # DOC-09 Task 9.3: soft-disable flag (ADR-083)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
+    )
+
+    # Multi-channel auth fields (migration 006)
+    phone: Mapped[Optional[str]] = mapped_column(
+        String(20), unique=True, nullable=True, default=None
+    )
+    phone_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    google_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True, default=None
+    )
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
 
     # Relationships (back-populated in child models)
@@ -112,4 +126,30 @@ class InviteCode(Base):
         "User",
         back_populates="invite_codes",
         foreign_keys=[created_by],
+    )
+
+
+class AuthConfig(Base):
+    """
+    auth_config table — multi-channel auth global switches (migration 006)
+
+    Stores key/value pairs for auth configuration.
+    PK is the key string (not UUID).  value_json is any JSON-serializable value.
+    Bootstrap rows created in migration 006.
+    """
+
+    __tablename__ = "auth_config"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value_json: Mapped[Any] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
     )

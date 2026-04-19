@@ -22,8 +22,8 @@ Table count verification (DOC-01 v4 §4.2):
 
 from app.models.base import Base  # noqa: F401 — ensures Base is importable
 
-# --- 用户域 (2) ---
-from app.models.user import InviteCode, User  # noqa: F401
+# --- 用户域 (2+1) ---
+from app.models.user import AuthConfig, InviteCode, User  # noqa: F401
 
 # --- 会话域 (2) ---
 from app.models.session import Session, SessionQueueItem  # noqa: F401
@@ -61,6 +61,7 @@ __all__ = [
     # 用户域
     "User",
     "InviteCode",
+    "AuthConfig",
     # 会话域
     "Session",
     "SessionQueueItem",

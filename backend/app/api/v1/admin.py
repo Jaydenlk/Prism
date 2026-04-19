@@ -49,8 +49,10 @@ from app.schemas.audit import AuditLogQuery, AuditLogResponse
 from app.schemas.common import ApiResponse, PagedResponse
 from app.schemas.invite import CreateInviteCodeRequest, InviteCodeResponse
 from app.schemas.user import UpdateUserRoleRequest, UserListResponse
+from app.schemas.auth import AuthConfigEntry, AuthConfigPatchBody
 from app.services.admin_stats_service import AdminStatsService
 from app.services.audit_service import AuditService
+from app.services.auth_config_service import AuthConfigService
 from app.services.invite_service import InviteService
 
 import structlog
@@ -672,5 +674,69 @@ def update_alert_config(
             smtp_user=settings.SMTP_USER,
             smtp_from=settings.SMTP_FROM,
             prism_base_url=settings.PRISM_BASE_URL,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/auth-config
+# ---------------------------------------------------------------------------
+
+
+@router.get("/auth-config", response_model=ApiResponse[list[AuthConfigEntry]])
+def get_auth_config(
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[AuthConfigEntry]]:
+    """Return all auth_config entries.
+
+    Admin-only.  Returns list of {key, value_json, updated_at, updated_by}.
+    """
+    svc = AuthConfigService(db)
+    rows = svc.get_all()
+    return ApiResponse(
+        data=[
+            AuthConfigEntry(
+                key=r.key,
+                value_json=r.value_json,
+                updated_at=r.updated_at,
+                updated_by=r.updated_by,
+            )
+            for r in rows
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
+# PATCH /admin/auth-config
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/auth-config", response_model=ApiResponse[AuthConfigEntry])
+def update_auth_config(
+    body: AuthConfigPatchBody,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[AuthConfigEntry]:
+    """Update a single auth_config entry by key.
+
+    Admin-only.  Upserts the key with the provided JSON value.
+    """
+    svc = AuthConfigService(db)
+    row = svc.set(body.key, body.value_json, updated_by=str(current_user.id))
+    db.commit()
+
+    logger.info(
+        "admin.auth_config.updated",
+        key=body.key,
+        value=body.value_json,
+        admin_id=str(current_user.id),
+    )
+
+    return ApiResponse(
+        data=AuthConfigEntry(
+            key=row.key,
+            value_json=row.value_json,
+            updated_at=row.updated_at,
+            updated_by=row.updated_by,
         )
     )
