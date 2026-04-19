@@ -794,7 +794,18 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
                 if (toolResults.length > 0) i++;
               } else { i++; }
             }
-            setMsgs(displayMsgs);
+            // Defense-in-depth: 保留乐观 user 气泡(at=="now")若 DB 未持久化
+            // (executor 已在 run 开始时发 message_complete 回调持久化 user prompt,
+            //  但 HTTP callback 在 DLQ 兜底场景仍可能丢失 → frontend 合并避免气泡消失)
+            setMsgs(prev => {
+              const dbUserTexts = new Set(
+                displayMsgs.filter(m => m.role === "user").map(m => (m.content || "").trim())
+              );
+              const optimisticTail = prev.filter(
+                m => m.role === "user" && m.at === "now" && !dbUserTexts.has((m.content || "").trim())
+              );
+              return [...displayMsgs, ...optimisticTail];
+            });
             streamBuf.current = {};
             scrollToBottom();
           }
