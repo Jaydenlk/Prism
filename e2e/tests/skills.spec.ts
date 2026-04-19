@@ -119,21 +119,24 @@ This skill is installed by the E2E test suite to verify the skills system.
     ).toBeVisible({ timeout: 8_000 });
   });
 
-  test('install skill via local textarea (3-channel UI)', async ({ page }) => {
-    test.skip(true, 'WAIT workstream A: SkillsPage 3-channel install UI (data-testid="skill-install-tab-local") not yet implemented');
-
-    // Contract for Workstream A — the Skills page should have:
-    //   data-testid="skill-install-tab-local"  → tab to switch to local install
-    //   data-testid="skill-install-textarea"   → textarea for markdown input
-    //   data-testid="skill-install-submit"     → submit button
+  test('install skill via custom Markdown textarea (3-channel UI)', async ({ page }) => {
+    // Contract: SkillsPage has 3 install channels — local file picker, GitHub URL,
+    // and Custom Markdown (textarea). The `custom` channel is the one testable
+    // headlessly without a real file upload or GitHub network call.
+    //   data-testid="skill-install-tab-custom"  → tab to switch to custom MD
+    //   data-testid="skill-install-textarea"    → textarea for Markdown input
+    //   data-testid="skill-install-submit"      → submit button
 
     await navigateToSkills(page);
-    await page.locator('[data-testid="skill-install-tab-local"]').click();
+    await page.locator('[data-testid="skill-install-tab-custom"]').click();
+
+    // 技能名 input (first in custom panel)
+    await page.locator('[data-testid="skill-install-panel-custom"] input[type="text"], [data-testid="skill-install-panel-custom"] input:not([type])').first().fill('e2e-local-skill');
 
     const skillMd = `---
 name: e2e-local-skill
 version: 1.0.0
-description: Installed via local textarea in E2E test
+description: Installed via custom MD textarea in E2E test
 author: e2e
 ---
 # Local skill

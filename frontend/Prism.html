@@ -1464,14 +1464,14 @@ function SkillsPage() {
           <div className="card" style={{ padding: 20 }}>
             <div className="section-title" style={{ marginBottom: 14 }}>安装技能</div>
             <div style={{ borderBottom: "1px solid var(--line)", marginBottom: 16 }}>
-              <button style={tabStyle(installTab === "local_file")} onClick={() => setInstallTab("local_file")}>本地文件</button>
-              <button style={tabStyle(installTab === "github")} onClick={() => setInstallTab("github")}>GitHub URL</button>
-              <button style={tabStyle(installTab === "custom_md")} onClick={() => setInstallTab("custom_md")}>自定义 MD</button>
+              <button data-testid="skill-install-tab-local" style={tabStyle(installTab === "local_file")} onClick={() => setInstallTab("local_file")}>本地文件</button>
+              <button data-testid="skill-install-tab-github" style={tabStyle(installTab === "github")} onClick={() => setInstallTab("github")}>GitHub URL</button>
+              <button data-testid="skill-install-tab-custom" style={tabStyle(installTab === "custom_md")} onClick={() => setInstallTab("custom_md")}>自定义 MD</button>
             </div>
 
             {/* Local file */}
             {installTab === "local_file" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div data-testid="skill-install-panel-local" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <label style={{ cursor: "pointer" }}>
                   <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>选择 SKILL.md 文件</div>
                   <div style={{ display: "flex", gap: 8 }}>
@@ -1493,7 +1493,7 @@ function SkillsPage() {
 
             {/* GitHub URL */}
             {installTab === "github" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div data-testid="skill-install-panel-github" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <label>
                   <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>GitHub URL</div>
                   <input className="input" value={ghUrl} onChange={e => setGhUrl(e.target.value)} placeholder="https://github.com/user/repo"/>
@@ -1514,16 +1514,16 @@ function SkillsPage() {
 
             {/* Custom Markdown */}
             {installTab === "custom_md" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div data-testid="skill-install-panel-custom" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <label>
                   <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>技能名</div>
                   <input className="input" value={mdSkillName} onChange={e => setMdSkillName(e.target.value)} placeholder="my-skill"/>
                 </label>
                 <label>
                   <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>SKILL.md 内容</div>
-                  <textarea className="input" rows={10} style={{ fontFamily: "var(--mono)", fontSize: 12, resize: "vertical" }} value={mdContent} onChange={e => setMdContent(e.target.value)}/>
+                  <textarea data-testid="skill-install-textarea" className="input" rows={10} style={{ fontFamily: "var(--mono)", fontSize: 12, resize: "vertical" }} value={mdContent} onChange={e => setMdContent(e.target.value)}/>
                 </label>
-                <button className="btn primary" style={{ justifyContent: "center", marginTop: 4 }} onClick={handleCustomMdInstall} disabled={installing}>
+                <button data-testid="skill-install-submit" className="btn primary" style={{ justifyContent: "center", marginTop: 4 }} onClick={handleCustomMdInstall} disabled={installing}>
                   {installing ? "安装中…" : "安装"}
                 </button>
               </div>
