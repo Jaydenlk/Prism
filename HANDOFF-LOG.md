@@ -35,6 +35,47 @@
 
 ---
 
+## 2026-04-19 13:35 — Task B (Google OAuth 登录) COMPLETED ✅
+
+**本 Task 执行策略**（advisor 建议 3 项关键决策）：
+1. id_token 验证：用 Google tokeninfo endpoint（`oauth2.googleapis.com/tokeninfo?id_token=...`），比 JWKS 更简洁；server-side 验签 + aud 匹配双重校验
+2. Account merge（Case 2）：gate on `google_info.email_verified` — 未验证邮箱不允许合并，防止账号劫持（advisor 建议，原 spec 未提）
+3. State 存 JSON（`{"next": url}`），GETDEL 保证 CSRF 一次性消费
+
+### 本次 session 做了什么
+1. `GoogleOAuthService`：`is_configured()`/`build_authorize_url()`/`consume_state()`/`exchange_code()`/`_verify_id_token()`
+2. `config.py`：追加 GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI + FRONTEND_BASE_URL
+3. `schemas/auth.py`：追加 `GoogleCompleteBody`
+4. `auth.py`：更新 imports + 修复 `/auth/providers` google 字段 + 3 新端点（authorize/callback/complete）+ 内部工具函数（_build_login_hash/_write_audit/_generate_unique_username）
+5. `requirements.txt`：追加 `authlib>=1.3.0`
+6. `.env` / `.env.example`：追加 4 行 Google OAuth 变量
+
+### 验证结果
+1. /auth/providers google=false（无配置）PASS
+2. /auth/google/authorize 503（无配置）PASS
+3-4. 临时 dummy credentials → google=true PASS
+5. GET /auth/google/authorize → 302 + accounts.google.com URL 含 client_id/scope/state PASS
+6. callback?state=fake&code=fake → 400 CSRF 校验失败 PASS
+7. POST /auth/google/complete {fake tmp_token} → 410 Gone PASS
+8. PATCH /admin/auth-config allow_oauth_signup_without_invite=true → GET 确认 PASS
+
+### 下一个 Task 需要注意（Task C: 前端）
+- `/auth/providers` google=true/false 控制 Google 按钮显隐
+- callback 成功登录 → `window.location.hash` = `#access_token=<token>&expires_in=<n>`（不在 query，避免 log 泄漏）
+- callback pending → `?auth_pending=<tmp_token>` → 前端引导填邀请码 → POST /auth/google/complete
+- callback error → `?auth_error=<err>` → 前端显示错误提示
+- `tmp_token` TTL = 600s（10 分钟），用户填邀请码要在此内完成
+- FRONTEND_BASE_URL 默认 `http://localhost:8080`，生产需在 .env 改为实际域名
+
+### 遗留风险 / 未决事项
+- 真实 Google client_id/secret 的端到端集成测试需手工完成（无法自动化，需浏览器授权流程）
+- `authlib` 安装在现有容器里生效；**下次 `docker compose up --build` 时会重新安装**（requirements.txt 已更新）
+
+### Commit
+- `082dc53` — `feat(auth): Task B — Google OAuth 登录 (3 endpoints + GoogleOAuthService)`
+
+---
+
 ## 2026-04-19 05:25 — Task A (multi-channel auth backend) COMPLETED ✅
 
 **本 Task 执行策略**（Part B 有两处歧义，记录决策）：

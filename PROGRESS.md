@@ -153,13 +153,27 @@
 
 ## 统计
 
-- **总 Task 数**: 51 (+ 2 前端原型 ad-hoc)
-- **已完成**: 44（42 后端/可观测 + 2 前端原型）
-- **in_progress**: 0
-- **blocked**: 0
-- **pending**: 10（全部为前端 DOC-10/DOC-11 Next.js 正式实现）
+---
+
+## Multi-Channel Auth 追加 Task（spec: 2026-04-19-multi-channel-auth-design.md）
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| Task A: 后端 Auth 核心 | completed | 2026-04-19 | 2026-04-19 | b1d4b05 | migration006(users+auth_config); AuthChallengeService/EmailService/AuthConfigService; 9端点(providers+8 multi-channel)+admin auth-config; 全部8项验证PASS |
+| Task B: Google OAuth 登录 | completed | 2026-04-19 | 2026-04-19 | 082dc53 | GoogleOAuthService(authlib+tokeninfo); 3端点(authorize/callback/complete); Case1/2/3a/3b分支; /auth/providers google字段更新; 全部8项验证PASS |
+| Task C: 前端 LoginScreen 多通道 + admin Auth Config 面板 | pending | — | — | — | — |
 
 ---
 
-> **最后更新**: 2026-04-19（前端阶段 2 完成: Prism.html 主业务 API 对接; commit 09e1508）
-> **下一个动作**: 前端原型收官 ✅ — 可以进行浏览器集成测试（需后端运行）或继续 DOC-10 Task 10.1
+## 统计
+
+- **总 Task 数**: 51 (+ 2 前端原型 ad-hoc + 3 multi-channel auth)
+- **已完成**: 46（42 后端/可观测 + 2 前端原型 + 2 multi-channel auth）
+- **in_progress**: 0
+- **blocked**: 0
+- **pending**: 11（前端 DOC-10/DOC-11 Next.js + Task C multi-channel frontend）
+
+---
+
+> **最后更新**: 2026-04-19（Task B: Google OAuth 登录; commit 082dc53）
+> **下一个动作**: Task C — 前端 LoginScreen 多通道改造 + admin Auth Config 面板
