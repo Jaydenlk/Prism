@@ -105,6 +105,13 @@
 
 ## Phase 3: 前端(DOC-10 / DOC-11)
 
+### Prism.html 原型前端(先行实现,独立于 DOC-10/11 Next.js 框架)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| 前端阶段 1: styles.css + apiClient.js + LoginScreen API | completed | 2026-04-19 | 2026-04-19 | ca1a784 + 15bd053 | styles.css 设计系统; apiClient.js (PrismAPI window全局,6 module); LoginScreen 接 PrismAPI.login/me/logout |
+| 前端阶段 2: Prism.html 主业务 API 对接 | completed | 2026-04-19 | 2026-04-19 | 09e1508 | Sidebar(sessions.list+groupByTime+search+new-chat); ChatPage(SSE+RAF throttle+13事件+ContentBlock adapter); Composer(tasks.submit+queue toast); PermissionModal(countdown+permissionAnswer); PlanPanel(coordinator_plan_update); 22项模式检查全PASS |
+
 ### DOC-10: Frontend Foundation(4 Task)
 
 | Task | Status | Started | Completed | Commit | Session Notes |
@@ -146,13 +153,13 @@
 
 ## 统计
 
-- **总 Task 数**: 51
-- **已完成**: 42
+- **总 Task 数**: 51 (+ 2 前端原型 ad-hoc)
+- **已完成**: 44（42 后端/可观测 + 2 前端原型）
 - **in_progress**: 0
 - **blocked**: 0
-- **pending**: 10（全部为前端 DOC-10/DOC-11）
+- **pending**: 10（全部为前端 DOC-10/DOC-11 Next.js 正式实现）
 
 ---
 
-> **最后更新**: 2026-04-19（DOC-12 Task 12.8 完成: AlertDispatcher ADR-120; 42/51 Task 完成）
-> **下一个动作**: 非前端项目收官 ✅ — 前端 DOC-10 Task 10.1 起步（独立 session）
+> **最后更新**: 2026-04-19（前端阶段 2 完成: Prism.html 主业务 API 对接; commit 09e1508）
+> **下一个动作**: 前端原型收官 ✅ — 可以进行浏览器集成测试（需后端运行）或继续 DOC-10 Task 10.1

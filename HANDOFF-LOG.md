@@ -35,6 +35,38 @@
 
 ---
 
+## 2026-04-19 -- 前端阶段 2 COMPLETED ✅ | Prism.html 主业务 API 对接
+
+### 本次 session 做了什么
+- 全面重写 `frontend/Prism.html` 主业务部分（+723 -176 行）
+- Sidebar: 替换 hardcoded SESSIONS[] → `PrismAPI.sessions.list()` + groupByTime 分组 + 本地搜索过滤 + 点击切换 + 新对话按钮（`sessions.create()`）
+- ChatPage: session meta+历史消息加载（`sessions.get` + `sessions.listMessages`）；`openSSE` 封装含 session-id stamp 防竞态；RAF-throttle text_delta（ref buffer + requestAnimationFrame，从不 per-token setMsgs）；全 13 SSE 事件分发；`renderContentBlocks` adapter（text/thinking/tool_use→ToolCard，tool_result 按 tool_use_id 配对）；key={currentSessionId} 强制 remount
+- Composer: `PrismAPI.tasks.submit()` 替换本地 push；immediate→openSSE；queued_query→toast "第N位"；错误 toast 降级
+- PermissionModal: permRequest 动态 props + timeout_at setInterval 倒计时 + `permissionAnswer` API
+- PlanPanel: coordinator_plan_update SSE 驱动；无计划时显示"尚无计划"占位；有计划时显示进度条 + 步骤列表
+
+### 验证结果
+- 22 项关键模式检查（node -e script）: 全 PASS
+- 大括号平衡检查: PASS（1168/1168）
+- HTTP 200 服务: PASS（python -m http.server）
+- 后端 graceful 降级: loadError 状态 + 中文错误提示 + 重试按钮 已在代码中确认
+
+### 下一个 Task 需要注意
+- 二级页面（UsagePage/SkillsPage/PluginsPage/AdminPage/ObsPage/SettingsPage）仍为 hardcoded — 属于有意为之，勿回归
+- ChatPage history 加载的 ContentBlock 配对逻辑: tool_use 和 tool_result 是不同 Message 对象，配对靠 tool_use_id；renderContentBlocks 接受第二参数 toolResults 数组（见第2个assistant message的content blocks）
+- `planState` 在 App 层提升，通过 props 穿透到 ChatPage → PlanPanel；coordinator_plan_update 事件在 ChatPage 触发 `setPlanState`
+- SSE ticket 通过 `PrismAPI.openStream(session_id, handlers)` 自动申请（POST /auth/sse-ticket），不需要手动 createSSETicket
+- 如果需要 admin.html（前端阶段 3），参考 apiClient.js 中已有的 `sessions/tasks/runs` 全部端点，admin 路由需要 `PrismAPI.me()` 确认 role==='admin'
+
+### 遗留风险 / 未决事项
+- Topbar 标题目前传 `sessionTitle={null}`；可以在 ChatPage 内提取 `sessionMeta.title` 并通过回调 prop 上传给 App — 留待 admin.html 阶段或用户决策
+- 无后端运行时的完整集成测试（Step 1-2, 6-7）尚未执行；需要 FastAPI 后端 + Redis 才能全路径测试 SSE
+
+### Commit
+- `09e1508` — feat(frontend): Phase 2 — wire main business logic to real API data
+
+---
+
 ## 2026-04-19 -- DOC-12 Task 12.8 COMPLETED ✅ | DOC-12 DONE 8/8 | 非前端项目收官
 
 ### DOC-12 DONE checkpoint
