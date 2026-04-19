@@ -95,22 +95,41 @@ b03c459 refactor: simplify findings (fixture extract + React.memo)
 - **完整 skills 链**:brainstorming → frontend-design + ui-ux-pro-max(前端) → systematic-debugging(真现问题) → TDD → using-git-worktrees(新 worktree `redesign/skills-plugins-im`) → simplify → verification-before-completion → react-code-review → pjr(**前后端 lint + build 都必须过**) → git-merge-to-develop → requesting-code-review
 - **Playwright 双端**+ **人工点过每个按钮**(不只看页面 — 完整流程走一遍)
 
-### 开工 SOP(逐步)
-1. 补做 Session 1 遗留 code-reviewer 独立审查(1am 后)→ 任何 Critical 行动项处理完
-2. 读 `docs/research/2026-04-19-skills-plugins-im-competitive.md`(先读 Part 4 的 10 条推荐 + R1/R2/R4 P0 项)
-3. `WebFetch` 飞书官方文档(上述 URL 全部),**每个 API 返回的 payload/header 结构保存到 `docs/research/2026-04-20-feishu-webhook-spec.md`**
-4. 加载 `superpowers:brainstorming` → 与用户对齐 scope(schema 变更如 `marketplace_registry` 表是否授权 / 去 PRD 加 ADR 编号)
-5. `superpowers:writing-plans` 生成 spec + plan(多子任务,可能拆 3 个子 session)
-6. 新 worktree `redesign/skills-plugins-im`
-7. 实施 → 双端 Playwright → 收尾 skill 链
+### Phase A 已完成(commits 于 develop,2026-04-20)
+- `f67d24c` — SRI hash + catch-branch XSS test(补 Session 1 code-reviewer 4 项 Important 里的 2 项)
+- `4ade5c9` — Session 3 design brief(WebFetched 飞书/Slack/Discord 官方文档,**捕获飞书两套签名算法关键坑**) + spec + plan
 
-### 潜在 blocker 候选(可能需停下 blocker.md)
-- 加 `marketplace_registry` 表 = schema 变更(六原则 #1),需用户明确授权 + ADR 编号(PRD v4 ADR 编号空间已用到 ~120,需新编或平移)
-- `plugin.yaml` type 字段 = 协议级变更(六原则 #2),需 ADR
-- 飞书 bot 需要真实 AppID/AppSecret 配置(无 `.env` 字段),涉及用户侧敏感数据
+**Phase A 三份交付物**(都在 develop 分支):
+- `docs/research/2026-04-20-session3-design-brief.md`(1460 字,权威 URL + 端点 + 签名算法 + 配置)
+- `docs/superpowers/specs/2026-04-20-session3-sk-im2-redesign-design.md`(2100 字,8 个 blocker auto-decide + 架构 + migration + 验收标准)
+- `docs/superpowers/plans/2026-04-20-doc-sk-doc-im2-redesign.md`(16 task 的完整实施 plan,Phase 1 DOC-SK + Phase 2 DOC-IM2)
 
-### 重要:本 session 可能过长
-Session 3 scope 估 4-8 小时。如上下文撑不住,可在 P0 Skills Market 完成后切 session,把剩下 Plugin Builder + IM 接入作为 Session 3B / 3C。
+### Phase B 开工 SOP(下一 session)
+1. **阅读**:先读 spec(§4 决策表 + §9 out-of-scope + §10 acceptance),再读 plan(Phase 1 先,Phase 2 后)
+2. **确认 schema 授权**:spec §6 列出三处 migration(M1/M2 in DOC-SK + M3 无 DDL for DOC-IM2)。用户 2026-04-20 原话"不做向后兼容,宁愿破坏性更新"已隐式授权,但 ADR-086/087/088 实际落地 `DECISIONS.md` 需前端+后端协同
+3. **Phase 1 DOC-SK**:`git worktree add .worktrees/redesign-doc-sk -b redesign/doc-sk develop` → 按 plan Task 1-8 走
+4. **Phase 2 DOC-IM2**:Phase 1 merge 后,`git worktree add .worktrees/redesign-doc-im2 -b redesign/doc-im2 develop` → 按 plan Task 9-16 走
+5. **每 phase 末**:完整 skill 链(simplify → verification → react-code-review → pjr → git-merge-to-develop → requesting-code-review)+ 双端 Playwright + 人工模拟点击
+
+### Phase A 遗留到 Phase B 开工前再做的事
+- **Session 1 code-reviewer Important #1/#2**(TTFB await 代价未 profile / DLQ silent data loss 回放审)—— 在 Phase 2 DOC-IM2 时顺手评审(同 IM 域),发现问题产 ADR
+- **DECISIONS.md 新 ADR 写入**:Phase 1 Task 7 + Phase 2 Task 16 各有 DECISIONS.md append 步
+- **必要时** 1am Shanghai 后重跑 `superpowers:code-reviewer`(agent id `a67d23e023bab211d` SendMessage 续跑)对 Session 1 做最终 independent audit
+
+### 关键坑(简报发现,plan 已吸收)
+1. **飞书 `X-Lark-Signature` 两套算法**:
+   - 事件订阅:SHA-256(timestamp + encrypt_key + body)
+   - 卡片回调:SHA-1(timestamp + nonce + **verification_token** + body) ← 当前 `im_feishu.py:verify_signature` 未实现
+2. **Slack docs 域名**:`api.slack.com/*` 302 → `docs.slack.dev/*`,plan 已全部使用新域名
+3. **Discord Ed25519**:需 `PyNaCl>=1.5` 依赖,且对 invalid sig 要返 401(不是 200)—— Discord 实际会 probe 坏签名看你是否拒绝
+
+### 重要:上下文预算
+Phase 1 估 2-4 sonnet-session-equiv;Phase 2 估 2-3。**不要试图一个 session 跑完两 Phase**,每 Phase 结束是天然 /clear 点。
+
+### Docker 状态
+- 当前 nginx 已切回主仓 compose(mount `./frontend`,路径相对主仓 `docker-compose.yml`)
+- `prism-backend:2.0` image 已 rebuild(从 Session 1 fix branch 构建,但内容已全部在 develop)
+- 新 worktree 开工前跑 `docker compose -p prismv3 up -d --force-recreate backend` 即可把任何 executor/backend 代码变更生效;nginx 会服务当前主仓 frontend(主仓 HEAD 是 develop)
 
 ---
 
