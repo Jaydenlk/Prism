@@ -571,6 +571,10 @@
     delete(marketplaceId) {
       return request('DELETE', `/marketplaces/${marketplaceId}`);
     },
+    // Session 4c (ADR-090): install a plugin from marketplace catalog
+    installPlugin(marketplaceId, pluginName) {
+      return request('POST', `/marketplaces/${marketplaceId}/plugins/${encodeURIComponent(pluginName)}/install`);
+    },
   };
 
   /* ── IM ───────────────────────────────────────────────────────── */
