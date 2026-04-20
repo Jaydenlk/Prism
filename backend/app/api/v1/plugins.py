@@ -28,12 +28,13 @@ from typing import Annotated, Any, Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
+from app.schemas.common import ApiResponse
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/plugins", tags=["plugins"])
@@ -350,6 +351,134 @@ async def validate_plugin(
 
 
 PluginType = Literal["tool", "agent_strategy", "extension", "trigger"]
+
+
+# ---------------------------------------------------------------------------
+# Type-specific manifest sub-schemas (ADR-087 Session 4a)
+# /plugins/validate-manifest dispatches on `type` and runs the matching schema.
+# ---------------------------------------------------------------------------
+
+
+class PluginPermissions(BaseModel):
+    """Plugin 权限声明 — 出现在 manifest 的 `permissions:` 字段下。"""
+
+    allowed_tools: list[str] = Field(default_factory=list)
+    allowed_models: list[str] = Field(default_factory=list)
+    storage_scope: Literal["session", "user", "global"] = "session"
+    network_access: bool = False
+
+
+class _BaseManifest(BaseModel):
+    """所有 4 种 plugin type 共享的 manifest 顶层字段。"""
+
+    name: str = Field(min_length=1)
+    version: str = "1.0.0"
+    description: str = ""
+    permissions: PluginPermissions = Field(default_factory=PluginPermissions)
+
+    model_config = {"extra": "forbid"}
+
+
+class ToolManifest(_BaseManifest):
+    type: Literal["tool"] = "tool"
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    returns: str = ""
+
+
+class AgentStrategyManifest(_BaseManifest):
+    type: Literal["agent_strategy"]
+    reasoning_pattern: Literal["react", "plan-and-execute", "debate"]
+    max_turns: int = Field(gt=0, le=100, default=10)
+
+
+class ExtensionManifest(_BaseManifest):
+    type: Literal["extension"]
+    hook: Literal["pre_turn", "post_turn", "post_tool_use"]
+    middleware_class_path: str = Field(min_length=1)
+
+
+class TriggerManifest(_BaseManifest):
+    type: Literal["trigger"]
+    event_source: Literal["cron", "webhook", "file_watch"]
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+_MANIFEST_BY_TYPE: dict[str, type[_BaseManifest]] = {
+    "tool": ToolManifest,
+    "agent_strategy": AgentStrategyManifest,
+    "extension": ExtensionManifest,
+    "trigger": TriggerManifest,
+}
+
+
+class ValidateManifestRequest(BaseModel):
+    """POST /plugins/validate-manifest 请求体。"""
+
+    manifest: dict[str, Any]
+
+
+class ValidateManifestResponse(BaseModel):
+    """POST /plugins/validate-manifest 响应体。"""
+
+    valid: bool
+    type: PluginType
+    name: str
+    permissions: dict[str, Any]
+
+
+@router.post(
+    "/validate-manifest",
+    response_model=ApiResponse[ValidateManifestResponse],
+    summary="校验 plugin manifest 字典(按 type dispatch, ADR-087 Session 4a)",
+    description=(
+        "校验一个 plugin manifest(字典形式,不依赖 plugin_dir)。\n\n"
+        "Dispatch 顺序:\n"
+        "  1. 读取 manifest['type'](缺省 = 'tool')\n"
+        "  2. 按 type 查 _MANIFEST_BY_TYPE,不命中 → 422 unknown plugin type\n"
+        "  3. 用对应 sub-schema (ToolManifest / AgentStrategyManifest /\n"
+        "     ExtensionManifest / TriggerManifest) Pydantic validate\n"
+        "  4. 失败 → 422 + Pydantic errors() 保留 loc + msg 供前端定位\n"
+        "  5. 成功 → 200 {valid: True, type, name, permissions}\n"
+    ),
+)
+async def validate_manifest(
+    body: ValidateManifestRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[ValidateManifestResponse]:
+    """按 type 分派到 type-specific Pydantic sub-schema 校验 manifest(ADR-087)."""
+    manifest = body.manifest or {}
+    ptype = manifest.get("type", "tool")
+    sub = _MANIFEST_BY_TYPE.get(ptype)
+    if sub is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[{
+                "loc": ["type"],
+                "msg": f"unknown plugin type '{ptype}' (expected tool|agent_strategy|extension|trigger)",
+                "type": "value_error",
+            }],
+        )
+    normalized = {**manifest, "type": ptype}
+    try:
+        parsed = sub.model_validate(normalized)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        ) from exc
+
+    logger.info(
+        "plugin.validate_manifest.ok",
+        user_id=str(current_user.id),
+        plugin_type=parsed.type,
+        plugin_name=parsed.name,
+    )
+    return ApiResponse(data=ValidateManifestResponse(
+        valid=True,
+        type=parsed.type,
+        name=parsed.name,
+        permissions=parsed.permissions.model_dump(),
+    ))
 
 
 class PluginSaveRequest(BaseModel):
