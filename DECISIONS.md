@@ -1935,10 +1935,11 @@
   - Backend image 带 PyNaCl 1.5.0 rebuild 成功 + healthy
   - In-container import chain:FeishuAdapter + SlackAdapter + DiscordAdapter + IMOutgoingCard 全 load
 - **下游影响**:
-  - Future:send_card 真实实现(Feishu interactive card JSON / Slack blocks / Discord embed + components)
+  - ~~send_card 真实实现~~ ✅ Session 4b 清零(Feishu interactive card / Slack Block Kit / Discord embed+components)
   - Future:Slack Socket Mode(xapp-app-token)
-  - Future:IM credential storage 从 env 迁到 AES-encrypted JSONB(I4)
-  - Future:Admin UI 添加 PATCH 编辑入口 + test-send 按钮
+  - ~~IM credential storage env → AES-encrypted JSONB(I4)~~ ✅ Session 4b 清零(AES-256-GCM via `app.core.security`)
+  - ~~Admin UI 添加 PATCH 编辑入口 + test-send 按钮~~ ✅ Session 4b 清零
+  - Remaining future: Slack Socket Mode(opt-in)、PluginBuilder action handler 收 card button 回调事件
 
 ---
 
@@ -1973,3 +1974,36 @@
 ---
 
 > **最后更新**: 2026-04-20(Session 4a ADR-087 偏离点 #2/#3/#4 全部清零 — Pydantic discriminated union + 4 type YAML skeleton + Install Consent Dialog)
+
+---
+
+## Session 4b — IM send_card + AES credential + Admin 编辑 UI(2026-04-20)
+
+### ADR-088 偏离点 #2 / #3 / #4 全部清零(上方 ADR-088 条目偏离点状态同步更新)
+
+**落地**:
+- `backend/app/services/im_adapter.py` — IMAdapter 加 `async def send_card(card) -> bool`(默认 NotImplementedError,三个 adapter override)
+- `backend/app/services/im_feishu.py` — `send_card` 实现 Feishu interactive card JSON(header+elements+actions)POST /open-apis/im/v1/messages msg_type=interactive
+- `backend/app/services/im_slack.py` — `send_card` 实现 Slack Block Kit(header + section + actions elements)POST chat.postMessage
+- `backend/app/services/im_discord.py` — `send_card` 实现 Discord embed + message components(ActionRow + Button)POST channels/{id}/messages
+- `backend/app/services/credential_cipher.py` — 薄 façade over `app.core.security.encrypt_value / decrypt_value`(AES-256-GCM,同 Provider API-key 加密路径);`aesgcm:` 前缀标识密文;`encrypt_config_secrets / decrypt_config_secrets` 按 sensitive key 名字(`secret/token/key/password`)scrubbing
+- `backend/app/api/v1/im.py` — PATCH /im/channels/{c} 写入前 `encrypt_config_secrets(data.config, key_hex)`;新 `POST /im/channels/{c}/test-send` admin-only 用当前 adapter 发硬编码测试 card
+- `backend/app/main.py` — lifespan _load_all_im_configs 单次 DB 查询 3 channels + batch decrypt,注入 Feishu/Slack/Discord adapter 初始化 config
+- `backend/app/schemas/im.py` — 新 `TestSendRequest`(target_chat_id + optional title/body)
+- `frontend/admin.html` — IMChannels 加 "编辑" 和 "测试" 按钮,编辑 modal 支持动态 key/value rows + sensitive key 自动 password input + is_enabled toggle,测试 modal 输入 chat_id 后 POST 触发测试发送
+- `backend/tests/test_credential_cipher.py`(5 tests)+ `test_im_send_card_{feishu,slack,discord}.py`(9 tests)+ `e2e/tests/im-admin-edit.spec.ts`(8 tests × 2 viewport)
+
+**Simplify blocking 修复(reuse subagent 发现)**:原先新建的 Fernet(AES-128-CBC)重复了 `app.core.security` 的 AES-256-GCM。按 CLAUDE.md 六原则 #1 "对齐 Schema / 代码不自造字段" 删除 Fernet,改为 security.py 的薄 façade,避免加密层碎片化。
+
+**验证**:14 Python unit + 15 e2e(双 viewport,1 proper skip)+ DB 验证 `config JSONB` 里 sensitive 字段值形如 `aesgcm:<24 hex>:<ciphertext hex>` + GET 返回脱敏 `***`。
+
+**生产路径(用户自主真实账号测试指南)**:
+- 飞书:`/admin.html` → IM 频道 → Feishu row → 编辑 → 填 `app_id / app_secret / encrypt_key / verify_token`(后四者自动 AES 加密) → 保存 → 测试 → 输入 `oc_xxxxxxxxxxxxxx` → 发送 → 应看到真实飞书群收到 header + 正文 + 按钮的互动卡片
+- Slack:编辑填 `bot_token:xoxb-...` + `signing_secret:...` + 可选 `mode:events`(default);测试 chat_id 形如 `C0XXXXXX`;收到 Block Kit 卡片
+- Discord:编辑填 `bot_token:...` + `public_key:<64 hex>` + `app_id:...`;测试 chat_id = 19-digit channel id;收到 embed + button 组件
+
+**延后**:Slack Socket Mode / IM card 按钮点击回传处理(button custom_id / action_id 落到 message handler 后分派到 plugin)
+
+---
+
+> **最后更新**: 2026-04-20(Session 4b ADR-088 偏离点 #2/#3/#4 全部清零 — send_card 三端 + AES-256-GCM credential + Admin 编辑+测试 modals)

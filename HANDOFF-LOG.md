@@ -45,6 +45,127 @@
 
 ---
 
+## ✅ 2026-04-20 Session 4b — IM 模块生产可用(ADR-088 偏离点 #2/#3/#4 全部清零)
+
+**Directive**(用户 2026-04-20):"真正生产可用,不 mock 生产代码;mock 仅限外部 Feishu/Slack/Discord API 响应让 CI 跑通;用户换真实 credentials 即可在 /admin.html 自测。"
+
+### 本 session 所作所为(具体,按 commit 顺序,无"老样子"抽象)
+
+| 文件类型 | 文件 | 动作 |
+|---|---|---|
+| 后端 — 新 | `backend/app/services/credential_cipher.py` | 薄 façade over `app.core.security` AES-256-GCM + `aesgcm:` 前缀 + `encrypt/decrypt_config_secrets` sensitive-key scrubbing |
+| 后端 — 改 | `backend/app/services/im_adapter.py` | 加 abstract `async def send_card(card) -> bool` |
+| 后端 — 改 | `backend/app/services/im_feishu.py` | `send_card` override → interactive card JSON POST |
+| 后端 — 改 | `backend/app/services/im_slack.py` | `send_card` → Block Kit blocks POST chat.postMessage |
+| 后端 — 改 | `backend/app/services/im_discord.py` | `send_card` → embed + ActionRow(Button) POST channels/{id}/messages |
+| 后端 — 改 | `backend/app/api/v1/im.py` | PATCH encrypt + POST /channels/{c}/test-send endpoint(admin, 构造硬编码 IMOutgoingCard + 调 adapter.send_card)|
+| 后端 — 改 | `backend/app/main.py` | lifespan `_load_all_im_configs` 单 DB 查询 + batch decrypt,注入 3 adapter 初始化 |
+| 后端 — 改 | `backend/app/schemas/im.py` | 新 `TestSendRequest`(target_chat_id + optional title/body) |
+| 后端 — 新测试 | `backend/tests/test_credential_cipher.py` | 5 tests:encrypt/decrypt roundtrip + plaintext fallback + wrong-key raise + scrub only sensitive + idempotent |
+| 后端 — 新测试 | `backend/tests/test_im_send_card_feishu.py` | 3 tests:card payload shape + not_configured → False + API error → False |
+| 后端 — 新测试 | `backend/tests/test_im_send_card_slack.py` | 3 tests:blocks shape + not_configured + API error |
+| 后端 — 新测试 | `backend/tests/test_im_send_card_discord.py` | 3 tests:embed+components shape + no_bot_token + API error |
+| 前端 — 改 | `frontend/admin.html` | IMChannels 行加 "编辑" + "测试" 按钮 + 两个 modal 组件(dynamic key/value rows + sensitive 自动 password input + mobile-first 垂直堆叠按钮)|
+| 前端 — 新测试 | `e2e/tests/im-admin-edit.spec.ts` | 8 tests × 2 viewport = 16 covering row buttons 可见 / edit modal add-row + save posts PATCH / edit cancel 不 post / test-send 成功 toast / test-send 503 失败 toast / test cancel / sensitive 输入 type=password / mobile 按钮堆叠 |
+
+### TDD 循环记录
+
+1. RED credential_cipher(8ab24ea + 9ee3be0 concurrent test)→ ModuleNotFoundError,3 FAIL
+2. GREEN credential_cipher v1(Fernet)→ 3 PASS
+3. RED send_card 3 adapter × 3 tests = 9 FAIL(AttributeError: no send_card)
+4. GREEN Feishu send_card → 3 PASS
+5. GREEN Slack send_card → 3 PASS(累计 6)
+6. GREEN Discord send_card → 3 PASS(累计 9);cipher 5 + send_card 9 = 14 unit GREEN
+7. PATCH encrypt smoke + test-send 503 → 均 2xx/3xx 符合预期
+8. RED e2e im-admin-edit → 7 FAIL + 1 proper skip
+9. GREEN admin.html modals → 15 PASS + 1 proper skip
+10. **Simplify 3 subagent 并行审(reuse/quality/efficiency)** — reuse 发现 **blocking 重复**:Fernet(AES-128-CBC)重复了 `app.core.security` 的 AES-256-GCM。按 CLAUDE.md 六原则 #1 删除 Fernet 层 → 重写为 security.py 薄 façade + aesgcm: 前缀。test_credential_cipher.py 改为 helper-based(无 class)。main.py / im.py 改用 settings.ENCRYPTION_KEY(不再依赖 app.state.credential_cipher)。
+11. 重跑 14 unit + 15 e2e 全 PASS;DB 写入验证为 `aesgcm:<24hex-nonce>:<ciphertext hex>` 格式
+
+### 不 mock 生产代码 — 具体证明
+
+- 三个 adapter 的 send_card 是 **真实 httpx POST** 到 `open.feishu.cn` / `slack.com` / `discord.com` 官方 API,凭借 `Bearer <token>` 或 `Bot <token>` 认证
+- PATCH /im/channels/{c} 写入 DB 前 **真正加密**(AES-256-GCM,`aesgcm:` 前缀),DB 列里可直接 SELECT 看到 ciphertext
+- POST /im/channels/{c}/test-send 直接调 `adapter.send_card(card)` 的 production method;未 configured 返 503,API error 返 502
+- **Playwright `page.route` 拦截** 仅在 CI 自动化中对 *外部平台 API* 的 HTTP 响应 mock(例如 mock Slack 返 `{ok:true}`),**生产浏览器环境无任何 route intercept**,用户填真实 xoxb- / 飞书 app_secret 后点"测试"按钮立即走真实平台
+- DB persistence + JSONB encryption + admin UI 全部真 production 代码
+
+### 用户自主真实账号测试步骤
+
+**前提**:docker compose up 后 nginx 在 :8080,登录 /admin.html(默认 `admin@prism.dev / PrismAdmin!2026`)→ 左侧选 "IM 频道"。
+
+**飞书**(需要你有飞书开放平台应用 + 机器人加入群):
+1. 点 feishu 行 "编辑"
+2. 勾 "启用此渠道"
+3. 添加字段:`app_id:cli_xxxxxxxxxxxxxx` / `app_secret:<your secret>` / `encrypt_key:<32-char>` / `verify_token:<token>`(所有含 secret/token/key 自动 password input)
+4. 保存 → DB 里这 4 个值会以 `aesgcm:` 加密
+5. **重启 backend**(`docker compose -p prismv3 restart backend`)使 adapter 从 DB 重新读取解密后的 config
+6. 回 /admin.html IM 频道 → 点 feishu 行 "测试" → 填 `oc_xxxxxxxxxxxxxx`(你的群 chat_id)→ 发送
+7. 飞书群应收到一张"Prism 测试卡片"标题 + 正文 + "确认"按钮的互动卡片
+
+**Slack**(需要 Slack App + Bot Token scope `chat:write`):
+- 编辑填 `bot_token:xoxb-...`、`signing_secret:...`、可选 `mode:events`
+- 重启 backend → 测试 `C0XXXXXX`(你的 channel id)
+- 应收到 Block Kit 卡片(header + section + action button)
+
+**Discord**(需要 Discord Application + Bot Token + 邀请 Bot 到服务器 + 启用 "Message Intent"):
+- 编辑填 `bot_token:<token>`、`public_key:<64-hex>`、`app_id:<id>`
+- 重启 backend → 测试 target_chat_id = 19-digit channel id
+- 应收到 embed(amber 色)+ 一个 "确认" button 组件
+
+### 验证结果(evidence-based)
+- **Python unit**:`test_credential_cipher.py 5 + test_im_send_card_feishu.py 3 + test_im_send_card_slack.py 3 + test_im_send_card_discord.py 3` = **14/14 passed**
+- **e2e admin-edit**:**15 pass / 1 proper skip**(双 viewport,1 是 desktop 上 mobile-only test 正确跳)
+- **PJR**:AST 8 文件 / in-container import chain / `/im/channels/{channel}/test-send` 路由注册确认
+- **DB 验证**:`SELECT config FROM im_channel_configs WHERE channel='slack'` → sensitive 字段值为 `aesgcm:<24 hex nonce>:<ciphertext hex>`
+- **Simplify**:3 subagent 并行(reuse + quality + efficiency),blocking finding(Fernet 重复 security.py AES-256-GCM)已修;其他 finding 记录如下
+
+### Simplify Follow-up(延后)
+
+1. **前端/后端 sensitive regex 重复**:`admin.html` 的 `/secret|token|key|password/i` 与 backend `_SENSITIVE_SUBSTRINGS` tuple 重复。当前 list 一致,无 divergence 风险;未来可暴露 `GET /im/sensitive-keys` 或在 channel response 里加 `sensitive: bool` 字段。
+2. **Efficiency 小优化**:已应用(3 SessionLocal → 1 query)
+3. **3 adapter send_card 的 try/except 样板 15 行可抽 `@_log_exceptions` 装饰器**。Quality 建议,acceptable 保持。
+
+### ADR-088 偏离点清零状态
+| 偏离点 | 原状 | Session 4b 清零落点 |
+|---|---|---|
+| #2 send_card 三端未实现 | ❌ dataclass 仅占位 | ✅ Feishu/Slack/Discord 各自 override,3 × 3 unit test 覆盖 |
+| #3 / I4 credential env-only | ❌ 无加密 | ✅ AES-256-GCM via `app.core.security`(reuse 不碎片化);`aesgcm:` 前缀;PATCH 自动加密;adapter 初始化自动解密 |
+| #4 Admin UI 只读 | ❌ 列表-only | ✅ 编辑 + 测试 modals;动态 k/v rows;sensitive 自动 password;test-send endpoint;16 e2e 覆盖 |
+
+### Commits(develop 分支,本 session)
+```
+ffd38b1 docs(spec): Session 4b design
+23ad5c4 docs(plan): Session 4b 12-task TDD implementation plan
+(worktree redesign/im-sendcard-aes)
+  ccc1237 test(cipher): RED phase
+  84f27ee feat(cipher): CredentialCipher Fernet v1
+  69dd884 test(im): RED phase — send_card × 3 adapters
+  707c939 feat(im_feishu): send_card → interactive card JSON
+  c32327c feat(im_slack): send_card → Block Kit blocks
+  b463111 feat(im_discord): send_card → embed + button components
+  1a38cab feat(im): PATCH encrypt + /test-send endpoint
+  5933787 test(e2e): RED phase — admin IM edit + test modals
+  8f98d5e feat(admin): edit + test-send modals
+  289f3fe simplify: reuse app.core.security AES-256-GCM; remove Fernet duplication
+(develop merge)
+  <merge commit> Merge Session 4b → develop (no-ff, no remote)
+```
+
+### ⚠️ 下一 session(Session 4c)开工前需注意
+1. **Docker nginx 当前 mount 在 `.worktrees/im-sendcard-aes/frontend`** — Session 4c 新 worktree 之前 `cd "E:/Agent program/PrismV3" && docker compose -p prismv3 up -d --force-recreate nginx` 切回主仓 mount
+2. **真实账号测试 ownership 在用户**:本 session 交付代码,用户按上面 "用户自主真实账号测试步骤" 配置后验证 live 行为
+3. **4 个并行 worktree 可清理**:`.worktrees/{fix-chat-md, redesign-doc-sk, redesign-doc-im2, plugin-builder-typed, im-sendcard-aes}` 可 `git worktree remove` 节省 303 MB/个
+4. **Mobile flakiness 已知**:Session 3 Phase 2 HANDOFF 记录的 cross-test session-leak 在 full regression 时仍可能偶发 2 fail(`chat-msg-render Bug 1` desktop 和 `plugin-consent-dialog agent_strategy` mobile)—— 单跑时全绿,非 Session 4a/4b 引入
+5. **Simplify follow-up 清单** 已在 DECISIONS.md 上方 ADR-088 条目尾部记录
+
+### 下一 session 路线(按 ROI 排序,用户未取消的前提下)
+- **Session 4c (推荐)**:Skills Market catalog browser + github source 下载(完成用户原问题 #2 "Skills Market 可用吗")—— 需 github API real call,独立 1 session
+- **Session 4d+**:#1 分布式任务拆解(manus 式 Planner-Executor)—— 架构级 4-5 session,需独立设计
+- **Quick wins (≤0.5 session each)**:Slack Socket Mode / IM card 按钮点击 action 回传处理 / frontend+backend sensitive key 列表单一源
+
+---
+
 ## ✅ 2026-04-20 Session 4a — Plugin Builder type-aware + Install Consent 完成(merge c-sess4a)
 
 **Directive**:清零 ADR-087 3 个偏离点(/validate dispatch / type sub-schema / consent dialog),**真正生产可用**,**不 mock**,Playwright 桌面 + 移动双端 production happy path 全覆盖。
