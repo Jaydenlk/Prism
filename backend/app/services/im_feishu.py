@@ -12,14 +12,17 @@ Prism v2 — 飞书 (Lark) IM 适配器 (DOC-08 Task 8.2 / Task B-1)
   优先从 Settings（环境变量）读取 FEISHU_* 字段。
   若 Settings 未配置（全空），回退到 im_channel_configs.config JSONB（DB 端配置）。
 
-签名校验（X-Lark-Signature）：
-  飞书 Webhook 签名算法：
-    timestamp + nonce + body_str → SHA256（注意：不混入任何密钥，只是内容 hash）
-  或使用 encrypt_key 时的签名算法：
-    SHA256(timestamp + encrypt_key + body_str).hexdigest()
-  本实现采用飞书官方文档 "验证请求签名" 方案：
-    HMAC-SHA256 的 key = encrypt_key，message = timestamp + nonce + body_bytes
-  若 FEISHU_ENCRYPT_KEY 未配置，跳过签名校验（verify_signature 返回 False）。
+签名校验（X-Lark-Signature — 两条独立算法，按端点分别走）：
+  **1. 事件订阅（/im/webhook/feishu，POST event_callback）**
+     plain SHA-256(timestamp + encrypt_key + body_str).hexdigest()
+     — 不是 HMAC，不涉及 nonce 或 verification_token。
+     由 verify_signature() 实现。
+  **2. 卡片回调（interactive card 按钮点击）**
+     plain SHA-1(timestamp + nonce + verification_token + body).hexdigest()
+     — 不同算法（SHA-1）、不同密钥（verification_token）、多一个 nonce。
+     由 verify_card_signature() 实现。
+  两条算法互不替代；FEISHU_ENCRYPT_KEY 未配置 → verify_signature 返回 False（fail-closed）；
+  FEISHU_VERIFICATION_TOKEN 未配置 → verify_card_signature 同样 fail-closed。
 
 加密消息（FEISHU_ENCRYPT_KEY 配置时）：
   飞书事件通过 AES-CBC-256 加密，key = SHA256(encrypt_key)，
@@ -259,13 +262,15 @@ class FeishuAdapter(IMAdapter):
         signature: str,
     ) -> bool:
         """
-        验证飞书 Webhook 签名（X-Lark-Signature）。
+        验证飞书 **事件订阅** Webhook 签名（X-Lark-Signature,/im/webhook/feishu 端点）。
 
-        飞书官方签名算法（encrypt_key 模式）：
+        飞书官方签名算法（plain SHA-256,不是 HMAC）：
           content = timestamp + encrypt_key + body_str
           expected = SHA256(content.encode()).hexdigest()
 
-        若 encrypt_key 未配置，无法校验 → 返回 False（调用方应拒绝请求）。
+        nonce 不参与本算法(只出现在 HTTP header 中作为追踪字段)。
+
+        若 encrypt_key 未配置，无法校验 → 返回 False（调用方应拒绝请求，fail-closed）。
 
         参考：https://open.feishu.cn/document/server-docs/event-subscription-guide/
                event-subscription-configure-/request-url-configuration-case
@@ -278,6 +283,39 @@ class FeishuAdapter(IMAdapter):
         content = timestamp + self._encrypt_key + body_str
         expected = hashlib.sha256(content.encode("utf-8")).hexdigest()
         return hmac.compare_digest(expected, signature)
+
+    def verify_card_signature(
+        self,
+        headers: dict[str, str],
+        body: bytes,
+    ) -> bool:
+        """
+        验证飞书 **interactive card 回调** 签名(X-Lark-Signature,卡片按钮点击)。
+
+        签名算法(plain SHA-1,与事件订阅 SHA-256 完全不同):
+          content = timestamp + nonce + verification_token + body
+          expected = SHA1(content).hexdigest()
+
+        三个 header 必须同时存在:
+          X-Lark-Request-Timestamp / X-Lark-Request-Nonce / X-Lark-Signature
+
+        若 FEISHU_VERIFICATION_TOKEN 未配置,返回 False (fail-closed)。
+
+        参考:https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/
+               feishu-cards/send-feishu-card/receive-callback-of-card-action
+        """
+        if not self._verify_token:
+            return False
+
+        ts = headers.get("X-Lark-Request-Timestamp", "")
+        nonce = headers.get("X-Lark-Request-Nonce", "")
+        sig = headers.get("X-Lark-Signature", "")
+        if not ts or not nonce or not sig:
+            return False
+
+        content = (ts + nonce + self._verify_token).encode("utf-8") + body
+        expected = hashlib.sha1(content).hexdigest()
+        return hmac.compare_digest(expected, sig)
 
     def decrypt_message(self, encrypted: str) -> dict[str, Any]:
         """

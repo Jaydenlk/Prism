@@ -154,11 +154,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             message="ProcessManager failed to initialize. Subprocess scheduling disabled.",
         )
 
-    # 6b. Initialize IMGateway + FeishuAdapter (Task B-1)
+    # 6b. Initialize IMGateway + adapters (Feishu / Slack / Discord — DOC-IM2 ADR-088)
     try:
         import redis.asyncio as _aioredis
         from app.services.im_gateway import IMGateway
         from app.services.im_feishu import FeishuAdapter
+        from app.services.im_slack import SlackAdapter
+        from app.services.im_discord import DiscordAdapter
 
         _redis_for_im = _aioredis.from_url(settings.REDIS_URL, decode_responses=False)
         feishu_adapter = FeishuAdapter(
@@ -166,14 +168,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings=settings,
             redis_client=_redis_for_im,
         )
+        slack_adapter = SlackAdapter(config={}, settings=settings)
+        discord_adapter = DiscordAdapter(config={}, settings=settings)
+
         im_gateway = IMGateway(settings)
         im_gateway.register_adapter(feishu_adapter)
+        im_gateway.register_adapter(slack_adapter)
+        im_gateway.register_adapter(discord_adapter)
         app.state.im_gateway = im_gateway
         await im_gateway.start_all()
         logger.info(
             "prism.im_gateway_started",
-            message="IMGateway initialized with FeishuAdapter (Task B-1).",
+            message="IMGateway initialized with Feishu + Slack + Discord adapters (DOC-IM2).",
             feishu_configured=feishu_adapter.is_configured(),
+            slack_configured=slack_adapter.is_configured(),
+            discord_configured=discord_adapter.is_configured(),
         )
     except Exception as exc:
         app.state.im_gateway = None

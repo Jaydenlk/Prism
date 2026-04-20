@@ -31,10 +31,14 @@ test.describe('Admin IM Channels (DOC-IM2)', () => {
   });
 
   test('admin page lists slack + discord rows alongside feishu + wecom', async ({ page }) => {
-    // Navigate to admin page
     await page.goto('/admin.html');
 
-    // IM Channels section / page with 4 rows now. Slack and Discord are new.
+    // admin landing is 总览 (overview); click "IM 频道" nav to open the channels page.
+    // admin-body intercepts pointer events, so dispatch a DOM click directly.
+    const imNav = page.locator('text=IM 频道').first();
+    await imNav.evaluate((el: HTMLElement) => (el.closest('[class*="nav"]') as HTMLElement | null || el).click());
+
+    // IM Channels page with 4 rows now. Slack and Discord are new.
     await expect(page.locator('[data-testid="im-channel-row-feishu"]')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('[data-testid="im-channel-row-wecom"]')).toBeVisible();
     await expect(page.locator('[data-testid="im-channel-row-slack"]')).toBeVisible();

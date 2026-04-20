@@ -69,6 +69,35 @@ class IMOutgoingMessage:
     """回复特定消息（可选，平台支持时生效）"""
 
 
+@dataclass
+class IMCardAction:
+    """Interactive-card action button (DOC-IM2 R8, ADR-088)."""
+
+    label: str
+    action_id: str
+    style: str = "primary"  # primary | secondary
+
+
+@dataclass
+class IMOutgoingCard:
+    """Provider-neutral card envelope (DOC-IM2 R8, ADR-088).
+
+    Adapters translate this to native card format:
+      - Feishu:  interactive card JSON (header + elements + actions)
+      - Slack:   blocks (section + actions with buttons)
+      - Discord: embed + components (button ActionRow)
+      - Telegram: falls back to plain text + inline keyboard (best-effort)
+    """
+
+    channel: str
+    platform_chat_id: str
+    title: str
+    body_markdown: str
+    actions: list[IMCardAction] = field(default_factory=list)
+    footer: str | None = None
+    reply_to_message_id: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # IMAdapter abstract base class
 # ---------------------------------------------------------------------------

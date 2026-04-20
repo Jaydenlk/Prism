@@ -105,6 +105,23 @@ class Settings(BaseSettings):
     FEISHU_ENCRYPT_KEY: str = ""
     FEISHU_VERIFICATION_TOKEN: str = ""
 
+    # --- Slack IM Bot (DOC-IM2 I2, ADR-088) -------------------------------
+    # Create app at https://api.slack.com/apps; Signing Secret from Basic
+    # Information, Bot Token from OAuth & Permissions (xoxb-...).
+    # IM_SLACK_MODE=events uses HTTP Events API + /im/webhook/slack;
+    # IM_SLACK_MODE=socket uses Socket Mode with xapp-... app-level token.
+    SLACK_SIGNING_SECRET: str = ""
+    SLACK_BOT_TOKEN: str = ""
+    SLACK_APP_TOKEN: str = ""
+    IM_SLACK_MODE: str = "events"  # events | socket
+
+    # --- Discord IM Bot (DOC-IM2 I3, ADR-088) -----------------------------
+    # From https://discord.com/developers/applications → <app> → General
+    # Information (Public Key, Application ID) + Bot (Bot Token).
+    DISCORD_PUBLIC_KEY: str = ""  # hex Ed25519 pubkey (64 chars)
+    DISCORD_APP_ID: str = ""
+    DISCORD_BOT_TOKEN: str = ""
+
     # --- Alert Dispatcher (ADR-120) ---------------------------------------
     # IM 群告警：格式 "{platform}:{chat_id}"，如 "feishu:oc_xxx"
     ALERT_IM_CHANNEL: str = ""

@@ -882,14 +882,18 @@ function IMChannels() {
             <table className="table" style={{ width: "100%" }}>
               <thead><tr><th>频道</th><th>平台</th><th>状态</th><th>配置</th></tr></thead>
               <tbody>
-                {channels.map((c, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 500, color: "var(--ink)" }}>{c.channel || c.name || '—'}</td>
-                    <td><span className="badge">{c.platform || c.channel || '—'}</span></td>
-                    <td><span className={`st ${c.enabled || c.is_enabled ? 'ok' : 'idle'}`}>{c.enabled || c.is_enabled ? '启用' : '停用'}</span></td>
-                    <td className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{c.webhook_url || c.bot_token ? '已配置' : '未配置'}</td>
-                  </tr>
-                ))}
+                {channels.map((c, i) => {
+                  const ch = c.channel || c.name || '—';
+                  const configured = !!(c.webhook_url || c.bot_token || (c.config && Object.keys(c.config).length > 0));
+                  return (
+                    <tr key={i} data-testid={`im-channel-row-${ch}`}>
+                      <td style={{ fontWeight: 500, color: "var(--ink)" }}>{ch}</td>
+                      <td><span className="badge">{c.platform || c.channel || '—'}</span></td>
+                      <td><span className={`st ${c.enabled || c.is_enabled ? 'ok' : 'idle'}`}>{c.enabled || c.is_enabled ? '启用' : '停用'}</span></td>
+                      <td className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{configured ? '已配置' : '未配置'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

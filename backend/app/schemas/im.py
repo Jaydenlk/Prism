@@ -19,14 +19,17 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 class IMChannelConfigResponse(BaseModel):
-    """GET /im/channels 中单个渠道的响应体。"""
+    """GET /im/channels 中单个渠道的响应体。
+
+    id / created_at / updated_at 对"已知但未配置"的占位渠道可为空(DB 尚无行时)。
+    """
 
     id: str
     channel: str
     is_enabled: bool
     config: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
