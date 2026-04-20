@@ -22,7 +22,12 @@ from typing import Any
 import httpx
 import structlog
 
-from app.services.im_adapter import IMAdapter, IMIncomingMessage, IMOutgoingMessage
+from app.services.im_adapter import (
+    IMAdapter,
+    IMIncomingMessage,
+    IMOutgoingCard,
+    IMOutgoingMessage,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -206,4 +211,77 @@ class DiscordAdapter(IMAdapter):
             return True
         except Exception as exc:  # noqa: BLE001
             logger.error("discord.send.exception", chat_id=message.platform_chat_id, error=str(exc))
+            return False
+
+    async def send_card(self, card: IMOutgoingCard) -> bool:
+        """POST Discord message with embed + button components.
+
+        Embed shape per https://discord.com/developers/docs/resources/channel#embed-object;
+        components per https://discord.com/developers/docs/interactions/message-components
+        (type 1 ActionRow → type 2 Button).
+        """
+        if not self._bot_token:
+            logger.warning("discord.send_card.no_bot_token", chat_id=card.platform_chat_id)
+            return False
+
+        embed: dict[str, Any] = {
+            "title": card.title,
+            "description": card.body_markdown,
+            "color": 0xD97706,  # amber-600, matches Prism brand accent
+        }
+        if card.footer:
+            embed["footer"] = {"text": card.footer}
+
+        components: list[dict[str, Any]] = []
+        if card.actions:
+            style_map = {"primary": 1, "secondary": 2}
+            components.append({
+                "type": 1,  # ActionRow
+                "components": [
+                    {
+                        "type": 2,  # Button
+                        "style": style_map.get(a.style, 2),
+                        "label": a.label,
+                        "custom_id": a.action_id,
+                    }
+                    for a in card.actions
+                ],
+            })
+
+        payload: dict[str, Any] = {"embeds": [embed]}
+        if components:
+            payload["components"] = components
+        if card.reply_to_message_id:
+            payload["message_reference"] = {"message_id": card.reply_to_message_id}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{DISCORD_API_BASE}/channels/{card.platform_chat_id}/messages",
+                    headers={
+                        "Authorization": f"Bot {self._bot_token}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            if resp.status_code >= 300:
+                logger.error(
+                    "discord.send_card.api_error",
+                    chat_id=card.platform_chat_id,
+                    status=resp.status_code,
+                    body=resp.text[:200],
+                )
+                return False
+            logger.info(
+                "discord.send_card.ok",
+                chat_id=card.platform_chat_id,
+                title=card.title,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "discord.send_card.exception",
+                chat_id=card.platform_chat_id,
+                error=str(exc),
+            )
             return False

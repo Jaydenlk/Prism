@@ -21,7 +21,12 @@ from typing import Any
 import httpx
 import structlog
 
-from app.services.im_adapter import IMAdapter, IMIncomingMessage, IMOutgoingMessage
+from app.services.im_adapter import (
+    IMAdapter,
+    IMIncomingMessage,
+    IMOutgoingCard,
+    IMOutgoingMessage,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -205,4 +210,73 @@ class SlackAdapter(IMAdapter):
             return True
         except Exception as exc:  # noqa: BLE001
             logger.error("slack.send.exception", chat_id=message.platform_chat_id, error=str(exc))
+            return False
+
+    async def send_card(self, card: IMOutgoingCard) -> bool:
+        """POST Slack interactive message via chat.postMessage with Block Kit blocks.
+
+        Blocks shape per https://docs.slack.dev/block-kit: ``[header, section, actions?]``
+        + optional context footer.
+        """
+        if not self.is_configured():
+            logger.warning("slack.send_card.not_configured", chat_id=card.platform_chat_id)
+            return False
+
+        blocks: list[dict[str, Any]] = [
+            {"type": "header", "text": {"type": "plain_text", "text": card.title}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": card.body_markdown}},
+        ]
+        if card.actions:
+            blocks.append({
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": a.label},
+                        "action_id": a.action_id,
+                        **({"style": "primary"} if a.style == "primary" else {}),
+                    }
+                    for a in card.actions
+                ],
+            })
+        if card.footer:
+            blocks.append({
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": card.footer}],
+            })
+
+        payload: dict[str, Any] = {
+            "channel": card.platform_chat_id,
+            "blocks": blocks,
+            "text": card.title,  # fallback for notifications + accessibility
+        }
+        if card.reply_to_message_id:
+            payload["thread_ts"] = card.reply_to_message_id
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{SLACK_API_BASE}/chat.postMessage",
+                    headers={
+                        "Authorization": f"Bearer {self._bot_token}",
+                        "Content-Type": "application/json; charset=utf-8",
+                    },
+                    json=payload,
+                )
+            data = resp.json()
+            if not data.get("ok"):
+                logger.error(
+                    "slack.send_card.api_error",
+                    chat_id=card.platform_chat_id,
+                    error=data.get("error"),
+                )
+                return False
+            logger.info("slack.send_card.ok", chat_id=card.platform_chat_id, title=card.title)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "slack.send_card.exception",
+                chat_id=card.platform_chat_id,
+                error=str(exc),
+            )
             return False

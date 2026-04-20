@@ -162,14 +162,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from app.services.im_slack import SlackAdapter
         from app.services.im_discord import DiscordAdapter
 
+        # Single DB round-trip for all IM channel configs + batch decrypt.
+        def _load_all_im_configs(channels: tuple[str, ...]) -> dict[str, dict]:
+            try:
+                from app.core.database import SessionLocal
+                from app.models.im import ImChannelConfig
+                from app.services.credential_cipher import decrypt_config_secrets
+
+                _s = SessionLocal()
+                try:
+                    rows = (
+                        _s.query(ImChannelConfig)
+                        .filter(ImChannelConfig.channel.in_(channels))
+                        .all()
+                    )
+                    raw = {r.channel: dict(r.config or {}) for r in rows}
+                finally:
+                    _s.close()
+                key_hex = settings.ENCRYPTION_KEY
+                return {
+                    ch: decrypt_config_secrets(raw.get(ch, {}), key_hex)
+                    for ch in channels
+                }
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("im.configs_load_failed", error=str(exc))
+                return {ch: {} for ch in channels}
+
+        im_configs = _load_all_im_configs(("feishu", "slack", "discord"))
         _redis_for_im = _aioredis.from_url(settings.REDIS_URL, decode_responses=False)
         feishu_adapter = FeishuAdapter(
-            config={},
+            config=im_configs["feishu"],
             settings=settings,
             redis_client=_redis_for_im,
         )
-        slack_adapter = SlackAdapter(config={}, settings=settings)
-        discord_adapter = DiscordAdapter(config={}, settings=settings)
+        slack_adapter = SlackAdapter(config=im_configs["slack"], settings=settings)
+        discord_adapter = DiscordAdapter(config=im_configs["discord"], settings=settings)
 
         im_gateway = IMGateway(settings)
         im_gateway.register_adapter(feishu_adapter)

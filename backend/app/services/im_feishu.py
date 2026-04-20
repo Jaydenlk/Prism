@@ -44,7 +44,12 @@ from typing import Any
 import httpx
 import structlog
 
-from app.services.im_adapter import IMAdapter, IMIncomingMessage, IMOutgoingMessage
+from app.services.im_adapter import (
+    IMAdapter,
+    IMIncomingMessage,
+    IMOutgoingCard,
+    IMOutgoingMessage,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -249,6 +254,92 @@ class FeishuAdapter(IMAdapter):
                 text=text,
             )
         )
+
+    async def send_card(self, card: IMOutgoingCard) -> bool:
+        """POST Feishu interactive card via /open-apis/im/v1/messages msg_type=interactive.
+
+        Card JSON shape per https://open.feishu.cn/document/uAjLw4CM/uAjLw4CO/card/send-message-cards/overview:
+        ``{config, header:{template,title}, elements:[{tag:div,...}, {tag:action,...}]}``.
+        """
+        if not self.is_configured():
+            logger.warning(
+                "feishu.send_card.not_configured",
+                chat_id=card.platform_chat_id,
+            )
+            return False
+
+        elements: list[dict[str, Any]] = [
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": card.body_markdown},
+            },
+        ]
+        if card.actions:
+            elements.append({
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": a.label},
+                        "type": "primary" if a.style == "primary" else "default",
+                        "value": {"action_id": a.action_id},
+                    }
+                    for a in card.actions
+                ],
+            })
+        if card.footer:
+            elements.append({
+                "tag": "note",
+                "elements": [{"tag": "plain_text", "content": card.footer}],
+            })
+
+        card_payload = {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "template": "blue",
+                "title": {"tag": "plain_text", "content": card.title},
+            },
+            "elements": elements,
+        }
+
+        try:
+            token = await self._ensure_token()
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{FEISHU_API_BASE}/open-apis/im/v1/messages",
+                    params={"receive_id_type": "chat_id"},
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json; charset=utf-8",
+                    },
+                    json={
+                        "receive_id": card.platform_chat_id,
+                        "msg_type": "interactive",
+                        "content": json.dumps(card_payload, ensure_ascii=False),
+                    },
+                )
+            data = resp.json()
+            if data.get("code") != 0:
+                logger.error(
+                    "feishu.send_card.api_error",
+                    chat_id=card.platform_chat_id,
+                    code=data.get("code"),
+                    msg=data.get("msg"),
+                )
+                return False
+            logger.info(
+                "feishu.send_card.ok",
+                chat_id=card.platform_chat_id,
+                title=card.title,
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "feishu.send_card.exception",
+                chat_id=card.platform_chat_id,
+                error=str(exc),
+            )
+            return False
 
     # ------------------------------------------------------------------
     # Webhook handling (called by api/v1/im.py)

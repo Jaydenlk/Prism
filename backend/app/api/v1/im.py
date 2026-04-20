@@ -40,7 +40,11 @@ from app.schemas.im import (
     IMChannelConfigResponse,
     IMChannelConfigUpdate,
     PairingCodeResponse,
+    TestSendRequest,
 )
+from app.core.config import get_settings
+from app.services.credential_cipher import encrypt_config_secrets
+from app.services.im_adapter import IMCardAction, IMOutgoingCard
 from app.services.im_binding_service import IMBindingService
 from app.services.im_feishu import FeishuAdapter
 
@@ -109,6 +113,7 @@ def list_channels(
 def update_channel(
     channel: str,
     data: IMChannelConfigUpdate,
+    request: Request,
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> ApiResponse[IMChannelConfigResponse]:
@@ -117,6 +122,10 @@ def update_channel(
 
     不存在则自动创建（upsert 语义）。
     config 字段为 JSONB，传入值与现有值合并（partial update）。
+
+    ADR-088 Session 4b (I4):写入前对 key 包含 secret/token/key/password 的
+    字符串 value 自动 Fernet 加密(前缀 ``fernet:``);GET 路径仍脱敏,
+    Adapter 重启后从 DB 读时自动解密。
     """
     row = db.query(ImChannelConfig).filter(ImChannelConfig.channel == channel).first()
 
@@ -131,9 +140,10 @@ def update_channel(
     if data.is_enabled is not None:
         row.is_enabled = data.is_enabled
     if data.config is not None:
-        # Merge: 保留现有字段，覆盖传入字段
+        key_hex = get_settings().ENCRYPTION_KEY
+        new_config = encrypt_config_secrets(data.config, key_hex)
         merged = dict(row.config or {})
-        merged.update(data.config)
+        merged.update(new_config)
         row.config = merged
 
     db.commit()
@@ -156,6 +166,64 @@ def update_channel(
             updated_at=row.updated_at,
         )
     )
+
+
+@router.post(
+    "/channels/{channel}/test-send",
+    response_model=ApiResponse[dict],
+    summary="向 IM 渠道发送一张测试卡片(admin only, ADR-088 Session 4b)",
+)
+async def test_send_channel(
+    channel: str,
+    body: TestSendRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+) -> ApiResponse[dict]:
+    """向指定 IM 渠道发送一张硬编码测试卡片,用于 Admin UI 配置验证。
+
+    Response:
+      - 200 + {sent:true,channel}   — adapter 已配置且 send_card 成功
+      - 200 + {sent:false,channel}  — adapter 已配置但平台 API 返错误
+      - 404                         — 渠道未注册
+      - 503                         — 渠道未配置(需先 PATCH config + 重启 adapter)
+      - 502                         — send_card 抛异常
+    """
+    gw = getattr(request.app.state, "im_gateway", None)
+    adapter = gw.get_adapter(channel) if gw else None
+    if adapter is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"channel '{channel}' adapter not found",
+        )
+    if not adapter.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"channel '{channel}' not configured",
+        )
+
+    card = IMOutgoingCard(
+        channel=channel,
+        platform_chat_id=body.target_chat_id,
+        title=body.title or "Prism 测试卡片",
+        body_markdown=body.body or "这是一张由 Prism admin 发送的测试互动卡片。\n您可以点击下方按钮测试 action 回传。",
+        actions=[IMCardAction(label="确认", action_id="test_confirm", style="primary")],
+    )
+    try:
+        sent = await adapter.send_card(card)
+    except NotImplementedError:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=f"channel '{channel}' adapter does not support send_card",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("im.test_send.exception", channel=channel, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"send failed: {exc}",
+        )
+
+    logger.info("im.test_send.result", channel=channel, sent=sent, admin_id=admin.id)
+    return ApiResponse(data={"sent": bool(sent), "channel": channel})
 
 
 # ---------------------------------------------------------------------------

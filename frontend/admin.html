@@ -848,6 +848,20 @@ function Overview({ dashData, healthData }) {
 function IMChannels() {
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Edit modal: { channel, is_enabled, rows:[{key,value}] }
+  const [editModal, setEditModal] = useState(null);
+  // Test modal: { channel, chat_id }
+  const [testModal, setTestModal] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
+
+  const reloadChannels = async () => {
+    try {
+      const resp = await PrismAPI.request('GET', '/im/channels');
+      setChannels(Array.isArray(resp) ? resp : []);
+    } catch (e) {
+      toast('加载 IM 频道失败: ' + (e.message || e), 'err');
+    }
+  };
 
   useEffect(() => {
     PrismAPI.request('GET', '/im/channels')
@@ -858,16 +872,103 @@ function IMChannels() {
       .finally(() => setLoading(false));
   }, []);
 
+  const isSensitive = (key) => /secret|token|key|password/i.test(key || '');
+
   return (
     <div>
       <div className="page-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
         <div>
           <div className="page-title">IM 频道</div>
           <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>
-            本版本为单租户。飞书 / 企微 / Telegram 通道配置。
+            飞书 / 企微 / Slack / Discord 通道配置(PATCH 敏感字段自动 Fernet 加密)。
           </div>
         </div>
       </div>
+
+      {editModal && (
+        <div data-testid="im-channel-edit-modal" style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={() => setEditModal(null)}>
+          <div style={{ background:"var(--paper)", borderRadius:14, padding:24, maxWidth:600, width:"100%", maxHeight:"85vh", overflow:"auto", display:"flex", flexDirection:"column", gap:16, boxShadow:"0 20px 60px rgba(0,0,0,0.15)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily:"var(--serif)", fontSize:18, fontWeight:500, color:"var(--ink)" }}>
+              编辑 IM 渠道:<span style={{ fontFamily:"var(--mono)", color:"var(--amber-ink, #92400e)" }}>{editModal.channel}</span>
+            </div>
+
+            <label style={{ display:"flex", alignItems:"center", gap:10, fontSize:13 }}>
+              <input type="checkbox" data-testid="im-channel-edit-enabled" checked={editModal.is_enabled} onChange={e => setEditModal({ ...editModal, is_enabled: e.target.checked })}/>
+              <span>启用此渠道</span>
+            </label>
+
+            <div>
+              <div style={{ fontSize:12, color:"var(--ink-3)", marginBottom:8, fontFamily:"var(--serif)", fontStyle:"italic" }}>
+                配置字段(敏感 key 自动转 password 输入;保存时后端 Fernet 加密)
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                {editModal.rows.map((r, i) => {
+                  const sensitive = isSensitive(r.key);
+                  return (
+                    <div key={i} style={{ display:"flex", gap:6, alignItems:"center" }}>
+                      <input data-testid={`im-channel-edit-row-key-${i}`} className="input" style={{ flex:"0 0 180px", fontFamily:"var(--mono)", fontSize:12 }} placeholder="key" value={r.key} onChange={e => { const rows=[...editModal.rows]; rows[i]={...rows[i], key:e.target.value}; setEditModal({...editModal, rows}); }}/>
+                      <input data-testid={`im-channel-edit-row-value-${i}`} type={sensitive ? "password" : "text"} className="input" style={{ flex:1, fontFamily:"var(--mono)", fontSize:12 }} placeholder="value" value={r.value} onChange={e => { const rows=[...editModal.rows]; rows[i]={...rows[i], value:e.target.value}; setEditModal({...editModal, rows}); }}/>
+                      <button className="btn ghost sm" style={{ flex:"0 0 auto" }} title="删除" onClick={() => { const rows=editModal.rows.filter((_,idx)=>idx!==i); setEditModal({...editModal, rows}); }}>✕</button>
+                    </div>
+                  );
+                })}
+                <button data-testid="im-channel-edit-add-row" className="btn ghost sm" style={{ alignSelf:"flex-start", marginTop:6 }} onClick={() => setEditModal({ ...editModal, rows:[...editModal.rows, { key:"", value:"" }] })}>+ 添加字段</button>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              <button data-testid="im-channel-edit-save" className="btn primary" style={{ width:"100%", justifyContent:"center", minHeight:44 }} disabled={actionBusy} onClick={async () => {
+                setActionBusy(true);
+                try {
+                  const config = {};
+                  for (const r of editModal.rows) {
+                    if (r.key) config[r.key] = r.value;
+                  }
+                  await PrismAPI.request('PATCH', `/im/channels/${editModal.channel}`, { json: { is_enabled: editModal.is_enabled, config } });
+                  toast(`${editModal.channel} 配置已保存`, 'ok');
+                  setEditModal(null);
+                  await reloadChannels();
+                } catch (e) {
+                  toast('保存失败: ' + (e.message || e), 'err');
+                }
+                setActionBusy(false);
+              }}>保存</button>
+              <button data-testid="im-channel-edit-cancel" className="btn ghost" style={{ width:"100%", justifyContent:"center", minHeight:44 }} onClick={() => setEditModal(null)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {testModal && (
+        <div data-testid="im-channel-test-modal" style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={() => setTestModal(null)}>
+          <div style={{ background:"var(--paper)", borderRadius:14, padding:24, maxWidth:440, width:"100%", display:"flex", flexDirection:"column", gap:14 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily:"var(--serif)", fontSize:17, fontWeight:500 }}>
+              向 <span style={{ fontFamily:"var(--mono)", color:"var(--amber-ink, #92400e)" }}>{testModal.channel}</span> 发送测试卡片
+            </div>
+            <label style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              <span style={{ fontSize:11.5, color:"var(--ink-3)" }}>目标 chat_id</span>
+              <input data-testid="im-channel-test-chat-id" className="input" value={testModal.chat_id} onChange={e => setTestModal({ ...testModal, chat_id: e.target.value })} placeholder={testModal.channel === 'feishu' ? 'oc_xxxxxxxxxxxxxx' : testModal.channel === 'slack' ? 'C0XXXXXX' : testModal.channel === 'discord' ? 'channel_id (19 digits)' : ''}/>
+            </label>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              <button data-testid="im-channel-test-send" className="btn primary" style={{ width:"100%", justifyContent:"center", minHeight:44 }} disabled={actionBusy || !testModal.chat_id} onClick={async () => {
+                setActionBusy(true);
+                try {
+                  const r = await PrismAPI.request('POST', `/im/channels/${testModal.channel}/test-send`, { json: { target_chat_id: testModal.chat_id } });
+                  const sent = r?.data?.sent ?? r?.sent;
+                  if (sent) toast(`${testModal.channel} 发送成功`, 'ok');
+                  else toast(`${testModal.channel} 发送失败(平台返错误)`, 'err');
+                  setTestModal(null);
+                } catch (e) {
+                  toast('发送失败: ' + (e.message || e), 'err');
+                }
+                setActionBusy(false);
+              }}>发送</button>
+              <button data-testid="im-channel-test-cancel" className="btn ghost" style={{ width:"100%", justifyContent:"center", minHeight:44 }} onClick={() => setTestModal(null)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="panel">
         <div className="panel-head">
           <Icon name="link" size={14}/>
@@ -880,7 +981,7 @@ function IMChannels() {
             <EmptyState msg="暂无 IM 频道配置。在 .env 中设置 FEISHU_APP_ID / WECOM_CORP_ID / TELEGRAM_BOT_TOKEN 后重启服务。"/>
           ) : (
             <table className="table" style={{ width: "100%" }}>
-              <thead><tr><th>频道</th><th>平台</th><th>状态</th><th>配置</th></tr></thead>
+              <thead><tr><th>频道</th><th>平台</th><th>状态</th><th>配置</th><th style={{textAlign:"right"}}>操作</th></tr></thead>
               <tbody>
                 {channels.map((c, i) => {
                   const ch = c.channel || c.name || '—';
@@ -891,6 +992,14 @@ function IMChannels() {
                       <td><span className="badge">{c.platform || c.channel || '—'}</span></td>
                       <td><span className={`st ${c.enabled || c.is_enabled ? 'ok' : 'idle'}`}>{c.enabled || c.is_enabled ? '启用' : '停用'}</span></td>
                       <td className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{configured ? '已配置' : '未配置'}</td>
+                      <td style={{ textAlign:"right", whiteSpace:"nowrap" }}>
+                        <button data-testid={`im-channel-edit-${ch}`} className="btn ghost sm" style={{ marginRight: 6 }} onClick={() => setEditModal({
+                          channel: ch,
+                          is_enabled: !!(c.enabled || c.is_enabled),
+                          rows: Object.entries(c.config || {}).map(([k, v]) => ({ key: k, value: String(v === '***' ? '' : v) })),
+                        })}>编辑</button>
+                        <button data-testid={`im-channel-test-${ch}`} className="btn ghost sm" onClick={() => setTestModal({ channel: ch, chat_id: "" })}>测试</button>
+                      </td>
                     </tr>
                   );
                 })}
