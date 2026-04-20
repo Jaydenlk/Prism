@@ -14,6 +14,7 @@ Endpoints (all under /api/v1/marketplaces, admin-authenticated):
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 import structlog
@@ -83,7 +84,11 @@ async def create_marketplace(
 ) -> ApiResponse[MarketplaceResponse]:
     svc = MarketplaceService(db=db)
     try:
-        entry = svc.create(
+        # Session 4c ADR-090: svc.create may clone a git repo (120s timeout)
+        # via blocking subprocess. Run in threadpool to avoid blocking the
+        # FastAPI event loop.
+        entry = await asyncio.to_thread(
+            svc.create,
             user_id=current_user.id,
             url=str(request.url),
             name=request.name,
@@ -131,7 +136,11 @@ async def sync_marketplace(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[MarketplaceResponse]:
     svc = MarketplaceService(db=db)
-    entry = svc.sync(marketplace_id=marketplace_id, user_id=current_user.id)
+    # Session 4c ADR-090: svc.sync may re-clone a git repo (120s timeout).
+    # Run in threadpool to avoid blocking the FastAPI event loop.
+    entry = await asyncio.to_thread(
+        svc.sync, marketplace_id=marketplace_id, user_id=current_user.id
+    )
     if entry is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

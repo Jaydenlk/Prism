@@ -25,7 +25,7 @@ import subprocess
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 import structlog
@@ -196,8 +196,18 @@ def _fetch_git(
     return parsed, datetime.now(timezone.utc), cache_dir
 
 
+def _safe_path_segment(name: str) -> str:
+    """Sanitize a user-supplied string for use as a filesystem path segment.
+
+    Prevents path injection (e.g. mp.name="../../evil") — reject anything
+    outside [A-Za-z0-9._-].
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")[:100]
+    return cleaned or "unnamed"
+
+
 @asynccontextmanager
-async def _redis_install_lock(key: str, ttl: int = 120):
+async def _redis_install_lock(key: str, ttl: int = 120) -> "AsyncIterator[None]":
     """SETNX EX lock (concurrent install guard). Uses redis.asyncio."""
     import redis.asyncio as aioredis
 
@@ -406,8 +416,13 @@ class MarketplaceService:
         lock_key = f"install_lock:{marketplace_id}:{plugin_name}"
         async with _redis_install_lock(lock_key, ttl=120):
             version = entry.get("version", "0.0.0")
+            # Sanitize path segments — mp.name / plugin_name / version are
+            # all user-controlled (catalog_json); block path traversal.
             target_dir = (
-                _PLUGIN_CACHE / mp.name / plugin_name / version
+                _PLUGIN_CACHE
+                / _safe_path_segment(mp.name)
+                / _safe_path_segment(plugin_name)
+                / _safe_path_segment(version)
             )
             if target_dir.exists():
                 shutil.rmtree(target_dir)

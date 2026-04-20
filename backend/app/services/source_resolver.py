@@ -158,6 +158,68 @@ def _check_rate_limit(resp: httpx.Response) -> None:
             f"GitHub rate limit hit — retry in {wait_s}s "
             f"(set GITHUB_TOKEN for 5000/h instead of 60/h)",
         )
+    if resp.status_code == 403:
+        raise SourceDownloadError(
+            "github_tarball",
+            None,
+            "403 forbidden (possibly abuse detection or missing scope) — "
+            "verify GITHUB_TOKEN has repo scope",
+        )
+
+
+def _inject_github_token(url: str, token: str | None) -> str:
+    """Rewrite github.com HTTPS URL to include x-access-token for private repos."""
+    if not token or "github.com" not in url or not url.startswith("https://"):
+        return url
+    return url.replace("https://", f"https://x-access-token:{token}@", 1)
+
+
+def _require_key(source: dict[str, Any], key: str, stage: str) -> Any:
+    """Extract key from source dict or raise SourceDownloadError (not KeyError)."""
+    value = source.get(key)
+    if value is None:
+        raise SourceDownloadError(
+            stage, None, f"Missing required source field: {key!r}"
+        )
+    return value
+
+
+async def _download_and_extract_tarball(
+    url: str,
+    headers: dict[str, str],
+    target_dir: Path,
+    *,
+    stage: str,
+    auth_error_hint: str = "Auth required",
+    check_github_rate_limit: bool = False,
+) -> None:
+    """Shared tarball download+extract flow for github/npm resolvers.
+
+    Streams to temp file adjacent to target_dir, _safe_extract_tar, cleanup.
+    """
+    target_dir.mkdir(parents=True, exist_ok=True)
+    tmp_tar = target_dir.parent / f".{target_dir.name}.tar.gz"
+    try:
+        async with httpx.AsyncClient(
+            timeout=60.0, follow_redirects=True, max_redirects=5
+        ) as client:
+            async with client.stream("GET", url, headers=headers) as resp:
+                if resp.status_code == 404:
+                    raise SourceDownloadError(
+                        stage, None, f"Not found: {url}"
+                    )
+                if resp.status_code == 401:
+                    raise SourceDownloadError(stage, None, auth_error_hint)
+                if check_github_rate_limit:
+                    _check_rate_limit(resp)
+                resp.raise_for_status()
+                with tmp_tar.open("wb") as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        f.write(chunk)
+        _safe_extract_tar(tmp_tar, target_dir, strip_root_dir=True)
+    finally:
+        if tmp_tar.exists():
+            tmp_tar.unlink()
 
 
 # =============================================================================
@@ -166,7 +228,13 @@ def _check_rate_limit(resp: httpx.Response) -> None:
 
 
 class RelativePathResolver(SourceResolver):
-    async def download(self, source, target_dir, marketplace_local_dir, github_token):
+    async def download(
+        self,
+        source: dict[str, Any] | str,
+        target_dir: Path,
+        marketplace_local_dir: Path | None,
+        github_token: str | None,
+    ) -> None:
         if marketplace_local_dir is None:
             raise SourceDownloadError(
                 "relative_path",
@@ -190,8 +258,6 @@ class RelativePathResolver(SourceResolver):
             raise SourceDownloadError(
                 "relative_path", None, f"Path not found: {rel}"
             )
-        if target_dir.exists() and target_dir.is_dir() and not any(target_dir.iterdir()):
-            target_dir.rmdir()
         shutil.copytree(src, target_dir, dirs_exist_ok=False)
 
 
@@ -201,8 +267,18 @@ class RelativePathResolver(SourceResolver):
 
 
 class GithubTarballResolver(SourceResolver):
-    async def download(self, source, target_dir, marketplace_local_dir, github_token):
-        repo = source["repo"]
+    async def download(
+        self,
+        source: dict[str, Any] | str,
+        target_dir: Path,
+        marketplace_local_dir: Path | None,
+        github_token: str | None,
+    ) -> None:
+        if not isinstance(source, dict):
+            raise SourceDownloadError(
+                "github_tarball", None, "github source must be object"
+            )
+        repo = _require_key(source, "repo", "github_tarball")
         ref = source.get("sha") or source.get("ref") or "HEAD"
         url = f"https://api.github.com/repos/{repo}/tarball/{ref}"
         headers = {
@@ -211,34 +287,14 @@ class GithubTarballResolver(SourceResolver):
         }
         if github_token:
             headers["Authorization"] = f"Bearer {github_token}"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        tmp_tar = target_dir.parent / f".{target_dir.name}.tar.gz"
-        try:
-            async with httpx.AsyncClient(
-                timeout=60.0, follow_redirects=True, max_redirects=5
-            ) as client:
-                async with client.stream("GET", url, headers=headers) as resp:
-                    if resp.status_code == 404:
-                        raise SourceDownloadError(
-                            "github_tarball",
-                            None,
-                            f"Repo or ref not found: {repo}@{ref}",
-                        )
-                    if resp.status_code == 401:
-                        raise SourceDownloadError(
-                            "github_tarball",
-                            None,
-                            "Auth required — set GITHUB_TOKEN for private repo",
-                        )
-                    _check_rate_limit(resp)
-                    resp.raise_for_status()
-                    with tmp_tar.open("wb") as f:
-                        async for chunk in resp.aiter_bytes(chunk_size=65536):
-                            f.write(chunk)
-            _safe_extract_tar(tmp_tar, target_dir, strip_root_dir=True)
-        finally:
-            if tmp_tar.exists():
-                tmp_tar.unlink()
+        await _download_and_extract_tarball(
+            url,
+            headers,
+            target_dir,
+            stage="github_tarball",
+            auth_error_hint="Auth required — set GITHUB_TOKEN for private repo",
+            check_github_rate_limit=True,
+        )
 
 
 # =============================================================================
@@ -247,8 +303,16 @@ class GithubTarballResolver(SourceResolver):
 
 
 class GitUrlResolver(SourceResolver):
-    async def download(self, source, target_dir, marketplace_local_dir, github_token):
-        url = source["url"]
+    async def download(
+        self,
+        source: dict[str, Any] | str,
+        target_dir: Path,
+        marketplace_local_dir: Path | None,
+        github_token: str | None,
+    ) -> None:
+        if not isinstance(source, dict):
+            raise SourceDownloadError("git_url", None, "url source must be object")
+        url = _require_key(source, "url", "git_url")
         if url.startswith("git@"):
             raise SourceDownloadError(
                 "git_url", None, "SSH URL unsupported — use HTTPS"
@@ -256,11 +320,7 @@ class GitUrlResolver(SourceResolver):
         ref = source.get("ref")
         sha = source.get("sha")
 
-        clone_url = url
-        if github_token and "github.com" in url:
-            clone_url = url.replace(
-                "https://", f"https://x-access-token:{github_token}@"
-            )
+        clone_url = _inject_github_token(url, github_token)
 
         cmd = ["git", "clone", "--depth", "1"]
         if ref and not sha:
@@ -297,8 +357,19 @@ def _flatten_subdir_into_root(root: Path, subdir: Path) -> None:
 
 
 class GitSubdirResolver(SourceResolver):
-    async def download(self, source, target_dir, marketplace_local_dir, github_token):
-        url = source["url"]
+    async def download(
+        self,
+        source: dict[str, Any] | str,
+        target_dir: Path,
+        marketplace_local_dir: Path | None,
+        github_token: str | None,
+    ) -> None:
+        if not isinstance(source, dict):
+            raise SourceDownloadError(
+                "git_subdir", None, "git-subdir source must be object"
+            )
+        url = _require_key(source, "url", "git_subdir")
+        path = _require_key(source, "path", "git_subdir")
         if url.startswith("git@"):
             raise SourceDownloadError(
                 "git_subdir", None, "SSH URL unsupported — use HTTPS"
@@ -306,14 +377,9 @@ class GitSubdirResolver(SourceResolver):
         # owner/repo shorthand → full URL
         if "/" in url and not url.startswith("http"):
             url = f"https://github.com/{url}.git"
-        path = source["path"]
         ref = source.get("sha") or source.get("ref")
 
-        clone_url = url
-        if github_token and "github.com" in url:
-            clone_url = url.replace(
-                "https://", f"https://x-access-token:{github_token}@"
-            )
+        clone_url = _inject_github_token(url, github_token)
 
         await _run_subprocess(
             [
@@ -357,8 +423,16 @@ class GitSubdirResolver(SourceResolver):
 
 
 class NpmResolver(SourceResolver):
-    async def download(self, source, target_dir, marketplace_local_dir, github_token):
-        package = source["package"]
+    async def download(
+        self,
+        source: dict[str, Any] | str,
+        target_dir: Path,
+        marketplace_local_dir: Path | None,
+        github_token: str | None,
+    ) -> None:
+        if not isinstance(source, dict):
+            raise SourceDownloadError("npm", None, "npm source must be object")
+        package = _require_key(source, "package", "npm")
         version = source.get("version")
         registry = source.get("registry", "https://registry.npmjs.org")
         npm_token = os.getenv("NPM_TOKEN")
@@ -394,21 +468,12 @@ class NpmResolver(SourceResolver):
             version_info = versions[latest]
 
         tarball_url = version_info["dist"]["tarball"]
-        target_dir.mkdir(parents=True, exist_ok=True)
-        tmp_tgz = target_dir.parent / f".{target_dir.name}.tgz"
-        try:
-            async with httpx.AsyncClient(
-                timeout=60.0, follow_redirects=True
-            ) as client:
-                async with client.stream("GET", tarball_url, headers=headers) as resp:
-                    resp.raise_for_status()
-                    with tmp_tgz.open("wb") as f:
-                        async for chunk in resp.aiter_bytes(chunk_size=65536):
-                            f.write(chunk)
-            _safe_extract_tar(tmp_tgz, target_dir, strip_root_dir=True)
-        finally:
-            if tmp_tgz.exists():
-                tmp_tgz.unlink()
+        await _download_and_extract_tarball(
+            tarball_url,
+            headers,
+            target_dir,
+            stage="npm",
+        )
 
 
 # =============================================================================

@@ -1418,13 +1418,12 @@ function SkillsPage() {
     if (!installConsent) return;
     const { mp, plugin } = installConsent;
     setInstallConsent(null);
-    setInstallingPlugin({ name: plugin.name, stage: "下载中" });
+    // Honest single spinner — backend is one synchronous POST that downloads,
+    // parses, registers. Faking staged progress via setTimeout would be
+    // cosmetic deception (user's "实实在在" rule). Real stage API is future work.
+    setInstallingPlugin({ name: plugin.name, stage: "安装中(30-60s)" });
     try {
-      // Three-stage UI hint (backend is single POST; stages for UX feedback)
-      const stageTimer1 = setTimeout(() => setInstallingPlugin(p => p && { ...p, stage: "解析中" }), 8000);
-      const stageTimer2 = setTimeout(() => setInstallingPlugin(p => p && { ...p, stage: "注册中" }), 20000);
       const resp = await PrismAPI.marketplaces.installPlugin(mp.id, plugin.name);
-      clearTimeout(stageTimer1); clearTimeout(stageTimer2);
       const report = unwrap(resp) || {};
       const count = (report.installed_skills || []).length;
       const names = (report.installed_skills || []).slice(0, 3).join(", ");
