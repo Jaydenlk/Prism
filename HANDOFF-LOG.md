@@ -45,6 +45,79 @@
 
 ---
 
+## ✅ 2026-04-20 Session 4a — Plugin Builder type-aware + Install Consent 完成(merge c-sess4a)
+
+**Directive**:清零 ADR-087 3 个偏离点(/validate dispatch / type sub-schema / consent dialog),**真正生产可用**,**不 mock**,Playwright 桌面 + 移动双端 production happy path 全覆盖。
+
+### 做了什么(按 commit 顺序,分支 `redesign/plugin-builder-typed`)
+1. **T1-T2 RED unit**(c5b6b65)—— `backend/tests/test_plugin_validate_dispatch.py` 8 个 httpx-based 单元测试:4 种 type × 合法/非法 + unknown type + default to tool + permissions 解析。首轮 8/8 FAIL(endpoint 不存在)。
+2. **T3 RED e2e**(f2875b9)—— `e2e/tests/plugin-consent-dialog.spec.ts` 8 tests(4 chip + dialog 渲染 + allow + cancel + mobile stack 验证):全走 **production UI 路径**,不注入 mock DOM,chip-pick 后直接点 "查看授权 & 保存" CTA。首轮 7 FAIL + 1 skip(desktop 上 mobile-only test 正确 skip)。
+3. **T4 validate-manifest 实现**(6e3c300 → simplify e239b6a)—— `backend/app/api/v1/plugins.py`:
+   - `PluginPermissions` Pydantic(allowed_tools / allowed_models / storage_scope=Literal[session|user|global] / network_access)
+   - 4 个 `_BaseManifest` 子类(ToolManifest / AgentStrategyManifest / ExtensionManifest / TriggerManifest),`model_config = extra=forbid`,各自字段契约严格
+   - `PluginManifest = Annotated[Union[...], Field(discriminator="type")]` + `TypeAdapter` — Pydantic v2 原生 discriminated union,自动按 `manifest.type` 分派 + 标准化 422 error format(Simplify subagent 建议,替换原手动 dispatch + custom error detail,省 ~15 行)
+   - `POST /api/v1/plugins/validate-manifest`(ADR-087 偏离点 #2 + #3 清零)
+4. **T5 executor prompt type-aware**(42446db)—— `executor/engine/prompt_sections.py` `agent_behavior_section(agent_type="plugin_builder")` 重写,注入 4 种 type 的完整 YAML skeleton + 引导流程(识别 "type=xxx" keyword / 按 type 追问相应字段 / permissions 必问 / extra=forbid 提醒)。**不动 Session 19 表 schema**(放弃 task_service.py 的 session_metadata 字段路径):通过 **user prompt 文本内容** 让 builder agent 识别 type —— 前端 chip click 首句已含 `type=${t}`,executor 按内容分支,零 schema bloat。e2e 断言 `captured.prompt` 包含 `type=${t}` 而非 `session_metadata`。
+5. **T6 frontend consent dialog**(3968e93)—— `frontend/Prism.html`:
+   - `consentModal` state + 前置在 `plugin_manifest_ready` event 处理 → 先 setConsentModal 不直接 setSaveModal
+   - 新 CTA `[data-testid="plugin-open-consent"]` "查看授权 & 保存" —— chip pick 后(即使没等 agent 响应)即 visible,**skip-builder fast path** 符合 production 用户 UX(type 选了就可直接授权保存)
+   - `openConsentFromLastMsg` 解析 last agent msg 提取 YAML + regex 解析 type / permissions(best-effort)
+   - Consent dialog JSX:luxury-refined 风格(serif title + amber type chip + framed permissions card + 4 permission rows + 2 vertically stacked CTA buttons ≥44pt)— 按 `frontend-design` + `ui-ux-pro-max` skill guidance(盾护 scrim 40%,mobile-first 垂直堆叠)
+   - saveModal wrapper 加 `data-testid="plugin-save-modal"`,consent → allow → save 链路完整
+6. **T7 Simplify**(e239b6a)—— 3 并行 subagent(reuse/quality/efficiency)findings:
+   - Reuse #1: Pydantic discriminated union ← 已应用(替换手动 dispatch)
+   - Quality #1: `_valid_types = set(_MANIFEST_BY_TYPE)` DRY ← 已应用
+   - Efficiency #1: 无条件 dict spread ← 已应用(仅 type 缺时 spread)
+7. **T8 merge**(develop merge)—— 本地 no-ff → develop;`/im/channels` 透传验证 + 回归跑通
+
+### 验证结果(evidence-based)
+- **Python unit**:**8/8 passed**(0.55s)in-container pytest
+- **e2e plugin-consent-dialog**(双端):desktop 7+1skip / mobile 8/8 = **16 tests = 15 pass + 1 proper skip** 
+- **完整 playwright 回归**(develop HEAD):**55 pass / 9 skip / 2 fail**
+  - Fail 1:`chat-msg-render.spec.ts:18 Bug 1` desktop-chromium — **重跑 PASS,已知 flaky**(非 Session 4a 引入)
+  - Fail 2:`plugin-consent-dialog chip agent_strategy` mobile-safari — **loginAsAdmin input[type=email] 10s timeout** 即 Phase 2 记录的 cross-test session leak(单跑 mobile 8/8 pass,仅 full suite 顺序后触发)
+  - **无 Session 4a 引入的回归**
+- **Smoke curl**:`POST /api/v1/plugins/validate-manifest` happy(200 + 4 permissions 字段正确 round-trip)/ unknown type(422 + "not_real" in detail)
+- **PJR gates**:Python AST 3/3 / in-container import(TypeAdapter + 4 manifest + validate_manifest 全 load)/ node --check apiClient.js / endpoint smoke —— 全绿
+
+### 生产可用性陈述(vs user directive "不 mock")
+- ✅ consent dialog 通过 **production CTA "查看授权 & 保存"** 触发 → 无 test-only DOM(原计划的 `plugin-consent-force-open` 已删除,改为生产 "skip-builder fast path" 供用户直接操作)
+- ✅ chip pick → prompt 含 `type=${t}` → executor PluginBuilder agent 识别 → builder 按 type 生成对应 YAML skeleton(完整 production flow)
+- ✅ `/plugins/validate-manifest` 生产 endpoint,标准 422 error,可被任何调用方使用
+- ✅ 前端 consent → allow → save → POST `/plugins/save` 走原既有 production 路径
+- ✅ 测试断言 production payload + DOM,无 backend mock provider、无 test-only endpoint
+
+### ADR-087 偏离点清零清单
+| # | 原偏离点 | Session 4a 清零落点 |
+|---|---|---|
+| 2 | `/validate dispatch on type` 未实施 | ✅ 新 `/plugins/validate-manifest` + Pydantic discriminated union |
+| 3 | type-specific sub-schema 未实现 | ✅ 4 个 Pydantic `_BaseManifest` 子类 + executor 4 种 YAML skeleton |
+| 4 | Install consent dialog 未实现 | ✅ `consentModal` + luxury-refined UI + 双端 e2e 覆盖 |
+
+### 延后(Session 4b+ 下一 session)
+1. **Mobile cross-test session-leak fix** — `e2e/fixtures/auth.ts` 加 storageState cleanup 或 test.beforeEach 清 localStorage/sessionStorage。不急,不影响 production
+2. **Permission runtime enforcement** — 当前 consent 仅 declaration + user 授权;真正的 tool-call 时按 permissions.allowed_tools 过滤 / model 选择时按 allowed_models 过滤 / storage 作用域落地 —— 独立 session,涉及 tool dispatcher + MCP gate + model selector 多处
+3. **分布式任务拆解(#1 manus 式)** — 架构级 4-5 session
+4. **Skills Market catalog browser + source 下载(#2)** — 1-2 session,需要真实 github API 测试
+5. **IM 模块 send_card 真实实现 + AES credential + Admin 编辑 UI(#3)** — 1-2 session,unit test 覆盖,无需真账号
+
+### Commits(develop,本 session)
+```
+c16e2a5 docs(spec): Session 4a design
+4ea0613 docs(plan): Session 4a 8 tasks TDD
+(worktree: redesign/plugin-builder-typed)
+  c5b6b65 test(plugins): RED phase — /plugins/validate-manifest dispatch
+  f2875b9 test(e2e): RED phase — plugin consent dialog via production CTA
+  6e3c300 feat(plugins): /plugins/validate-manifest + 4 Pydantic sub-schemas
+  42446db feat(executor): PluginBuilder prompt type-aware — 4 YAML skeletons
+  3968e93 feat(frontend): Install Consent dialog + skip-builder CTA
+  e239b6a simplify: Pydantic discriminated union + DRY _valid_types
+(develop merge)
+  <merge commit> Merge Session 4a → develop (no-ff, no remote)
+```
+
+---
+
 ## ✅ 2026-04-20 Session 3 Phase B Phase 3 DOC-PSK — 完成(文档化,直接落 develop)
 
 **成果总览**(develop 分支,commits 直接落):

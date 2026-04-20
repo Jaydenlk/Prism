@@ -1870,17 +1870,18 @@
 - **实施 commit**: 824eadb(M2 + backend)+ 8f01c23(frontend,与 ADR-086 frontend 合并 commit)
 - **偏离点**:
   1. spec §5.2 描述 type 为 REQUIRED,但结合 spec D11 "不做向后兼容" 和 M2 server_default='tool' 的矛盾,采用折中:API 允许 type 缺省 → 默认 'tool'(与 DB server_default + UI 流程"用户不选默认为 tool" 一致);显式非法值 422。
-  2. plan Task 5 Step 5 说"/validate endpoint dispatch on type,each type sub-schema checked" — 未实施。当前 /validate 依然透传 `executor.plugins.cc_compat.PluginYamlSchema`;type sub-schema 校验需扩展 executor 侧代码,跨进程边界修改性价比低;type 合法性校验在 /plugins/save 写入时做(应用层),对 e2e 观测等价。
-  3. type-specific sub-schema(agent_strategy.reasoning_pattern / extension.hook / trigger.event_source 等)未实现;v1 仅校验 type 字段在枚举内,内部字段透传存储;前端 builder 的 type 选择也只作为对话首句 prompt hint,builder Agent 端的 prompt 分支由 PluginBuilder agent(executor 侧)决定,不在本 Task 范围。
-  4. plan Task 6 Step 4 的 install consent dialog 未实现 — 当前 Save 模态框仅显示 name / description / YAML,不显示 permissions_json 的 consent view。permissions 字段目前仅 API 透传,UI 暴露留待 Phase 3+。
+  2. ~~plan Task 5 Step 5 说"/validate endpoint dispatch on type"~~ — **Session 4a 清零**。新 `/plugins/validate-manifest` 使用 Pydantic v2 discriminated union(`Annotated[Union[ToolManifest | AgentStrategyManifest | ExtensionManifest | TriggerManifest], Field(discriminator="type")]`)按 manifest.type 分派到对应 sub-schema;合并 commit 3da43e5 → `redesign/plugin-builder-typed` → develop(commit 见 HANDOFF Session 4a)。
+  3. ~~type-specific sub-schema(agent_strategy.reasoning_pattern / extension.hook / trigger.event_source 等)未实现~~ — **Session 4a 清零**。4 种 sub-schema 在 `backend/app/api/v1/plugins.py` 内定义完整字段:ToolManifest (parameters + returns), AgentStrategyManifest (reasoning_pattern + max_turns), ExtensionManifest (hook + middleware_class_path), TriggerManifest (event_source + config)。model_config = extra=forbid。Executor `prompt_sections.py` PluginBuilder system prompt 同步扩展为 4 种 type 的 YAML skeleton 指引。
+  4. ~~plan Task 6 Step 4 的 install consent dialog 未实现~~ — **Session 4a 清零**。新 `consentModal` state 在 plugin_manifest_ready event 或 "查看授权 & 保存" CTA 触发前插入,UI 显示 type chip + permissions (allowed_tools / allowed_models / storage_scope / network_access) + 允许/取消按钮。移动端垂直堆叠按钮,≥44pt tap target。
 - **验证结果**:
   - alembic:009 applied;`\d plugins_library` 显示 plugin_type default 'tool' + permissions_json default '{}'
   - curl POST /plugins/save 无 type → 响应 plugin_type='tool' ✓
   - Playwright plugin-typed-builder.spec.ts(2 tests × 2 viewports)= 4 passes
 - **下游影响**:
-  - Future:PluginBuilder agent 按 type 定制 prompt prime
-  - Future:type 专用 sub-schema 在 executor cc_compat 加入;/validate 真正按 type dispatch
-  - Future:UI install consent dialog 显示 permissions + allowed_tools + allowed_models + storage_scope + network_access
+  - ~~PluginBuilder agent 按 type 定制 prompt prime~~ ✅ Session 4a 完成(executor/engine/prompt_sections.py 扩展 4 种 YAML skeleton)
+  - ~~type 专用 sub-schema dispatch~~ ✅ Session 4a 完成(/plugins/validate-manifest + Pydantic discriminated union)
+  - ~~UI install consent dialog~~ ✅ Session 4a 完成(consentModal + permissions 展示)
+  - Remaining future work:permission **runtime enforcement**(当前仅 declaration + user consent,真正 runtime gate 由 tool dispatcher / model selector / storage backend 执行需独立 session)
 
 ---
 
@@ -1971,4 +1972,4 @@
 
 ---
 
-> **最后更新**: 2026-04-20(Session 3 Phase B 三 Phase 全部落地:DOC-SK + DOC-IM2 + DOC-PSK;ADR-086/087/088/089)
+> **最后更新**: 2026-04-20(Session 4a ADR-087 偏离点 #2/#3/#4 全部清零 — Pydantic discriminated union + 4 type YAML skeleton + Install Consent Dialog)
