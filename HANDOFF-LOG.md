@@ -6,6 +6,26 @@
 
 ---
 
+## 🔴🔴🔴 新 session 开工必读(/clear 后第一眼看这里)🔴🔴🔴
+
+**完整交接册**:`NEXT-SESSIONS-PLAYBOOK.md`(2316 字)
+
+内容涵盖:
+- **已完成清单**(Session 4a/4b + 之前)—— 避免重做
+- **剩余 3 问题**:分布式任务拆解(4-5 session) / Skills Market catalog browser(1-2 session) / IM 三小尾(0.5 session)
+- **开发原则**(用户 5 条 + CLAUDE.md 六原则 + 生产代码无 mock 原则)
+- **验收标准**(量化指标:TDD / unit / e2e / Simplify / PJR / merge / DECISIONS / HANDOFF)
+- **Workflow 17 步**(Session 4a/4b 已验证)
+- **Pre-existing flaky tests 清单**(别当回归处理)
+- **10 个关键坑**(Playwright baseURL / Docker backend build / pytest / nginx mount / 飞书签名 / Discord 401 / schema 定死 / Pydantic v2 / Simplify reuse / `example.test` URL)
+- **Docker + worktree 清理**
+- **code-reviewer 6 次累积队列**(Session 4c 开头补跑)
+- **推荐顺序**:Session 4c = Skills Market (ROI 最高) → 4d = IM 小尾 → 4e+ = 分布式
+
+**推荐开工路径**:读 PLAYBOOK §0 + §1 → §9 推荐顺序挑一项 → §3 Workflow 执行。
+
+---
+
 ## 🟡 2026-04-20 Session 3 Phase B Task 1 — 执行策略备忘(spec 修正,分支 `redesign/doc-sk`)
 
 **Schema correction from primary source**:spec `docs/superpowers/specs/2026-04-20-session3-sk-im2-redesign-design.md` §5.1 的 `marketplace.json` catalog shape(`{name, version, skills[{name, description, download_url, author}]}`) 基于 Session 2 调研二手信息写就。2026-04-20 WebFetched `https://code.claude.com/docs/en/plugin-marketplaces`(primary source)后确认实际 Claude Code 格式为:**`.claude-plugin/marketplace.json`** 文件,顶层 `{name, owner:{name,email?}, plugins:[...], metadata?}`,plugin entry 用 **`source`**(string 相对路径 或 object `{source:"github"|"url"|"git-subdir"|"npm", ...}`)而非 `download_url`;数组 key 是 **`plugins`** 不是 `skills`。
