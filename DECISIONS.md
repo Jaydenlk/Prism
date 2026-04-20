@@ -1885,3 +1885,60 @@
 ---
 
 > **最后更新**: 2026-04-20(Session 3 Phase B Phase 1 DOC-SK 落地; ADR-086 + ADR-087; migrations 008 + 009; 8 新 e2e 双端全通过)
+
+---
+
+## Session 3 Phase B Phase 2 — DOC-IM2 落地(2026-04-20, 分支 `redesign/doc-im2`)
+
+### ADR-088: IM Interactive Cards + Multi-Channel (DOC-IM2 I1/I2/I3/I5)
+- **来源**: Session 3 spec `docs/superpowers/specs/2026-04-20-session3-sk-im2-redesign-design.md` §5.3/§5.4; plan `docs/superpowers/plans/2026-04-20-doc-sk-doc-im2-redesign.md` Tasks 11-15
+- **实施状态**: ✅ 2026-04-20
+- **落地位置**:
+  - **飞书卡片签名修复(I1)** `backend/app/services/im_feishu.py`:
+    - 新增 `verify_card_signature(headers, body)` 使用 SHA-1(`ts + nonce + verification_token + body`),与事件订阅的 SHA-256 是完全不同的算法;fail-closed(verify_token 未配置 → False)
+    - 修 `verify_signature` docstring drift:去掉 "HMAC-SHA256" 措辞,明确 plain SHA-256(`ts + encrypt_key + body`)无 nonce 参与;module docstring 也重写区分两套算法
+  - **Slack adapter(I2)** `backend/app/services/im_slack.py`:
+    - HMAC-SHA256 v0 前缀签名校验 + ±5 分钟窗口防重放
+    - `build_url_verification_response(body)` 首次 URL verification handshake
+    - `parse_event(body)` 解析 event_callback.message 事件,过滤 bot_id/bot_message 自环
+    - `send()` POST `https://slack.com/api/chat.postMessage` Bearer xoxb-
+  - **Discord adapter(I3)** `backend/app/services/im_discord.py`:
+    - Ed25519 签名校验(PyNaCl VerifyKey,pubkey 为 64 hex chars),fail-closed 处理 bad hex / malformed / missing headers
+    - `build_ping_response(parsed)` PING (type=1) → PONG (type=1) handshake
+    - `parse_event(body)` 解析 APPLICATION_COMMAND(type=2)解析 STRING option 作为 text
+    - `send()` POST `https://discord.com/api/v10/channels/{id}/messages` Bot <token>
+  - **IMOutgoingCard 抽象(I5)** `backend/app/services/im_adapter.py`:
+    - `IMCardAction` dataclass(label / action_id / style)
+    - `IMOutgoingCard` dataclass(channel / platform_chat_id / title / body_markdown / actions / footer / reply_to_message_id)
+    - v1 不强制 adapter 实现 `send_card`(留作可选 override)
+  - **配置扩展(I2+I3)** `backend/app/core/config.py`:
+    - `SLACK_SIGNING_SECRET` / `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` / `IM_SLACK_MODE` (events|socket)
+    - `DISCORD_PUBLIC_KEY` (hex) / `DISCORD_APP_ID` / `DISCORD_BOT_TOKEN`
+  - **PyNaCl 依赖** `backend/requirements.txt`:`pynacl>=1.5.0`
+  - **Webhook 路由** `backend/app/api/v1/im.py`:
+    - `POST /im/webhook/slack` — 先验签再处理;url_verification fast path;3s ACK 返 `{"ok": True}`
+    - `POST /im/webhook/discord` — 先验签再处理;invalid sig → 401 (Discord probes);PING → PONG;APPLICATION_COMMAND → type 5 deferred ACK
+  - **IMGateway 注册** `backend/app/main.py`:lifespan 初始化 Feishu + Slack + Discord 三个 adapter 到 IMGateway
+  - **`GET /im/channels` 增强** `backend/app/api/v1/im.py`:`_KNOWN_CHANNELS = (feishu, wecom, slack, discord, telegram)` 始终返回 5 个 channel rows(DB 缺行返占位 `is_enabled=False config={}`),Admin UI 一致展示。`IMChannelConfigResponse` `created_at/updated_at` 改 optional 以支持占位行
+  - **Admin UI** `frontend/admin.html`:IMChannels section 每行加 `data-testid="im-channel-row-{channel}"`;"已配置" 判定扩展为 `webhook_url || bot_token || config.keys().length > 0`
+- **实施 commit**: 5b1a207 (RED) + b14a896 (impl)
+- **偏离点**:
+  1. plan Task 12 Step 2 "3s ACK budget (async handoff to TaskService)" — v1 采用同步处理 parse_event + handler,未实际 defer 到 TaskService。原因:parse_event 只做 JSON 解析 + 调 handler,都是本地 coroutine,耗时远低于 3s。真正重载时可后续抽成 TaskService.submit() 异步化;当前 trivial。
+  2. plan Task 12 `send_card` / Task 13 `send_card` / Task 14 IMOutgoingCard 实际实现 — 仅提供 dataclass,三个 adapter 未实现 `send_card` 方法。原因:cards 在 Prism v2 内尚无触发场景(agent 当前不产 card 输出),无 e2e 可验。留待后续(可能 Phase 3+ 或 DOC-10 ChatHeader 触发按钮时扩展)。
+  3. spec §3 I4 "IM credential storage migration — 从 env-only 移到 `im_channel_configs.config` JSONB(AES-encrypted)" — **未实施**。当前仍 Settings > config dict fallback,未启用 AES 加密层。原因:作跨 DOC refactor(涉及 config_service 全面重构 + existing env 迁移脚本),用户"auto decide" 的 D3 也承认"envvar 保留为 dev fallback"可以接受。标记为 future work;不影响 adapter 签名/消息核心通道。
+  4. plan Task 15 "admin login → add Slack channel config → test-send" — UI 层 v1 只有 "列表 + 状态" 只读展示(沿用原 IMChannels 组件),PATCH /im/channels endpoint 已存在但 Admin UI 没暴露编辑按钮。e2e 简化为仅验证 `GET /im/channels` + 4 行渲染。原因:编辑 JSONB config 的 UI 是独立 design 工作,超出 DOC-IM2 签名/路由核心范畴;PATCH endpoint 留给运维直接 curl 或后续 Phase。
+  5. `Settings` 类接受 `IM_SLACK_MODE=events` 但 Socket Mode 分支(`xapp-` app token)未实现 — 仅 Events 模式可用。socket 模式属 spec §5.3 R4 subset,可 opt-in 后续补。
+- **验证结果**:
+  - Python unit tests:`test_im_feishu_card_sig.py` 5 passed / `test_im_slack_signature.py` 5 passed / `test_im_discord_signature.py` 5 passed,**合计 15/15**
+  - e2e Playwright `im-channels.spec.ts`:2 tests × 2 viewports = **4/4 passes**
+  - Backend image 带 PyNaCl 1.5.0 rebuild 成功 + healthy
+  - In-container import chain:FeishuAdapter + SlackAdapter + DiscordAdapter + IMOutgoingCard 全 load
+- **下游影响**:
+  - Future:send_card 真实实现(Feishu interactive card JSON / Slack blocks / Discord embed + components)
+  - Future:Slack Socket Mode(xapp-app-token)
+  - Future:IM credential storage 从 env 迁到 AES-encrypted JSONB(I4)
+  - Future:Admin UI 添加 PATCH 编辑入口 + test-send 按钮
+
+---
+
+> **最后更新**: 2026-04-20(Session 3 Phase B Phase 2 DOC-IM2 落地; ADR-088; 15 Python + 4 e2e 双端全通过)
