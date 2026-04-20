@@ -1785,6 +1785,10 @@ function PluginsPage() {
   const [builderStep, setBuilderStep] = useState("start");
   const [pluginType, setPluginType] = useState(null);
 
+  // Install consent dialog (ADR-087 Session 4a) — shown before saveModal to
+  // get explicit user authorization on the plugin's declared permissions.
+  const [consentModal, setConsentModal] = useState(null); // { name, type, permissions, yaml, description }
+
   // ── Library state (right pane) ──────────────────────────────────────────
   const [library, setLibrary] = useState([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -1890,7 +1894,7 @@ function PluginsPage() {
           const pct = typeof evt.completion_pct === "number" ? evt.completion_pct : null;
           if (pct !== null) setBuilderProgress(Math.round(pct));
         }
-        // Plugin manifest ready
+        // Plugin manifest ready — route through consent dialog first (ADR-087)
         if (evt.subtype === "plugin_manifest_ready") {
           const data = evt.data || {};
           setPendingManifest({
@@ -1904,7 +1908,13 @@ function PluginsPage() {
           setSaveDesc(data.description || "");
           setSaveYaml(data.manifest_yaml || "");
           yamlManuallyEdited.current = false;
-          setSaveModal(true);
+          setConsentModal({
+            name: data.name || "my-plugin",
+            type: (data.manifest_json && data.manifest_json.type) || pluginType || "tool",
+            permissions: (data.manifest_json && data.manifest_json.permissions) || data.permissions || {},
+            yaml: data.manifest_yaml || "",
+            description: data.description || "",
+          });
         }
         break;
       }
@@ -2027,20 +2037,50 @@ function PluginsPage() {
     setSaving(false);
   }
 
-  // ── Open save modal pre-filled from last agent message ───────────────
-  function openSaveModalFromLastMsg() {
-    // builderMsgs use role="agent" and field=".content" (set by scheduleFlush/message_complete)
+  // ── Open consent (then save) pre-filled from last agent message or from
+  // the chip-selected type alone (skip-builder fast path, ADR-087).
+  function openConsentFromLastMsg() {
     const lastAgent = [...builderMsgs].reverse().find(m => m.role === "agent" && !m.streaming);
     const rawText = lastAgent?.content || "";
-    // Extract fenced YAML block if present, otherwise use raw text
     const yamlMatch = rawText.match(/```ya?ml\s*([\s\S]*?)```/i);
     const extracted = yamlMatch ? yamlMatch[1].trim() : rawText.trim();
+
+    // Try to parse type + permissions out of extracted YAML (best-effort;
+    // falls back to currently-selected pluginType + empty permissions).
+    let parsedType = pluginType || "tool";
+    let parsedPermissions = {};
+    const typeMatch = extracted.match(/^\s*type:\s*([a-z_]+)/mi);
+    if (typeMatch) parsedType = typeMatch[1];
+    const permissionsMatch = extracted.match(/^\s*permissions:\s*\n([\s\S]*?)(?=^\S|\Z)/mi);
+    if (permissionsMatch) {
+      const block = permissionsMatch[1];
+      const g = (key) => {
+        const m = block.match(new RegExp("^\\s{2,}" + key + ":\\s*(.*)$", "mi"));
+        return m ? m[1].trim() : null;
+      };
+      // Convert simple scalar fields; arrays/bool stay as raw text for consent preview
+      const at = g("allowed_tools");
+      const am = g("allowed_models");
+      const ss = g("storage_scope");
+      const na = g("network_access");
+      if (at) parsedPermissions.allowed_tools = at.replace(/^\[|\]$/g, "").split(",").map(s => s.trim()).filter(Boolean);
+      if (am) parsedPermissions.allowed_models = am.replace(/^\[|\]$/g, "").split(",").map(s => s.trim()).filter(Boolean);
+      if (ss) parsedPermissions.storage_scope = ss;
+      if (na) parsedPermissions.network_access = /true|yes/i.test(na);
+    }
+
     setSaveName("");
     setSaveDesc("");
     setSaveYaml(extracted);
     setPendingManifest(null);
     yamlManuallyEdited.current = false;
-    setSaveModal(true);
+    setConsentModal({
+      name: "",
+      type: parsedType,
+      permissions: parsedPermissions,
+      yaml: extracted,
+      description: "",
+    });
   }
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────
@@ -2065,9 +2105,87 @@ function PluginsPage() {
         </div>
       )}
 
+      {/* Install Consent Dialog (ADR-087 Session 4a)
+          Luxury-refined: amber chip + serif title + bordered permissions card +
+          vertically stacked buttons (mobile-first). Scrim 40% black per HIG. */}
+      {consentModal && (
+        <div
+          data-testid="plugin-consent-modal"
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={() => setConsentModal(null)}
+        >
+          <div
+            style={{ background: "var(--paper)", borderRadius: 14, padding: 24, maxWidth: 520, width: "100%", display: "flex", flexDirection: "column", gap: 18, boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontFamily: "var(--serif)", fontSize: 18, fontWeight: 500, color: "var(--ink)", letterSpacing: "0.01em" }}>
+                授权 {consentModal.name || "插件"}
+              </div>
+              <div>
+                <span
+                  data-testid="plugin-consent-type-chip"
+                  style={{ display: "inline-block", fontSize: 11, padding: "3px 10px", borderRadius: 12, background: "var(--amber-bg, #fef3c7)", color: "var(--amber-ink, #92400e)", fontFamily: "var(--mono)", fontWeight: 500, letterSpacing: "0.02em" }}
+                >
+                  type: {consentModal.type}
+                </span>
+              </div>
+            </div>
+
+            {/* Permissions */}
+            <div
+              data-testid="plugin-consent-permissions"
+              style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 16px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--line)" }}
+            >
+              <div style={{ fontSize: 12, color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", marginBottom: 2 }}>
+                此插件请求以下权限
+              </div>
+              {[
+                ["允许调用的工具", (consentModal.permissions?.allowed_tools || []).join(", ") || "(无)"],
+                ["允许使用的模型", (consentModal.permissions?.allowed_models || []).join(", ") || "(无)"],
+                ["存储范围", consentModal.permissions?.storage_scope || "session"],
+                ["网络访问", consentModal.permissions?.network_access ? "允许" : "禁止"],
+              ].map(([label, value]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, fontSize: 12.5, minHeight: 20 }}>
+                  <span style={{ color: "var(--ink-3)", flexShrink: 0 }}>{label}</span>
+                  <span style={{ fontFamily: "var(--mono)", color: "var(--ink)", textAlign: "right", wordBreak: "break-all" }}>{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Actions — vertically stacked for mobile-first, ≥44pt tap */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                data-testid="plugin-consent-allow"
+                className="btn primary"
+                style={{ width: "100%", justifyContent: "center", minHeight: 44 }}
+                onClick={() => {
+                  setSaveName(consentModal.name || saveName || "my-plugin");
+                  setSaveDesc(consentModal.description || saveDesc || "");
+                  setSaveYaml(consentModal.yaml || saveYaml || "");
+                  setConsentModal(null);
+                  setSaveModal(true);
+                }}
+              >
+                允许并保存到插件库
+              </button>
+              <button
+                data-testid="plugin-consent-cancel"
+                className="btn ghost"
+                style={{ width: "100%", justifyContent: "center", minHeight: 44 }}
+                onClick={() => setConsentModal(null)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Save manifest modal */}
       {saveModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSaveModal(false)}>
+        <div data-testid="plugin-save-modal" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSaveModal(false)}>
           <div style={{ background: "var(--paper)", borderRadius: 12, padding: 28, maxWidth: 560, width: "90%", display: "flex", flexDirection: "column", gap: 14 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 600, fontSize: 15 }}>保存到插件库</div>
             <label>
@@ -2190,11 +2308,13 @@ function PluginsPage() {
             <div ref={bottomRef}/>
           </div>
 
-          {/* Manual save button — fallback for when plugin_manifest_ready event is never emitted */}
-          {builderMsgs.length > 0 && !builderRunning && (
+          {/* Open consent → save — appears after chip pick (skip-builder fast
+              path) OR after agent 生成 manifest (manual fallback).
+              ADR-087 Session 4a: consent dialog before persistence. */}
+          {(pluginType || builderMsgs.length > 0) && !builderRunning && (
             <div style={{ padding: "8px 16px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "flex-end" }}>
-              <button className="btn ghost sm" style={{ color: "var(--teal)", borderColor: "var(--teal)" }} onClick={openSaveModalFromLastMsg}>
-                <Icon name="pin" size={13}/> 保存到插件库
+              <button data-testid="plugin-open-consent" className="btn ghost sm" style={{ color: "var(--amber, var(--teal))", borderColor: "var(--amber, var(--teal))" }} onClick={openConsentFromLastMsg}>
+                <Icon name="pin" size={13}/> 查看授权 &amp; 保存
               </button>
             </div>
           )}

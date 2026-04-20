@@ -24,16 +24,17 @@ from __future__ import annotations
 
 import base64
 import os
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Union
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
+from app.schemas.common import ApiResponse
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/plugins", tags=["plugins"])
@@ -352,6 +353,138 @@ async def validate_plugin(
 PluginType = Literal["tool", "agent_strategy", "extension", "trigger"]
 
 
+# ---------------------------------------------------------------------------
+# Type-specific manifest sub-schemas (ADR-087 Session 4a)
+# /plugins/validate-manifest dispatches on `type` and runs the matching schema.
+# ---------------------------------------------------------------------------
+
+
+class PluginPermissions(BaseModel):
+    """Plugin 权限声明 — 出现在 manifest 的 `permissions:` 字段下。"""
+
+    allowed_tools: list[str] = Field(default_factory=list)
+    allowed_models: list[str] = Field(default_factory=list)
+    storage_scope: Literal["session", "user", "global"] = "session"
+    network_access: bool = False
+
+
+class _BaseManifest(BaseModel):
+    """所有 4 种 plugin type 共享的 manifest 顶层字段。"""
+
+    name: str = Field(min_length=1)
+    version: str = "1.0.0"
+    description: str = ""
+    permissions: PluginPermissions = Field(default_factory=PluginPermissions)
+
+    model_config = {"extra": "forbid"}
+
+
+class ToolManifest(_BaseManifest):
+    type: Literal["tool"] = "tool"
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    returns: str = ""
+
+
+class AgentStrategyManifest(_BaseManifest):
+    type: Literal["agent_strategy"]
+    reasoning_pattern: Literal["react", "plan-and-execute", "debate"]
+    max_turns: int = Field(gt=0, le=100, default=10)
+
+
+class ExtensionManifest(_BaseManifest):
+    type: Literal["extension"]
+    hook: Literal["pre_turn", "post_turn", "post_tool_use"]
+    middleware_class_path: str = Field(min_length=1)
+
+
+class TriggerManifest(_BaseManifest):
+    type: Literal["trigger"]
+    event_source: Literal["cron", "webhook", "file_watch"]
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+_MANIFEST_BY_TYPE: dict[str, type[_BaseManifest]] = {
+    "tool": ToolManifest,
+    "agent_strategy": AgentStrategyManifest,
+    "extension": ExtensionManifest,
+    "trigger": TriggerManifest,
+}
+
+# Pydantic discriminated union: validate_python picks the right sub-schema
+# based on manifest["type"] and surfaces the standard Pydantic error format
+# (loc + msg) for both unknown-type and field-level validation failures.
+PluginManifest = Annotated[
+    Union[ToolManifest, AgentStrategyManifest, ExtensionManifest, TriggerManifest],
+    Field(discriminator="type"),
+]
+_plugin_manifest_adapter = TypeAdapter(PluginManifest)
+
+
+class ValidateManifestRequest(BaseModel):
+    """POST /plugins/validate-manifest 请求体。"""
+
+    manifest: dict[str, Any]
+
+
+class ValidateManifestResponse(BaseModel):
+    """POST /plugins/validate-manifest 响应体。"""
+
+    valid: bool
+    type: PluginType
+    name: str
+    permissions: dict[str, Any]
+
+
+@router.post(
+    "/validate-manifest",
+    response_model=ApiResponse[ValidateManifestResponse],
+    summary="校验 plugin manifest 字典(按 type dispatch, ADR-087 Session 4a)",
+    description=(
+        "校验一个 plugin manifest(字典形式,不依赖 plugin_dir)。\n\n"
+        "Dispatch 顺序:\n"
+        "  1. 读取 manifest['type'](缺省 = 'tool')\n"
+        "  2. 按 type 查 _MANIFEST_BY_TYPE,不命中 → 422 unknown plugin type\n"
+        "  3. 用对应 sub-schema (ToolManifest / AgentStrategyManifest /\n"
+        "     ExtensionManifest / TriggerManifest) Pydantic validate\n"
+        "  4. 失败 → 422 + Pydantic errors() 保留 loc + msg 供前端定位\n"
+        "  5. 成功 → 200 {valid: True, type, name, permissions}\n"
+    ),
+)
+async def validate_manifest(
+    body: ValidateManifestRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[ValidateManifestResponse]:
+    """按 type 分派到 type-specific Pydantic sub-schema 校验 manifest(ADR-087).
+
+    Pydantic v2 discriminated union dispatches on ``manifest["type"]``;
+    unknown types and field-level errors all come back through ``ValidationError``
+    with standard ``errors()`` (loc + msg) preserving 422 detail fidelity.
+    """
+    manifest = body.manifest if body.manifest else {}
+    if "type" not in manifest:
+        manifest = {**manifest, "type": "tool"}
+    try:
+        parsed = _plugin_manifest_adapter.validate_python(manifest)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        ) from exc
+
+    logger.info(
+        "plugin.validate_manifest.ok",
+        user_id=str(current_user.id),
+        plugin_type=parsed.type,
+        plugin_name=parsed.name,
+    )
+    return ApiResponse(data=ValidateManifestResponse(
+        valid=True,
+        type=parsed.type,
+        name=parsed.name,
+        permissions=parsed.permissions.model_dump(),
+    ))
+
+
 class PluginSaveRequest(BaseModel):
     """POST /plugins/save 请求体 — 保存 Plugin manifest 到用户插件库。
 
@@ -457,7 +590,7 @@ async def save_plugin(
 
     # Resolve plugin_type: explicit body.type > manifest_json.type > 'tool' default.
     # If an explicit value is outside the enum, reject with 422 (ADR-087 strict on the type field).
-    _valid_types = {"tool", "agent_strategy", "extension", "trigger"}
+    _valid_types = set(_MANIFEST_BY_TYPE)
     effective_type = body.type or (manifest_json.get("type") if isinstance(manifest_json, dict) else None) or "tool"
     if effective_type not in _valid_types:
         raise HTTPException(
