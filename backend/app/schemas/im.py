@@ -69,6 +69,22 @@ class PairingCodeResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Test-send (ADR-088 Session 4b)
+# ---------------------------------------------------------------------------
+
+class TestSendRequest(BaseModel):
+    """POST /im/channels/{channel}/test-send body (admin-only).
+
+    target_chat_id 为平台原生 id(feishu oc_xxxx / slack C0xxx / discord channel_id)。
+    title 和 body 可选,默认为中文测试文案。
+    """
+
+    target_chat_id: str = Field(min_length=1, description="目标会话/群聊 ID")
+    title: str | None = Field(default=None, description="卡片标题,缺省 'Prism 测试卡片'")
+    body: str | None = Field(default=None, description="卡片正文 markdown,缺省标准测试文案")
+
+
+# ---------------------------------------------------------------------------
 # Webhook event (lightweight internal)
 # ---------------------------------------------------------------------------
 

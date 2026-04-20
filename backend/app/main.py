@@ -154,6 +154,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             message="ProcessManager failed to initialize. Subprocess scheduling disabled.",
         )
 
+    # 6a2. Initialize CredentialCipher (ADR-088 偏离点 #3, Session 4b)
+    try:
+        from app.services.credential_cipher import CredentialCipher
+
+        app.state.credential_cipher = CredentialCipher(settings.ENCRYPTION_KEY)
+        logger.info("prism.credential_cipher.initialized")
+    except Exception as exc:
+        app.state.credential_cipher = None
+        logger.error("prism.credential_cipher.init_failed", error=str(exc))
+
     # 6b. Initialize IMGateway + adapters (Feishu / Slack / Discord — DOC-IM2 ADR-088)
     try:
         import redis.asyncio as _aioredis
@@ -162,14 +172,33 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from app.services.im_slack import SlackAdapter
         from app.services.im_discord import DiscordAdapter
 
+        def _load_im_config(channel: str) -> dict:
+            """Read im_channel_configs row and decrypt sensitive fields (Session 4b)."""
+            try:
+                from app.core.database import SessionLocal
+                from app.models.im import ImChannelConfig
+                from app.services.credential_cipher import decrypt_config_secrets
+
+                _s = SessionLocal()
+                try:
+                    row = _s.query(ImChannelConfig).filter(ImChannelConfig.channel == channel).first()
+                    raw = dict(row.config or {}) if row else {}
+                finally:
+                    _s.close()
+                cipher = getattr(app.state, "credential_cipher", None)
+                return decrypt_config_secrets(raw, cipher) if cipher else raw
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("im.config_load_failed", channel=channel, error=str(exc))
+                return {}
+
         _redis_for_im = _aioredis.from_url(settings.REDIS_URL, decode_responses=False)
         feishu_adapter = FeishuAdapter(
-            config={},
+            config=_load_im_config("feishu"),
             settings=settings,
             redis_client=_redis_for_im,
         )
-        slack_adapter = SlackAdapter(config={}, settings=settings)
-        discord_adapter = DiscordAdapter(config={}, settings=settings)
+        slack_adapter = SlackAdapter(config=_load_im_config("slack"), settings=settings)
+        discord_adapter = DiscordAdapter(config=_load_im_config("discord"), settings=settings)
 
         im_gateway = IMGateway(settings)
         im_gateway.register_adapter(feishu_adapter)
