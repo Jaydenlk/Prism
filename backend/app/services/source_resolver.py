@@ -94,8 +94,13 @@ def _safe_extract_tar(
             if filtered is None:
                 return None
             # Extra realpath defense beyond filter='data' (CVE-2025-4517).
+            # Append os.sep to prevent sibling-prefix match (e.g. target
+            # /plugins/foo should NOT match /plugins/foobar/evil).
             extracted = (Path(path) / filtered.name).resolve()
-            if not str(extracted).startswith(target_real):
+            extracted_s = str(extracted)
+            if extracted_s != target_real and not extracted_s.startswith(
+                target_real + os.sep
+            ):
                 raise tarfile.ExtractError(
                     f"Path traversal blocked: {member.name!r}"
                 )
@@ -168,8 +173,18 @@ def _check_rate_limit(resp: httpx.Response) -> None:
 
 
 def _inject_github_token(url: str, token: str | None) -> str:
-    """Rewrite github.com HTTPS URL to include x-access-token for private repos."""
-    if not token or "github.com" not in url or not url.startswith("https://"):
+    """Rewrite github.com HTTPS URL to include x-access-token for private repos.
+
+    Uses urlparse().netloc exact-match (case-insensitive) to prevent substring
+    attacks like 'github.com.evil.com' matching 'github.com'.
+    """
+    if not token or not url.startswith("https://"):
+        return url
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).netloc or "").lower().split("@")[-1]  # strip userinfo
+    # Accept github.com + optional :port
+    if host.split(":")[0] not in {"github.com", "www.github.com"}:
         return url
     return url.replace("https://", f"https://x-access-token:{token}@", 1)
 

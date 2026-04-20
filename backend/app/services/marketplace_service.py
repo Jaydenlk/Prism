@@ -59,6 +59,24 @@ _JSON_URL_RE = re.compile(r"\.json(?:\?.*)?$", re.IGNORECASE)
 # -----------------------------------------------------------------------------
 
 
+def _is_safe_marketplace_url(url: str) -> bool:
+    """Scheme allowlist: accept HTTPS, owner/repo shorthand. Reject http://
+    (MITM), file://, ftp://, AWS metadata IPs, etc. (SSRF defense).
+    """
+    if not url:
+        return False
+    if url.startswith("https://"):
+        return True
+    if url.startswith("git@"):
+        return False  # SSH not supported (no HTTPS fallback in Prism)
+    if url.startswith(("http://", "file://", "ftp://")):
+        return False
+    # owner/repo shorthand: must contain exactly one '/' and no scheme
+    if "://" not in url and url.count("/") >= 1:
+        return True
+    return False
+
+
 def _looks_like_json_url(url: str) -> bool:
     """Detect URL-based marketplace (direct JSON GET) vs git-based (clone)."""
     if not url.startswith(("http://", "https://")):
@@ -150,12 +168,10 @@ def _fetch_git(
         shutil.rmtree(cache_dir)
     cache_dir.parent.mkdir(parents=True, exist_ok=True)
 
+    from app.services.source_resolver import _inject_github_token
+
     token = os.getenv("GITHUB_TOKEN")
-    clone_url = url
-    if token and "github.com" in url:
-        clone_url = url.replace(
-            "https://", f"https://x-access-token:{token}@"
-        )
+    clone_url = _inject_github_token(url, token)
 
     try:
         result = subprocess.run(
@@ -366,11 +382,15 @@ class MarketplaceService:
 
     @staticmethod
     def _try_fetch(url: str) -> tuple[dict[str, Any] | None, datetime | None]:
-        """Session 4c: dual-mode dispatch.
+        """Session 4c: dual-mode dispatch with SSRF scheme allowlist.
 
         URL-based (ends with .json) → _fetch_json (Session 3 Phase 1 behavior).
         Git-based (owner/repo / .git / https non-json) → _fetch_git + clone.
+        Non-HTTPS / file:// / ftp:// / http:// rejected (ADR-090 hardening).
         """
+        if not _is_safe_marketplace_url(url):
+            logger.warning("marketplace.fetch.unsafe_url_rejected", url=url)
+            return None, None
         if _looks_like_json_url(url):
             return _fetch_json(url)
         catalog, ts, _local = _fetch_git(url)
