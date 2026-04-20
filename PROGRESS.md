@@ -188,3 +188,18 @@
 
 > **最后更新**: 2026-04-19（Task A-1/A-2/A-3/A-4: Prism.html 前端改进; commits f840384/80c152e/99e28c8/371eef2 + 手动保存按钮 fixup）
 > **下一个动作**: Task C — 前端 LoginScreen 多通道改造 + admin Auth Config 面板（或继续 DOC-10/11 Next.js）
+
+---
+
+## Session 4c — Skills Marketplace Catalog Browser(2026-04-20,生产级完整,ADR-086 清零)
+
+| Task | Status | Started | Completed | Commit | Session Notes |
+|---|---|---|---|---|---|
+| Session 4c: Skills Market catalog + 5-source install | completed | 2026-04-20 | 2026-04-20 | 908d7ce | ADR-086 Session 3 骨架 → 4c 完整交付;5-Source Resolver(relative/github HTTPS tarball/url/git-subdir cone mode/npm packument+tarball);MarketplaceService `_try_fetch` 双模式 + install_plugin + Redis lock;Python 3.12 tarfile filter='data' + realpath CVE-2025-4517 防御;SSRF scheme allowlist + urlparse netloc exact-match;前端 catalog grid + details modal + install consent + honest single spinner;Dockerfile 加 git;44 Python unit + 20 Playwright e2e pass;Simplify 3-subagent + 6 次累积 code-reviewer 队列消化;1 concurrent-rmtree 偏离点 → docs/superpowers/blockers。详见 HANDOFF-LOG Session 4c 条目 + DECISIONS ADR-086 Session 4c section。 |
+
+### Block 2/3 pending(硬前置 exa 清单见 HANDOFF-LOG)
+
+| Block | Status | Scope | 工作量 |
+|---|---|---|---|
+| **Block 2 = Session 4d: IM 三小尾**(ADR-088 延后项) | pending | Slack Socket Mode / card button action 回传 3 平台 / sensitive key 单一源 | 0.5-1 session |
+| **Block 3 = Session 4e+: 分布式任务拆解**(新 ADR) | pending | Planner-Executor 架构(Anthropic Agent SDK sub-agent + LangGraph 参考,Manus 黑箱仅 motivation) | 4-5 session,首 session only spec |

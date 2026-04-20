@@ -37,13 +37,166 @@
 
 ---
 
-## 🟡 2026-04-20 Session 3 Phase B Task 1 — 执行策略备忘(spec 修正,分支 `redesign/doc-sk`)
+## ✅ 2026-04-20 Session 4c — Skills Marketplace Catalog Browser + 5-source Install(生产级完整,ADR-086 清零)
 
-**Schema correction from primary source**:spec `docs/superpowers/specs/2026-04-20-session3-sk-im2-redesign-design.md` §5.1 的 `marketplace.json` catalog shape(`{name, version, skills[{name, description, download_url, author}]}`) 基于 Session 2 调研二手信息写就。2026-04-20 WebFetched `https://code.claude.com/docs/en/plugin-marketplaces`(primary source)后确认实际 Claude Code 格式为:**`.claude-plugin/marketplace.json`** 文件,顶层 `{name, owner:{name,email?}, plugins:[...], metadata?}`,plugin entry 用 **`source`**(string 相对路径 或 object `{source:"github"|"url"|"git-subdir"|"npm", ...}`)而非 `download_url`;数组 key 是 **`plugins`** 不是 `skills`。
+**Directive**(用户 2026-04-20):"生产级完整交付,没有取舍,ROI 特别低才允许不做;所有功能必须 WebFetch 官方 + exa 全搜集。"
 
-**决定**:超越 spec §5.1,所有 Task 3-6 代码(M1 `catalog_json` 形状、4 个 endpoint 响应、前端 `marketplace.json` parser、install payload)采用 CC 官方格式。理由:用户硬规则"绝不基于调研二手总结写代码,官方文档每个 API 必须 WebFetch 一次"直接适用;spec 位于 `docs/superpowers/specs/` 不在 `PRD_V4/` 冻结区;实施代码须与 primary source 一致。spec 原文保留作历史记录。v1 假设每个 marketplace plugin entry = 单个 skill(CC plugin 可 bundle skills+agents+hooks,多组件延后)。install payload 改为 `{source:"marketplace", marketplace_id, plugin_name}`(不是 `skill_name`)。
+### 本 session 所作所为(Files + TDD 循环)
 
-**Baseline 确认**:worktree `.worktrees/redesign-doc-sk` 已建(branch `redesign/doc-sk` off `develop`),e2e 基线 desktop-chromium 15p/4s/0f(比 Session 1 的 14p/4s/0f 多 1 个——catch-branch XSS 断言,commit f67d24c)。
+| 文件 | 动作 | 关键点 |
+|---|---|---|
+| `backend/app/services/source_resolver.py` | **新 530 LOC** | 5 resolver(RelativePath / GithubTarball / GitUrl / GitSubdir / Npm)+ `_safe_extract_tar`(Python 3.12 `filter='data'` + realpath prefix check 防 CVE-2025-4517)+ `_run_subprocess` async + `_check_rate_limit`(GitHub x-ratelimit-* + retry-after + 403 disambiguation)+ `_inject_github_token`(urlparse netloc exact-match 防子串攻击)+ `_download_and_extract_tarball`(github+npm 共享流程)+ `_require_key`(422 not KeyError) |
+| `backend/app/services/marketplace_service.py` | **改 +240** | `_try_fetch` 双模式 + `_fetch_json` + `_fetch_git` + `_is_safe_marketplace_url`(SSRF allowlist)+ `_validate_marketplace_shape` + `_safe_path_segment` + `install_plugin`(Redis SETNX + resolver + SKILL.md frontmatter + UPSERT)+ `_redis_install_lock` |
+| `backend/app/api/v1/marketplaces.py` | **改 +40** | `POST /{id}/plugins/{name}/install` 201 + InstallReport;svc.create/sync 用 `asyncio.to_thread` 包裹避免 120s 阻塞 event loop |
+| `backend/app/schemas/marketplace.py` | **改 +15** | `MarketplaceCreate.url: str`(放行 owner/repo shorthand)+ `InstallReport` |
+| `backend/Dockerfile` | **改 +1** | `apt-get install git`(resolver 3/4 依赖) |
+| `backend/tests/` × 8 | **新 860 LOC / 44 tests** | safe_extract 4 + 5 resolver(3-4 ea = 18)+ helpers 20 + infra 1 + pre-existing 1 |
+| `frontend/Prism.html` | **改 +290** | SkillsPage Marketplace tab expand→catalog grid(auto-fill minmax 260px / mobile 1-col),plugin 卡片(serif title + amber v-chip + desc clamp + chips + [详情][安装]),details modal + install consent modal,**honest single spinner**(无假阶段进度),sourceDisplay() helper |
+| `frontend/styles.css` | **改 +60** | .mp-plugin-card:hover(@media hover)+ focus-visible 2.5px amber ring + 44pt mobile + prefers-reduced-motion |
+| `frontend/apiClient.js` | **改 +4** | `marketplaces.installPlugin(id, name)` + encodeURIComponent |
+| `e2e/tests/skills-marketplace-catalog.spec.ts` | **新 300 LOC / 10 tests × 2 viewport = 20** | register row / expand / serif+amber+desc / details open+metadata+close / cancel no-POST / confirm success toast / 422 rate-limit toast / 409 concurrent toast / mobile 1-col + 44pt / keyboard focus+Enter |
+| `docs/superpowers/specs/2026-04-20-session4c-skills-market-catalog-design.md` | **新** | 829 LOC spec(Source of Truth 清单:WebFetched 3 URL + exa 7 次 + Session 3 基线) |
+| `docs/superpowers/plans/2026-04-20-session4c-skills-market-catalog.md` | **新** | 2521 LOC 19-task plan with complete RED/GREEN/commit steps |
+| `docs/superpowers/blockers/2026-04-20-marketplace-concurrent-rmtree.md` | **新** | #2 Important finding deferred 说明 + 3 种修复方案 |
+
+### TDD 循环记录(8 commits → 7 after merge cleanup,merged via 908d7ce)
+
+1. **infra** 9937b58 — RED test_infra_git(fail: no git)→ GREEN Dockerfile apt-get git → PASS
+2. **resolver** a77935b — RED 21 tests(_safe_extract 4 + 5 resolver × 3-4)→ GREEN 530 LOC source_resolver.py → 21/21 PASS
+3. **service** 456a2cb — RED 20 helper tests → GREEN marketplace_service.py dual-mode + install_plugin → 20/20 PASS
+4. **endpoint** 9824059 — RED implicit(API via curl)→ GREEN route + schema → curl smoke 201 PASS
+5. **frontend** 93a3ac0 — RED 10 e2e expect FAIL(no UI)→ GREEN Prism.html catalog grid + modals → desktop 9/9 + mobile 10/10 PASS
+6. **simplify** 9b03215 — reuse helpers(3x token rewrite / 2x tarball download collapsed)+ path sanitize + honest spinner + async subprocess wrap → 44/44 + 20/20 maintained
+7. **code-review** e1761f7 — realpath off-by-one fix + urlparse netloc + SSRF allowlist → 44/44 + 30/30 critical maintained
+
+### 不 mock 生产代码 — 证明
+
+- 5 resolver 真实 httpx.AsyncClient.stream + asyncio.create_subprocess_exec(git)。mock 仅在 unit tests 针对 GitHub API / npm registry / git subprocess 响应。
+- Playwright e2e `page.route` 仅拦截外部 `/api/v1/marketplaces` list+install 响应(Prism 后端本身未启动也能跑测)。生产浏览器环境无 intercept。
+- 用户换 `GITHUB_TOKEN` 后点 /Prism.html 的"安装"按钮会真实走 HTTPS tarball API 下载到 `/app/data/plugin_cache/`。
+
+### 用户自主真实账号测试步骤(生产可用标准)
+
+**前提**:`.env` 加 `GITHUB_TOKEN=ghp_xxx`(可选,公共 repo 无 token 走 60/h);`docker compose -p prismv3 up -d --build --force-recreate backend`(Dockerfile 新增 git binary)。
+
+1. 登录 /Prism.html(`admin@prism.dev / PrismAdmin!2026`)
+2. 左侧 nav 点 "技能市场" → SkillsPage → Marketplace tab
+3. URL 填 `anthropics/claude-plugins-official`,Name 填 `official` → 点 "添加 Marketplace"
+4. 后端克隆 github repo 到 `/app/data/marketplace_cache/*`(30-90s 首次)→ marketplace list 出现
+5. 点 ▸ 展开 catalog → 看到 60+ 真实 plugins(官方 marketplace 混用 string + object source 格式)
+6. 选某公共 plugin(如 `agent-sdk-dev`,source=`"./plugins/agent-sdk-dev"` relative path)→ 点 "安装"
+7. consent dialog 显示 source info + 30-60s 提示 → 点 "确认安装"
+8. honest 单 spinner + "安装中(30-60s)…" → 成功 toast "已安装 N 个 skill: xxx"
+9. 回 SkillsPage Installed tab → 看到新 skill 带 marketplace 徽章
+10. (可选)尝试 `github` source plugin(真 HTTPS tarball)/ `git-subdir` source plugin(真 cone-mode sparse checkout)
+
+**Mobile 测试**:Chrome DevTools 切 mobile viewport(390x844)→ catalog 1-col + 44pt 按钮 + consent 垂直堆叠。
+
+### 验证结果(evidence-based)
+
+- **Python unit**: **44/44 pass**(0.88s)
+- **Playwright e2e**: **20/20 pass**(desktop+mobile 双端)+ 1 proper skip(mobile-only test on desktop project)
+- **Full regression**: **89 pass / 11 skip / 2 flaky**。2 flaky(chat-msg-render user bubble persists = PLAYBOOK §5 #1 已知,details-modal desktop = session-leak 类型 = 单跑 PASS 且 pin 问题重 run 总 PASS,符合 §5 pattern)。**零代码 regression**。
+- **Simplify**: 3 subagent 并行审(reuse / quality / efficiency),3 blocking fix 已 recommit:(a) _require_key 422 代替 KeyError 崩溃,(b) _safe_path_segment 防路径注入,(c) honest single spinner 替代 setTimeout 假阶段(用户"实实在在"),additionally reuse helpers(_inject_github_token / _download_and_extract_tarball)。
+- **Code-reviewer 累积 6 次(ADR-086~089 + Session 4a/4b/4c)**: 3 Important fix(realpath off-by-one / urlparse netloc exact-match / SSRF scheme allowlist),1 Important deferred(concurrent rmtree → blocker doc with 3 修复方案)。
+- **PJR**: AST 5/5 OK,FastAPI 112 routes(+1 install endpoint),node --check OK,curl smoke GET 200 / POST 404 / health 200。git status clean,7 commits ahead → 908d7ce merged。
+
+### 延后项(本 Block 不实施,follow-up)
+
+- CC plugin 组件消费(agents / hooks / mcpServers / lspServers / monitors / channels / outputStyles / userConfig / dependencies):Prism 治理体系与 CC 不同,与 Block 3 分布式 agent 一起设计
+- `strictKnownMarketplaces` / `extraKnownMarketplaces` 管理员限制 + 自动注入
+- Release channels(stable/latest multi-marketplace)
+- `CLAUDE_CODE_PLUGIN_SEED_DIR` CI 预植
+- 离线模式 `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE`
+- plugin signature 验证(CC 官方目前无,未来可能加)
+- **并发 _fetch_git rmtree vs install_plugin race**(docs/superpowers/blockers/2026-04-20-marketplace-concurrent-rmtree.md):FS flock 方案推荐
+- `InstallFailure` Pydantic model(替 `list[dict[str, str]]` 宽松类型)
+- 每 user `GITHUB_TOKEN`(目前 env-global,需 credential_store 集成)
+- plugin cache GC / N+1 commit batching / 每 resolver 结构化日志 / 部分失败测试
+
+### Commits(chronological,merge 908d7ce)
+
+```
+9937b58 infra(session4c): Dockerfile add git + infra smoke test
+a77935b feat(session4c): SourceResolver 5-strategy + _safe_extract_tar (CVE-2025-4517)
+456a2cb feat(session4c): MarketplaceService dual-mode fetch + install_plugin
+9824059 feat(session4c): InstallReport schema + POST install endpoint
+93a3ac0 feat(session4c): SkillsPage Marketplace catalog grid + install consent
+9b03215 simplify(session4c): reuse helpers + path sanitize + honest progress + async wrap
+e1761f7 fix(session4c code-review): realpath off-by-one + urlparse netloc + SSRF allowlist
+908d7ce Merge Session 4c: Skills Market catalog + 5-source install (ADR-086 清零)
+```
+
+---
+
+## 🔴 Block 2(Session 4d+)IM 三小尾 — 开工硬前置(必做,否则停)
+
+**用户规则(2026-04-20)硬标准**:任何功能开工前 **exa 穷尽官方操作文档 + 配置 + 生产级实现参考**。"飞书IM 要参考对应官方的操作文档和配置这种你能参考的全部,要先用 exa 搜集"。
+
+### Block 2 开工前必 exa 清单(每一条都要 mcp__exa__web_search_exa)
+
+1. `feishu interactive card button action callback payload shape python sdk example`
+2. `slack socket mode websocket block_actions envelope payload python`
+3. `discord button interaction data custom_id python pynacl signature verify example`
+4. `feishu app developer portal setup event subscription URL verification step by step`(**配置步骤级**)
+5. `slack app manifest scopes chat:write events_api production python`
+6. `discord developer portal application bot token intents setup guide`
+7. `slack socket mode websocket ping pong reconnect python example production`
+8. `lark suite card action callback verification token SHA-1 signature`(飞书两套签名再确认)
+9. `sensitive credentials per field backend single source frontend sync pattern`(Session 4b 延后项,#C 第三小尾)
+
+### Block 2 必 WebFetch primary source
+
+- `https://docs.slack.dev/apis/socket-mode`(Socket Mode 完整)
+- `https://docs.slack.dev/reference/interaction-payloads/block-actions-payload`(button payload shape)
+- `https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/feishu-cards/send-feishu-card/receive-callback-of-card-action`(卡片按钮回调)
+- `https://discord.com/developers/docs/interactions/receiving-and-responding`
+- 以及 `#message-components-interaction-object` 子 anchor
+
+### Block 2 spec Source of Truth 要求
+
+- spec 第一节 "Source of Truth" 必列:本 session WebFetched URL + 对应 response 核心字段摘录 + exa canonical example source + **uncertainty 披露**(哪个 field 仅靠推断)
+- 签名算法 / auth 方式 / webhook payload shape 任一字段缺 primary source → 写 `docs/superpowers/blockers/<date>-<topic>-blocker.md` + 停工
+- 尤其:Slack Socket Mode app-level token(xapp-)拿不到 test token → 必须让用户提供,不自行假设
+
+### Block 2 scope(Session 4d,0.5-1 session)
+
+1. **Slack Socket Mode**:用 `xapp-` WebSocket 长连(opt-in `IM_SLACK_MODE=socket`);fallback 现有 Events API
+2. **Card button action 回传处理**:用户点 Feishu / Slack / Discord 卡片按钮 → 平台 webhook 回调 Prism → 新 handler `IMIncomingAction(channel, platform_user_id, action_id, message_id, raw)` 投 gateway
+3. **Sensitive key 单一源**:后端 `GET /im/channels` 响应每 field 加 `sensitive: true` 标记,前端读此值渲染 `type="password"`,**删除** admin.html:875 的 `/secret|token|key|password/i` 客户端 regex(Session 4b 延后项)
+
+### Block 2 估计 Tests
+
+- Python unit: 3 test files × 3-4 tests ≈ 10
+- Playwright e2e: 5-6 新 test × 双端
+
+---
+
+## 🔴 Block 3(Session 4e+)分布式任务拆解 — 开工硬前置
+
+### Block 3 开工前必 exa 清单
+
+1. `anthropic claude agent sdk sub-agents python production example code`
+2. `langgraph multi-agent handoff state sharing checkpointer production`
+3. `planner executor architecture open source implementation python asyncio`
+4. `agent-as-tool pattern vs sub-agent spawn anthropic best practice`
+5. `manus ai architecture blog real deployment`(无官方,靠公开案例;不得作为设计主据)
+
+### Block 3 必 WebFetch primary source
+
+- `https://docs.claude.com/en/api/agent-sdk`(sub-agent 模式)
+- `https://langchain-ai.github.io/langgraph/tutorials/multi_agent/multi-agent-collaboration/`
+
+### Block 3 scope(4-5 session 系列)
+
+- **Session 4e**:GATE + brainstorming + **spec only**(不实施),Planner-Executor 架构 + Agent SDK sub-agent 适配
+- **Session 4f**:writing-plans + 第一个子功能(Planner 拆解能力 MVP)
+- **Session 4g-4i**:调度 / 聚合 / UI 可视化任务树 / e2e
+
+### Block 3 硬红线
+
+- Manus 是商业黑箱。**不得照搬 Manus blog 设计**。以 Anthropic Agent SDK + LangGraph(有代码可读)为基础。research 与官方冲突 → 停 blocker。
+- 此 block 涉 harness + executor 两层重构;CLAUDE.md §-1 "进程边界" 硬底线;spec 先评估是否违反任一条再开工。
 
 ---
 

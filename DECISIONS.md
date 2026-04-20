@@ -1855,8 +1855,51 @@
   - Playwright e2e marketplace.spec.ts(2 tests × 2 viewports)= 4 passes
 - **下游影响**:
   - Phase 2 DOC-IM2 不直接依赖
-  - Future:marketplace_service.resolve_and_download(catalog entry → plugin cache)
-  - Future:UI 仅有 register + list,缺 catalog browser + one-click install(sync 后展示 catalog plugins 列表);当前 UI 仅显示 count
+  - ~~Future:marketplace_service.resolve_and_download(catalog entry → plugin cache)~~ ✅ **Session 4c 完整落地**
+  - ~~Future:UI 仅有 register + list,缺 catalog browser + one-click install~~ ✅ **Session 4c 完整落地**
+
+#### Session 4c 完整落地(2026-04-20,合并 commit 908d7ce)
+
+**范围**:ADR-086 骨架的完整生产级交付。偏离点 #3(install flow stub)清零,新增 5-Source Resolver 架构 + git-based marketplace 双模式 + 完整前端 catalog browser。
+
+**用户 directive**(2026-04-20):"生产级完整交付,没有取舍,ROI 特别低才允许不做;所有功能必须 WebFetch 官方 + exa 全搜集"。
+
+**落地位置**(超出 ADR-086 原计划):
+- `backend/app/services/source_resolver.py`(新 530 LOC)— 5 resolver 单一职责(RelativePathResolver / GithubTarballResolver / GitUrlResolver / GitSubdirResolver / NpmResolver)+ `_safe_extract_tar`(Python 3.12 `filter='data'` PEP 706 + realpath prefix check 防 CVE-2025-4517 symlink race)+ `_run_subprocess`(async,通用 SourceDownloadError 错误路径)+ `_check_rate_limit`(GitHub `x-ratelimit-*` + retry-after + 403 disambiguation)+ `_inject_github_token`(urlparse netloc exact-match 防 github.com.evil.com 子串攻击)+ `_download_and_extract_tarball`(github+npm 共享解包流程)
+- `backend/app/services/marketplace_service.py`(+240)— `_try_fetch` 双模式:`_fetch_json`(URL-based,Session 3 既有行为)+ `_fetch_git`(git-based,clone + `.claude-plugin/marketplace.json` 解析)+ `_is_safe_marketplace_url`(SSRF allowlist:拒绝 http:// / file:// / ftp:// / git@)+ `_validate_marketplace_shape`(permissive source field — 接受 string OR object,per anthropic #1331 实测官方 marketplace mix 两种)+ `_safe_path_segment`(target_dir 路径三段净化)+ `install_plugin`(Redis SETNX EX 120 lock + resolver dispatch + skills/<name>/SKILL.md frontmatter 解析 + UPSERT via existing SkillInstallService.install)
+- `backend/app/api/v1/marketplaces.py`(+40)— `POST /{id}/plugins/{name}/install` endpoint;`svc.create` + `svc.sync` 用 `asyncio.to_thread` 包裹(避免阻塞 event loop 120s subprocess.run)
+- `backend/app/schemas/marketplace.py`(+15)— `MarketplaceCreate.url: HttpUrl → str`(允许 `owner/repo` shorthand)+ `InstallReport` Pydantic 模型
+- `backend/Dockerfile` — `apt-get install git`(resolver 3/4 依赖)
+- `frontend/Prism.html`(+290)— SkillsPage Marketplace tab:每 marketplace 行展开 catalog grid(`auto-fill minmax(260px, 1fr)`,mobile 1-col),plugin 卡片含 serif title / amber v-chip(tabular-nums)/ 3-line desc clamp / category/tags chips / [详情][安装] 按钮(44pt touch);details modal(dl metadata)+ install consent modal(source 信息 + 30-60s 提示 + 44pt cancel/confirm);**honest single spinner**(删除 setTimeout-based 假阶段进度,遵循用户"实实在在"原则);sourceDisplay() 5-source 格式化
+- `frontend/styles.css`(+60)— `.mp-plugin-card:hover`(@media hover: hover)+ focus-visible 2.5px amber ring + mobile single-col + prefers-reduced-motion
+- `frontend/apiClient.js`(+4)— `marketplaces.installPlugin(id, name)` 用 `encodeURIComponent`
+
+**实施 commits**(7,merged via 908d7ce):
+- 9937b58 infra: Dockerfile add git
+- a77935b feat resolver: 5-strategy + CVE-2025-4517 defense
+- 456a2cb feat service: MarketplaceService dual-mode + install_plugin
+- 9824059 feat schema+endpoint: InstallReport + POST install
+- 93a3ac0 feat frontend: catalog grid + consent + honest spinner
+- 9b03215 simplify: reuse helpers + path sanitize + async subprocess wrap
+- e1761f7 fix code-review: realpath + urlparse + SSRF allowlist
+
+**偏离点最终状态**:
+1. ✅(Session 3 Phase 1 已 clear)catalog shape 用 CC 官方格式
+2. 🟡 v1 仍假设 1 plugin = 1+ skill(遍历 skills/<n>/SKILL.md,N:1 扩展);agents/hooks/mcpServers/lspServers/monitors/channels/outputStyles/userConfig **组件消费** 延后(Prism 治理体系与 CC 不同)
+3. ✅ **Session 4c 清零** `install` 路径通过 5-Source Resolver 真实 HTTPS 下载(不再依赖 content_base64 模拟)
+
+**Session 4c 新偏离点(deferred,不阻塞 merge)**:
+4. 🟡 **并发 _fetch_git rmtree vs install_plugin copytree 竞态** — 边界条件(admin 同时 sync + install 同一 marketplace 的 relative-source plugin)。详见 `docs/superpowers/blockers/2026-04-20-marketplace-concurrent-rmtree.md`(含 3 种修复方案:Redis RW-lock / FS flock / copy-on-install,推荐 FS flock for single-machine self-hosted)。
+
+**验证结果**:
+- Python unit:**44/44 pass**(_safe_extract_tar 4 / RelativePathResolver 3 / GithubTarballResolver 4 / GitUrlResolver 3 / GitSubdirResolver 4 / NpmResolver 4 / marketplace_service_helpers 20 / infra git 1 / pre-existing 1)
+- Playwright e2e:**20/20 pass**(skills-marketplace-catalog.spec.ts 10 tests × 桌面+移动双端 = 20 total;1 mobile-only test on desktop project proper-skip)
+- Critical regression subset:**30/30 pass**(4 pre-existing flaky per PLAYBOOK §5,不是本 session 回归)
+- Simplify 3-subagent:reuse blocking duplication fixed(_inject_github_token 3x / _download_and_extract_tarball 2x);quality all blocking fixed(KeyError → SourceDownloadError,path injection via mp.name,timer leak);efficiency N+1 commit 延后。
+- Code-reviewer 累积 6 次队列(ADR-086~089 + Session 4a/4b/4c)补跑,Important findings 3 fixed(realpath off-by-one,urlparse netloc,SSRF allowlist),1 deferred(concurrent rmtree,blocker 记录)。
+- PJR 全绿:AST 5/5 OK;FastAPI 112 routes(比 develop 多 1 = install endpoint);node --check apiClient.js OK;curl smoke 200/404/200;worktree clean 7 commits ahead。
+
+**用户自主真实账号测试路径**(写入 HANDOFF-LOG):见 Block 1 HANDOFF 条目。
 
 ### ADR-087: Typed Plugin Manifest + Permissions(DOC-SK R2+R5)
 - **来源**: Session 3 spec §5.2; Session 3 plan Task 5
