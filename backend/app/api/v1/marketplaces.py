@@ -10,6 +10,7 @@ Endpoints (all under /api/v1/marketplaces, admin-authenticated):
   POST   /                   — register a new marketplace (body: {url, name})
   DELETE /{id}               — unregister (cascades skill_installs.marketplace_id → NULL)
   POST   /{id}/sync          — force refresh the catalog
+  POST   /{id}/plugins/{name}/install — Session 4c 5-source install (ADR-090)
 """
 from __future__ import annotations
 
@@ -23,7 +24,11 @@ from app.core.dependencies import get_current_user, get_db
 from app.models.marketplace import MarketplaceRegistry
 from app.models.user import User
 from app.schemas.common import ApiResponse
-from app.schemas.marketplace import MarketplaceCreate, MarketplaceResponse
+from app.schemas.marketplace import (
+    InstallReport,
+    MarketplaceCreate,
+    MarketplaceResponse,
+)
 from app.services.marketplace_service import MarketplaceService
 
 logger = structlog.get_logger()
@@ -133,3 +138,34 @@ async def sync_marketplace(
             detail="Marketplace not found",
         )
     return ApiResponse(data=_to_response(entry))
+
+
+@router.post(
+    "/{marketplace_id}/plugins/{plugin_name}/install",
+    response_model=ApiResponse[InstallReport],
+    status_code=status.HTTP_201_CREATED,
+    summary="Install a plugin from marketplace catalog (Session 4c, ADR-090)",
+)
+async def install_plugin_from_marketplace(
+    marketplace_id: str,
+    plugin_name: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[InstallReport]:
+    """Install a plugin from a registered marketplace catalog.
+
+    Dispatches to one of 5 source resolvers (relative / github / url /
+    git-subdir / npm) per the plugin entry's `source` field. Downloads plugin
+    package to /app/data/plugin_cache/, parses each skills/<name>/SKILL.md,
+    UPSERTs skill_installs rows with source='marketplace' + marketplace_id FK.
+
+    Errors: 404 marketplace/plugin not found; 409 concurrent install; 422
+    download failed / plugin has no skills; 504 download timeout.
+    """
+    svc = MarketplaceService(db=db)
+    report = await svc.install_plugin(
+        marketplace_id=marketplace_id,
+        plugin_name=plugin_name,
+        user_id=current_user.id,
+    )
+    return ApiResponse(data=report)

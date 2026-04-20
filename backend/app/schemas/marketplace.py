@@ -13,14 +13,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 
 
 class MarketplaceCreate(BaseModel):
-    """POST /marketplaces body."""
+    """POST /marketplaces body.
 
-    url: HttpUrl = Field(description="URL to .claude-plugin/marketplace.json (or the bare marketplace.json)")
-    name: str = Field(min_length=1, max_length=200, description="Display name shown in the UI")
+    url accepts three forms (per CC plugin-marketplaces docs):
+      - owner/repo shorthand (git-based, e.g. "anthropics/claude-plugins-official")
+      - HTTPS git URL (e.g. "https://github.com/x/y.git" or "https://gitlab.com/...")
+      - Direct JSON URL (e.g. "https://example.com/marketplace.json")
+    """
+
+    url: str = Field(
+        min_length=1, max_length=500,
+        description="owner/repo shorthand OR git URL OR direct marketplace.json URL",
+    )
+    name: str = Field(
+        min_length=1, max_length=200,
+        description="Display name shown in the UI",
+    )
 
 
 class MarketplaceOwner(BaseModel):
@@ -67,3 +79,11 @@ class MarketplaceResponse(BaseModel):
     last_fetched_at: str | None = None           # ISO 8601
     created_by: str
     created_at: str                              # ISO 8601
+
+
+class InstallReport(BaseModel):
+    """Session 4c — POST /{id}/plugins/{name}/install response body."""
+
+    plugin_name: str
+    installed_skills: list[str] = Field(default_factory=list)
+    failures: list[dict[str, str]] = Field(default_factory=list)  # [{skill_dir, error}]
