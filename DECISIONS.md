@@ -1942,3 +1942,33 @@
 ---
 
 > **最后更新**: 2026-04-20(Session 3 Phase B Phase 2 DOC-IM2 落地; ADR-088; 15 Python + 4 e2e 双端全通过)
+
+---
+
+## Session 3 Phase B Phase 3 — Progressive Disclosure 契约(2026-04-20, 直接落在 develop)
+
+### ADR-089: Prism v2 Progressive-Disclosure Skill Contract(DOC-PSK)
+- **来源**: Session 3 Phase 1 spec §2 将 R3 推到 ADR-089 standalone;Phase 3 spec `docs/superpowers/specs/2026-04-20-phase3-progressive-disclosure-skills-design.md`
+- **实施状态**: ✅ 2026-04-20(文档化现有实现,无代码改动)
+- **落地位置**:
+  - `docs/superpowers/specs/2026-04-20-phase3-progressive-disclosure-skills-design.md` — 完整 Phase 3 spec + ADR-089 契约形式化
+  - 本 DECISIONS.md 条目 — ADR-089 指纹
+- **偏离点**:
+  1. **spec §2 R3 原意 `load_skill(name) tool`(LLM 显式 tool call)与 Prism 实现(ADR-043 trigger-based 自动加载)不完全一致**,Phase 3 auto-decide:采用 trigger-based 为主,LLM-tool 作为 ADR-089 §"Future extensions" 明确记录,延后到 Phase 4+ 实施。理由:ADR-043/044 已落地并经 executor-level test 覆盖;改成 LLM tool 属跨进程重构 + 新增 ~300 tokens tool 预算,性价比低;trigger-based 已满足 "initial prompt 低预算 + 按需加载" 的 progressive disclosure 核心诉求。
+  2. ADR-089 **不包含新代码**。仅形式化现有 ADR-043(三级加载)+ ADR-044(agents 过滤 + audit)为 Prism Progressive Disclosure 统一契约。未来对 progressive disclosure 的任何实质修改需新 ADR。
+  3. 未覆盖 Claude Code marketplace Skills 原生兼容(`.claude/skills/` + `disable-model-invocation` 等 CC frontmatter 字段)—— Phase 4+ enhancement,记入 spec §7.2。
+  4. Level 2 加载无上限,可能 prompt bloat(Phase 4+ 需 LRU 卸载策略,记入 spec §7.3)。
+- **验证结果**:
+  - 现有 `executor/plugins/skill_loader.py:SkillLoader` 类已实现 Level 0/1/2 三级加载 + `try_trigger` + `unload_skill` + `unload_all`
+  - 现有 `executor/plugins/skill_loader.py:150-168` `get_descriptions_for_prompt` 输出格式包含 `{name, description, triggers}` 三字段,满足 ADR-089 §5.1 Level 1 契约
+  - 现有 ADR-043(PRD ADR-040 平移)+ ADR-044(PRD ADR-041 平移)已在 DECISIONS.md 提及三级加载规范 + agents 过滤 + audit event
+  - **Phase 3 无新代码,无新 test,无新 migration**;现有 executor-level test_skill_loader(如存在)沿用
+- **下游影响**:
+  - Phase 4+:LLM `load_skill` tool enhancement(spec §7.1)
+  - Phase 4+:CC marketplace Skills 原生兼容(spec §7.2)
+  - Phase 4+:Level 2 LRU 卸载策略(spec §7.3)
+  - 未来对 progressive disclosure 的任何实质修改需 **在 ADR-089 §"Future extensions" 锚定 + 新 ADR 编号**
+
+---
+
+> **最后更新**: 2026-04-20(Session 3 Phase B 三 Phase 全部落地:DOC-SK + DOC-IM2 + DOC-PSK;ADR-086/087/088/089)

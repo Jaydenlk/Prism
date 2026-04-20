@@ -45,6 +45,52 @@
 
 ---
 
+## ✅ 2026-04-20 Session 3 Phase B Phase 3 DOC-PSK — 完成(文档化,直接落 develop)
+
+**成果总览**(develop 分支,commits 直接落):
+
+### 做了什么
+Phase 3 为 **progressive-disclosure skills 契约固化**,纯文档,0 代码改动。调研 `executor/plugins/skill_loader.py` 后确认 **Prism v2 早已落地 ADR-043(三级加载器)+ ADR-044(agents 过滤 + audit),其行为即 progressive disclosure 本质**。与 spec §2 R3 文本 "injects only `{name, description}` at session start + `load_skill(name)` tool" 的差异在于:Prism 采用 **trigger-keyword 自动加载** 而非 LLM 显式 tool call。Phase 3 auto-decide:把现有 trigger-based 路径形式化为 ADR-089 契约,LLM-tool 路径记录为 Future extensions,延后到 Phase 4+。
+
+### 交付物
+1. **Phase 3 spec** `docs/superpowers/specs/2026-04-20-phase3-progressive-disclosure-skills-design.md`(~1800 字)
+   - §2 对比 Prism 现实 vs Claude Code 官方 vs spec §2 R3 原意
+   - §4 五条 auto-decide 决策(D1-D5)
+   - §5 ADR-089 契约形式化(Level 0/1/2 时机 + 触发 + 卸载 + agent 过滤)
+   - §7 Future extensions(LLM tool / CC skills 兼容 / LRU 卸载)
+2. **DECISIONS.md** ADR-089 条目 — 明确偏离点 + 验证(无新代码) + 下游影响
+3. **本 HANDOFF 记录**(即此条)
+
+### 为什么 0 代码改动是正确的
+- ADR-043(PRD ADR-040 平移)+ ADR-044(PRD ADR-041 平移)已在 DECISIONS.md 有条目,对应的 `SkillLoader` 类和 `get_descriptions_for_prompt` / `try_trigger` / `load_skill` / `unload_*` 方法已在 executor 落地
+- spec §2 R3 原文的 "LLM 显式 `load_skill(name)` tool" 是 enhancement,非 progressive disclosure 核心需求
+- 强行改成 LLM tool 需:动 executor tools schema + prompt assembler + 新增 ~300 tokens tool 预算 + 新 e2e test —— 跨进程 refactor,性价比低
+- trigger-based 机制已满足 "initial prompt 低预算 + 按需加载 SKILL.md body" 两个核心要求
+- CLAUDE.md 六原则 #2 "99% 原文保留":spec 冻结位置在 `docs/superpowers/specs/`,我们不改 spec;只写新 Phase 3 spec 指明路径
+
+### 验证结果(evidence-based)
+- **代码状态无改动**:`git diff develop..HEAD` 仅两文件(新 spec + DECISIONS.md 追加)
+- **现有实现覆盖 ADR-089 契约**:grep 确认 `SkillLoader.load_skill` + `try_trigger` + `get_descriptions_for_prompt` + `_filter_by_agent` 全在 `executor/plugins/skill_loader.py`
+- **无回归**:代码未动,Phase 2 merge 后的 e2e 状态沿用
+
+### Commits(develop 分支)
+- Phase 3 spec + DECISIONS.md ADR-089 单 commit(即将提交)
+
+### Phase 3 完成度
+- spec ✅ / ADR-089 ✅ / 无代码改动(by design)
+- **Session 3 Phase B 三 Phase 全部落地**:Phase 1 DOC-SK(ADR-086+087) + Phase 2 DOC-IM2(ADR-088) + Phase 3 DOC-PSK(ADR-089)
+
+### ⚠️ 下一 session(Phase 4+)开工前必读
+1. **code-reviewer 累积队列**:Session 1 + Phase 1 + Phase 2 + Phase 3 合计 4 次未做独立 code-reviewer 审查。Phase 4 开头建议补跑 `superpowers:requesting-code-review` 一次性覆盖所有 ADR-086 ~ ADR-089 + mobile flakiness 根因分析
+2. **Mobile cross-test session leak**:Phase 2 HANDOFF 记录的 3 mobile-safari failures 在 full suite 模式下出现。影响范围:`loginAsAdmin` 在 webkit 下 session state restoration 时序不稳。建议修法:worker-scoped `storageState` 固化 admin token,或 `test.beforeEach` 清 localStorage/sessionStorage
+3. **DOC-IM2 延后项**:send_card 真实实现 / Slack Socket Mode / AES-JSONB credential 迁移 / Admin UI PATCH 编辑按钮(ADR-088 偏离点记录)
+4. **DOC-SK 延后项**:marketplace catalog browser + one-click install / /validate dispatch-by-type / install consent dialog UI / delete-with-linked-installs 警告(ADR-086/087 偏离点)
+5. **DOC-PSK 延后项(Phase 3 spec §7)**:LLM `load_skill` tool / CC skills 原生兼容 / Level 2 LRU 卸载策略
+6. **Docker 状态**:nginx 当前 mount 在 `.worktrees/redesign-doc-im2/frontend`(Phase 2 worktree)。Phase 4+ 开工前,**必须** `cd "E:/Agent program/PrismV3" && docker compose -p prismv3 up -d --force-recreate nginx` 切回主仓 mount
+7. **worktrees 清理(optional)**:`.worktrees/{fix-chat-md,redesign-doc-sk,redesign-doc-im2}` 三个旧 worktree 可 `git worktree remove` 清理或保留调试
+
+---
+
 ## ✅ 2026-04-20 Session 3 Phase B Phase 2 DOC-IM2 — 完成(merge 3da43e5)
 
 **成果总览**(全部在 develop 分支,local merge 3da43e5,无 remote):
