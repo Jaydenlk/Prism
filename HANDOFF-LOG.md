@@ -8,9 +8,20 @@
 
 ## 🔴🔴🔴 新 session 开工必读(/clear 后第一眼看这里)🔴🔴🔴
 
-**完整交接册**:`NEXT-SESSIONS-PLAYBOOK.md`(2316 字)
+**完整交接册**:`NEXT-SESSIONS-PLAYBOOK.md`
 
-内容涵盖:
+### ⚠️ 最高优先级:文档置信度 HARD GATE(用户 2026-04-20 重申)
+
+三个剩余问题(分布式 / Skills Market / IM 小尾)**必须** 基于各自的**调研报告 + 官方手册 + 真实案例 + 工作原理** 设计,**禁止按 AI 自己的逻辑推测**。
+
+- 仓库已有 3 份 research:`docs/research/2026-04-19-distributed-task-decomposition.md` / `2026-04-19-skills-plugins-im-competitive.md` / `2026-04-20-session3-design-brief.md` —— **对应开工必读**
+- 需查信息用 **exa MCP**(`mcp__exa__web_search_exa` / `mcp__exa__web_fetch_exa`)
+- 官方 primary source 必 WebFetch 一次再写代码(PLAYBOOK §-1 列了每个问题的 URL 清单)
+- **关键功能(支付/DB/API)文档置信度不足,立即停下写 blocker + 请用户提供资料,严禁盲写**
+
+完整 GATE 触发条件 + 每问题的必读 research + 必 WebFetch URL + 必 exa 关键词,见 PLAYBOOK §-1 + §1。
+
+### PLAYBOOK 其他内容:
 - **已完成清单**(Session 4a/4b + 之前)—— 避免重做
 - **剩余 3 问题**:分布式任务拆解(4-5 session) / Skills Market catalog browser(1-2 session) / IM 三小尾(0.5 session)
 - **开发原则**(用户 5 条 + CLAUDE.md 六原则 + 生产代码无 mock 原则)

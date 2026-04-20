@@ -3,7 +3,67 @@
 > **目标读者**:下一个 `/clear` 后的 Sonnet session(Opus / Sonnet 任意)
 > **作用**:把 Session 4a/4b 已验证的 workflow / 开发标准 / 验收标准 / 剩余工作 / 已知坑 全部集中,让新 session 不用爬 HANDOFF-LOG 也能无缝 pick up。
 > **版本**:2026-04-20,Session 4b 完成后写的
-> **先读顺序**:本文档 → `HANDOFF-LOG.md` 顶部 3 条 → `CLAUDE.md` → 对应 Session 的 spec + plan
+> **先读顺序**:本文档 §-1(HARD GATE)→ §0 已完成清单 → §1 剩余 + 对应 research/官方文档 → §3 Workflow
+
+---
+
+## §-1. 🚫 文档置信度 HARD GATE(开工前最高优先级)
+
+**用户硬规则(2026-04-20 重申)**:
+> 三个剩余问题(分布式 / Skills Market / IM 小尾)**必须** 基于各自的**调研报告 + 官方手册 + 真实案例 + 工作原理** 设计,**不能按你(AI)的逻辑推测**。**需要查信息时用 exa MCP**。**关键功能(支付 / 数据库 / API)文档置信度不足,必须停下来找用户要准确资料,不要盲目写代码。**
+
+### 本仓库已有的 research 文档(开工前**必读**对应一份)
+
+| 文件 | 覆盖内容 |
+|---|---|
+| `docs/research/2026-04-19-distributed-task-decomposition.md` | Manus 式 Planner-Executor 研究,含 10 条推荐 |
+| `docs/research/2026-04-19-skills-plugins-im-competitive.md` | Claude Code Skills / Dify Plugin / IM 竞品调研,32 源,Parts 1/3/4 |
+| `docs/research/2026-04-20-session3-design-brief.md` | Session 3 设计简报(已消费) |
+
+### 每个剩余问题必 WebFetch 的官方文档(primary source > 任何调研)
+
+**#B Skills Market catalog browser**:
+- Claude Code marketplace schema: `https://code.claude.com/docs/en/plugin-marketplaces`(Session 3 Phase 1 已 WebFetch 一次,shape 可能演化,开工再 WebFetch 一次确认)
+- Claude Code plugin manifest: `https://code.claude.com/docs/en/plugins-reference`
+- GitHub tarball API: `https://docs.github.com/en/rest/repos/contents` + `https://api.github.com/repos/{owner}/{repo}/tarball/{ref}`
+- npm registry API: `https://docs.npmjs.com/cli/v10/commands/npm-pack`
+- git-subdir 策略:`https://git-scm.com/docs/git-sparse-checkout`
+
+**#C IM 小尾**:
+- Slack Socket Mode: `https://docs.slack.dev/apis/socket-mode`(Session 3 Phase 2 未 WebFetch,Session 4c+ 必 WebFetch)
+- Slack Block Kit interactivity(button action payload):`https://docs.slack.dev/reference/interaction-payloads/block-actions-payload`
+- Feishu 卡片按钮回调:`https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/feishu-cards/send-feishu-card/receive-callback-of-card-action`
+- Discord Interactions webhook payload(button 点击):`https://discord.com/developers/docs/interactions/receiving-and-responding#interactions-and-bot-users`
+
+**#A 分布式任务拆解**:
+- Manus 实际架构:**无官方 SDK/Docs**,需用 **exa MCP** 查论文 / 公开拆解 / 开源复刻
+- 参考对象:OpenAI Assistants API(parallel tool calls)/ LangGraph / Anthropic `claude-agent-sdk` 的 sub-agents 模式
+- Anthropic Agent SDK:`https://docs.claude.com/en/api/agent-sdk`(必 WebFetch)
+- LangGraph multi-agent: `https://langchain-ai.github.io/langgraph/tutorials/multi_agent/multi-agent-collaboration/`
+- 若 research 文档 `2026-04-19-distributed-task-decomposition.md` 的结论与上述官方文档冲突,**以官方文档为准**
+
+### exa MCP 使用时机(查不到官方文档或需要案例时)
+
+- 用 `mcp__exa__web_search_exa` 关键词搜索:如 `"Manus AI planner executor architecture 2025"` / `"Slack bot card button action payload example"` / `"GitHub marketplace tarball download python example"`
+- 用 `mcp__exa__web_fetch_exa` 拉取搜索到的具体 URL
+- exa 返回结果的优先级:**官方 docs/primary source > GitHub issue/blog(带代码示例) > StackOverflow > 其他**
+- **禁止** 基于 GitHub issue 里的猜测性 patch 写代码,必须找到 commit/PR merged 的 upstream 实现
+
+### 文档置信度 GATE 触发条件(停下,写 blocker.md 要用户资料)
+
+- 关键 API 的 request/response shape **至少一个字段** 没有官方文档背书
+- 加密/签名/HMAC 算法的具体实现步骤(Feishu/Slack/Discord 已完成,未来支付/OAuth 类接入要遵守)
+- 数据库 schema 字段含义与 PRD v4 DOC-01 §4.2 冲突(schema 已定死 19 表)
+- 外部 API 需要 paid account 才能测,且 user 未提供 test account credentials
+- research 文档与官方文档冲突(开工前看到就停)
+
+**触发后**:立刻写 `docs/superpowers/blockers/YYYY-MM-DD-<topic>-blocker.md`,内容包含:
+  1. 冲突点 / 空白点的具体 field/method 名
+  2. 已查过的 sources(含 URL + 摘要)
+  3. 需要用户提供的资料清单(官方 doc URL / 真实 account / sample payload 等)
+  4. 暂停到用户答复为止,不要继续 implementation
+
+---
 
 ---
 
@@ -25,6 +85,19 @@
 ## 1. 剩余三问题(Session 4c+ 待做)
 
 ### #A. 分布式任务拆解(Manus 式 Planner-Executor)
+
+**📚 必读(开工前按顺序)**:
+1. `docs/research/2026-04-19-distributed-task-decomposition.md` — Session 2 内部调研,Planner-Executor 推荐 + 10 条要点
+2. `docs/research/2026-04-19-skills-plugins-im-competitive.md` Parts 1/3/4 — 相关竞品模式
+3. **WebFetch 官方** `https://docs.claude.com/en/api/agent-sdk` — Anthropic sub-agent 模式是 primary source
+4. **WebFetch** `https://langchain-ai.github.io/langgraph/tutorials/multi_agent/multi-agent-collaboration/` — LangGraph multi-agent pattern
+5. **exa MCP 查**:`"Manus AI architecture"` / `"agent planner executor architecture production"` — Manus 无官方 SDK,靠公开案例拆解
+6. CLAUDE.md §心智模型 + 陷阱 #3(工具并行)/ #5(Backend 不 import Harness)/ #8(ask 权限 BLPOP)
+
+**⚠️ 文档置信度注意点**:
+- **Manus 具体实现是商业黑箱** — 如果只有博客猜测,不要照搬。必须以 Anthropic Agent SDK / LangGraph 等 **有代码可读** 的参考为基础,Manus 的思路只作为 high-level motivation
+- 如果 research 文档里的 "推荐架构" 与 WebFetch 的 Agent SDK 文档冲突,**停下写 blocker 请用户决策**
+
 - **状态**:❌ 未做。Session 2b 调研文档 `docs/research/2026-04-19-distributed-task-decomposition.md` 已存在但未消费
 - **工作量**:**4-5 个 session**,架构级
 - **影响面**:
@@ -42,6 +115,21 @@
 - **置信度要求**:此功能涉及 harness + executor 两层,必须先 WebFetch 确认 Manus 等参考产品的实际 API surface(如果要 CC 兼容),否则按"不基于调研二手总结写代码"原则拒绝开工
 
 ### #B. Skills Market catalog browser + source 下载(真实可 install)
+
+**📚 必读(开工前按顺序)**:
+1. `docs/research/2026-04-19-skills-plugins-im-competitive.md` Part 1(Skills / plugins 竞品)
+2. `docs/research/2026-04-20-session3-design-brief.md` — Session 3 WebFetched CC marketplace 结论
+3. **WebFetch 必做**:`https://code.claude.com/docs/en/plugin-marketplaces` — 这是 primary source,Session 3 Phase 1 已用过,**再 WebFetch 一次** 确认 shape 未演化
+4. **WebFetch 必做**:`https://code.claude.com/docs/en/plugins-reference` — plugin.json 完整 schema
+5. **WebFetch 必做**:`https://docs.github.com/en/rest/repos/contents` + tarball API
+6. **exa MCP 查**(如果 github source 下载方案不确定):`"github api download repo tarball python httpx"` 或 `"claude code plugin marketplace github source example"`
+7. Session 3 Phase 1 spec + plan:`docs/superpowers/specs/2026-04-20-session3-sk-im2-redesign-design.md` §5.1 + `docs/superpowers/plans/2026-04-20-doc-sk-doc-im2-redesign.md`
+
+**⚠️ 文档置信度注意点**:
+- CC marketplace 的 5 种 source 格式(`./path` / `github` / `url` / `git-subdir` / `npm`),**每种都要有官方文档示例**才能实现;没找到的那种 source 延后(比如 npm 可选)
+- 下载后的缓存路径、plugin.json 校验规则、signature verification(CC 未来可能加)—— 只实施 primary source 明确支持的部分
+- **GitHub rate limit**:未认证 60 req/h,认证 5000 req/h,超限 403 —— 真实账号测试需要用户提供 GITHUB_TOKEN
+
 - **状态**:🟡 骨架完成(ADR-086),用户能注册 marketplace URL 但**看不到 catalog 里的 plugins 列表,点不了"一键 install"**
 - **工作量**:**1-2 session**
 - **影响面**:
@@ -54,6 +142,23 @@
 - **推荐先做(ROI 最高)**
 
 ### #C. IM 剩余延后项(Slack Socket Mode + card button action + sensitive list 单一源)
+
+**📚 必读(开工前按顺序)**:
+1. `docs/research/2026-04-19-skills-plugins-im-competitive.md` Part 3 / 4(IM 竞品 + 交互卡片模式)
+2. `docs/research/2026-04-20-session3-design-brief.md` — 飞书两套签名算法 / Slack 域名 / Discord Ed25519 的关键坑
+3. **WebFetch 必做 Slack**:
+   - `https://docs.slack.dev/apis/socket-mode` — Socket Mode primary source
+   - `https://docs.slack.dev/reference/interaction-payloads/block-actions-payload` — button click payload shape
+4. **WebFetch 必做飞书**:`https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/feishu-cards/send-feishu-card/receive-callback-of-card-action` — 卡片 action 回调(Session 3 Phase 2 已确认 SHA-1 + verification_token,button click payload shape 再确认一次)
+5. **WebFetch 必做 Discord**:`https://discord.com/developers/docs/interactions/receiving-and-responding` + `#message-components-interaction-object` 子章节
+6. **exa MCP 查**(Slack Socket Mode 的 WebSocket 心跳 / 重连策略):`"slack socket mode websocket ping pong reconnect python example"`
+7. Session 3 Phase 2 spec + plan:`docs/superpowers/specs/2026-04-20-session3-sk-im2-redesign-design.md` §5.3 / §5.4 + `docs/superpowers/plans/2026-04-20-doc-sk-doc-im2-redesign.md` Tasks 11-16
+8. Session 4b spec + plan:`docs/superpowers/specs/2026-04-20-session4b-im-send-card-aes-admin-design.md` + `docs/superpowers/plans/2026-04-20-session4b-im-send-card-aes-admin.md`
+
+**⚠️ 文档置信度注意点**:
+- **button action payload** 的字段名 / 嵌套结构 三个平台**完全不同**(Slack 是 `payload.actions[].action_id`,Feishu 是 `action.value.action_id`,Discord 是 `data.custom_id`),**每个平台都要 WebFetch 一次确认具体 shape**,不能 copy Session 4b 的 send_card 代码推断
+- Slack Socket Mode 的 WebSocket auth 用 **app-level token** (`xapp-...`) 而非 bot token,**必须** 实测前让用户提供 app-level token,否则 blocker
+
 - **状态**:🟡 核心 Session 4b 完成(send_card + AES + Admin UI 生产可用);三项小尾巴
 - **工作量**:**0.5 - 1 session**(小 chore,不是大 feature)
 - 具体:
@@ -91,9 +196,22 @@
 ## 3. Workflow(Session 4a / 4b 已验证的标准流程)
 
 ```
+0. 【文档置信度 GATE】按 §-1 + §1 对应问题的 "📚 必读" 清单执行:
+   - 读 docs/research/ 对应文件(从头到尾,不要只看摘要)
+   - WebFetch 每个官方文档 URL(primary source;即便 Session 3/4a/4b 拉过,
+     Session 4c+ 再 WebFetch 一次确认未演化)
+   - exa MCP 查缺口(mcp__exa__web_search_exa / mcp__exa__web_fetch_exa)
+   - 如果关键 API 的 shape / 签名算法 / auth 方式 任一字段 缺官方文档,
+     写 docs/superpowers/blockers/YYYY-MM-DD-<topic>-blocker.md + 停工
+     (按 §-1 GATE 触发条件)
 1. 加载 superpowers:using-superpowers
 2. 加载 superpowers:brainstorming
-   └── 必要时 WebFetch 真实文档(D1 = 文档置信度原则),5 秒 auto-proceed 写 spec
+   └── 此时所有 research 已读 + 所有官方 shape 已 WebFetch 在上下文内,
+       5 秒 auto-proceed 写 spec 前先把 "Source of truth" 一节列出:
+       - 本 session 参考的 research 文件路径
+       - WebFetched 的官方 URL 列表(每个 URL 对应 response 的核心字段摘录)
+       - exa 查到的 canonical example(含 source URL)
+       - 如果任何字段仅靠 "调研推断",明确列出 uncertainty + 你的最保守默认
 3. 写 docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md + commit
 4. 加载 superpowers:writing-plans
    └── 写 docs/superpowers/plans/YYYY-MM-DD-<topic>.md,每 Task 含 "Files" + "Step 1 写代码" + "Step 2 跑 expected FAIL" + "Step 3 impl" + "Step 4 跑 expected PASS" + "Step 5 commit",具体 code block,no TBD
