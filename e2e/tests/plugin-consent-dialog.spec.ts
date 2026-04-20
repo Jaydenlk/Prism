@@ -74,14 +74,19 @@ test.describe('Plugin Consent Dialog (Session 4a)', () => {
   });
 
   for (const t of ['tool', 'agent_strategy', 'extension', 'trigger'] as const) {
-    test(`chip ${t} fires tasks.submit with session_metadata.plugin_type=${t}`, async ({ page }) => {
+    test(`chip ${t} fires tasks.submit with prompt containing type=${t}`, async ({ page }) => {
       await openPluginsPage(page);
       await clickStart(page);
       const getCaptured = await pickChipCapturing(page, t);
       await page.waitForTimeout(2500);
       const captured = getCaptured();
       expect(captured, 'tasks submit payload captured').toBeTruthy();
-      expect(captured.session_metadata?.plugin_type).toBe(t);
+      // Production contract: chip click composes the opening prompt with
+      // `type=${t}` so the PluginBuilder agent (executor prompt, ADR-087)
+      // can identify which YAML skeleton to guide toward. No session_metadata
+      // schema bloat required.
+      expect(captured.prompt).toContain(`type=${t}`);
+      expect(captured.agent_type).toBe('plugin_builder');
     });
   }
 
