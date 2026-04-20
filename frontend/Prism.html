@@ -1290,11 +1290,15 @@ function SkillsPage() {
   const [installTab, setInstallTab] = useState("local_file");
   const [installing, setInstalling] = useState(false);
 
-  // Marketplace channel (DOC-SK R1, ADR-086)
+  // Marketplace channel (DOC-SK R1, ADR-086; Session 4c ADR-090 catalog browser)
   const [marketplaces, setMarketplaces] = useState([]);
   const [mktUrl, setMktUrl] = useState("");
   const [mktName, setMktName] = useState("");
   const [mktAdding, setMktAdding] = useState(false);
+  const [expandedMpId, setExpandedMpId] = useState(null); // id of marketplace whose catalog is revealed
+  const [pluginDetails, setPluginDetails] = useState(null); // plugin obj shown in details modal
+  const [installConsent, setInstallConsent] = useState(null); // { mp, plugin }
+  const [installingPlugin, setInstallingPlugin] = useState(null); // { name, stage } during install
 
   // Local file channel
   const [localFileName, setLocalFileName] = useState("");
@@ -1380,11 +1384,60 @@ function SkillsPage() {
     try {
       await PrismAPI.marketplaces.delete(id);
       addToast("success", "已移除", name);
+      if (expandedMpId === id) setExpandedMpId(null);
       await loadMarketplaces();
       await loadInstalled();
     } catch (err) {
       addToast("danger", "移除失败", err.message || String(err));
     }
+  }
+
+  // Session 4c (ADR-090): catalog browser + install plugin from marketplace
+  function handleToggleExpandMp(mp) {
+    setExpandedMpId(prev => (prev === mp.id ? null : mp.id));
+  }
+
+  function handleViewPluginDetails(plugin) {
+    setPluginDetails(plugin);
+  }
+
+  function handleInstallClick(mp, plugin) {
+    setInstallConsent({ mp, plugin });
+  }
+
+  function sourceDisplay(src) {
+    if (!src) return "(none)";
+    if (typeof src === "string") return `local (${src})`;
+    const kind = src.source || "?";
+    const extra = src.repo || src.url || src.package || "";
+    const ref = src.sha ? `@${src.sha.slice(0, 7)}` : (src.ref ? `@${src.ref}` : "");
+    return `${kind}(${extra}${ref})`;
+  }
+
+  async function handleConfirmInstall() {
+    if (!installConsent) return;
+    const { mp, plugin } = installConsent;
+    setInstallConsent(null);
+    // Honest single spinner — backend is one synchronous POST that downloads,
+    // parses, registers. Faking staged progress via setTimeout would be
+    // cosmetic deception (user's "实实在在" rule). Real stage API is future work.
+    setInstallingPlugin({ name: plugin.name, stage: "安装中(30-60s)" });
+    try {
+      const resp = await PrismAPI.marketplaces.installPlugin(mp.id, plugin.name);
+      const report = unwrap(resp) || {};
+      const count = (report.installed_skills || []).length;
+      const names = (report.installed_skills || []).slice(0, 3).join(", ");
+      if (count > 0) {
+        addToast("success", `已安装 ${count} 个 skill`, count > 3 ? `${names} 等` : names);
+      } else {
+        addToast("warn", "未安装任何 skill", "Plugin 可能不含 skills/");
+      }
+      await loadInstalled();
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      addToast("danger", "安装失败", msg);
+    }
+    setInstallingPlugin(null);
   }
 
   async function doSearch(searchQ, searchSource) {
@@ -1562,6 +1615,109 @@ function SkillsPage() {
         </div>
       )}
 
+      {/* Plugin details modal (Session 4c ADR-090) */}
+      {pluginDetails && (
+        <div data-testid="plugin-details-modal" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 310, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPluginDetails(null)}>
+          <div style={{ background: "var(--paper)", borderRadius: 12, padding: 28, maxWidth: 560, width: "92%", maxHeight: "82vh", overflow: "auto", display: "flex", flexDirection: "column", gap: 12 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ fontFamily: "var(--serif, Georgia, serif)", fontSize: 20, fontWeight: 600, color: "var(--ink)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{pluginDetails.name}</div>
+              {pluginDetails.version && (
+                <span style={{ fontSize: 11, fontFamily: "var(--mono)", background: "#fbbf24", color: "#451a03", padding: "2px 8px", borderRadius: 999, fontWeight: 600, flexShrink: 0 }}>v{pluginDetails.version}</span>
+              )}
+            </div>
+            {pluginDetails.description && (
+              <p style={{ fontSize: 13.5, color: "var(--ink-2, var(--ink))", lineHeight: 1.6, margin: 0 }}>{pluginDetails.description}</p>
+            )}
+            <dl style={{ display: "grid", gridTemplateColumns: "90px 1fr", columnGap: 12, rowGap: 8, fontSize: 12.5, margin: 0 }}>
+              <dt style={{ color: "var(--ink-4)" }}>source:</dt>
+              <dd style={{ fontFamily: "var(--mono)", color: "var(--ink-3)", margin: 0, wordBreak: "break-all" }}>{sourceDisplay(pluginDetails.source)}</dd>
+              {pluginDetails.author && (
+                <>
+                  <dt style={{ color: "var(--ink-4)" }}>author:</dt>
+                  <dd style={{ margin: 0 }}>{pluginDetails.author.name || String(pluginDetails.author)}</dd>
+                </>
+              )}
+              {pluginDetails.homepage && (
+                <>
+                  <dt style={{ color: "var(--ink-4)" }}>homepage:</dt>
+                  <dd style={{ margin: 0, wordBreak: "break-all" }}><a href={pluginDetails.homepage} target="_blank" rel="noopener noreferrer" style={{ color: "var(--amber-ink, #92400e)" }}>{pluginDetails.homepage}</a></dd>
+                </>
+              )}
+              {pluginDetails.repository && (
+                <>
+                  <dt style={{ color: "var(--ink-4)" }}>repo:</dt>
+                  <dd style={{ margin: 0, fontFamily: "var(--mono)", wordBreak: "break-all" }}>{pluginDetails.repository}</dd>
+                </>
+              )}
+              {pluginDetails.license && (
+                <>
+                  <dt style={{ color: "var(--ink-4)" }}>license:</dt>
+                  <dd style={{ margin: 0 }}>{pluginDetails.license}</dd>
+                </>
+              )}
+              {pluginDetails.category && (
+                <>
+                  <dt style={{ color: "var(--ink-4)" }}>category:</dt>
+                  <dd style={{ margin: 0 }}>{pluginDetails.category}</dd>
+                </>
+              )}
+              {(pluginDetails.keywords || pluginDetails.tags) && (
+                <>
+                  <dt style={{ color: "var(--ink-4)" }}>tags:</dt>
+                  <dd style={{ margin: 0, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {(pluginDetails.keywords || pluginDetails.tags || []).map(t => (
+                      <span key={t} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 999, background: "#ede3d0", color: "#6b5d40" }}>{t}</span>
+                    ))}
+                  </dd>
+                </>
+              )}
+            </dl>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+              <button data-testid="plugin-details-close" className="btn ghost" onClick={() => setPluginDetails(null)} style={{ minHeight: 44 }}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Install consent modal (Session 4c ADR-090) */}
+      {installConsent && (
+        <div data-testid="install-consent-modal" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 320, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setInstallConsent(null)}>
+          <div style={{ background: "var(--paper)", borderRadius: 12, padding: 28, maxWidth: 480, width: "92%", display: "flex", flexDirection: "column", gap: 14 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "var(--serif, Georgia, serif)", fontSize: 19, fontWeight: 600 }}>确认安装 {installConsent.plugin.name}?</div>
+            <div data-testid="consent-source-info" style={{ background: "var(--bg)", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: "var(--ink-2, var(--ink))", display: "flex", flexDirection: "column", gap: 4 }}>
+              <div><span style={{ color: "var(--ink-4)" }}>来自:</span> {installConsent.mp.name}</div>
+              <div style={{ fontFamily: "var(--mono)", wordBreak: "break-all" }}><span style={{ color: "var(--ink-4)", fontFamily: "var(--sans, inherit)" }}>source:</span> {sourceDisplay(installConsent.plugin.source)}</div>
+              {installConsent.plugin.description && (
+                <div style={{ color: "var(--ink-3)", lineHeight: 1.45, marginTop: 2 }}>{installConsent.plugin.description}</div>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.5 }}>
+              Prism 将下载 plugin 源码到本地 cache,解析 <code style={{ fontFamily: "var(--mono)" }}>skills/*/SKILL.md</code>,并注册到你的技能库。下载可能耗时 30–60 秒。
+            </div>
+            <div className="mp-consent-actions" style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+              <button data-testid="consent-cancel" className="btn ghost" onClick={() => setInstallConsent(null)} style={{ minHeight: 44, minWidth: 88 }}>取消</button>
+              <button data-testid="consent-confirm" className="btn primary" onClick={handleConfirmInstall} style={{ minHeight: 44, minWidth: 108 }}>确认安装</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Install progress banner (Session 4c ADR-090) */}
+      {installingPlugin && (
+        <div data-testid="install-progress-banner" role="status" aria-live="polite" style={{
+          position: "fixed", bottom: 24, left: 24, zIndex: 210,
+          background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 10,
+          padding: "12px 16px", display: "flex", alignItems: "center", gap: 10,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.08)", minWidth: 240,
+        }}>
+          <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid #fbbf24", borderTopColor: "transparent", animation: "mp-spin 0.9s linear infinite" }}/>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>安装 {installingPlugin.name}</div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>{installingPlugin.stage}…</div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, alignItems: "start" }}>
         {/* ── Left: search + results ─────────────────────────────── */}
         <div>
@@ -1701,20 +1857,130 @@ function SkillsPage() {
                 </button>
 
                 {marketplaces.length > 0 && (
-                  <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 2 }}>已注册</div>
-                    {marketplaces.map(m => (
-                      <div key={m.id} data-testid="marketplace-list-item" style={{ borderRadius: 8, border: "1px solid var(--line)", padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, background: "var(--paper)" }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{m.name}</div>
-                          <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {m.plugin_count} plugin{m.plugin_count === 1 ? "" : "s"} · {m.last_fetched_at ? `synced ${new Date(m.last_fetched_at).toLocaleString()}` : "未同步"}
+                    {marketplaces.map(m => {
+                      const isExpanded = expandedMpId === m.id;
+                      const plugins = (m.catalog_json && Array.isArray(m.catalog_json.plugins))
+                        ? m.catalog_json.plugins : [];
+                      return (
+                        <div key={m.id} data-testid="marketplace-list-item" style={{
+                          borderRadius: 10,
+                          border: "1px solid var(--line)",
+                          background: "var(--paper)",
+                          overflow: "hidden",
+                          transition: "box-shadow 160ms",
+                          boxShadow: isExpanded ? "0 4px 16px rgba(194, 163, 106, 0.10)" : "none",
+                        }}>
+                          <div style={{ padding: "10px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                            <button
+                              data-testid={`marketplace-expand-${m.name}`}
+                              className="btn sm ghost"
+                              title={isExpanded ? "收起 catalog" : "展开 catalog"}
+                              onClick={() => handleToggleExpandMp(m)}
+                              disabled={plugins.length === 0}
+                              aria-expanded={isExpanded}
+                              style={{ fontFamily: "var(--mono)", minWidth: 30 }}
+                            >{isExpanded ? "▾" : "▸"}</button>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{m.name}</div>
+                              <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {m.plugin_count} plugin{m.plugin_count === 1 ? "" : "s"} · {m.last_fetched_at ? `synced ${new Date(m.last_fetched_at).toLocaleString()}` : "未同步"}
+                              </div>
+                            </div>
+                            <button className="btn sm ghost" title="同步" onClick={() => handleSyncMarketplace(m.id, m.name)}>↻</button>
+                            <button className="btn sm ghost" title="移除" onClick={() => handleDeleteMarketplace(m.id, m.name)}>✕</button>
                           </div>
+                          {isExpanded && plugins.length > 0 && (
+                            <div
+                              data-testid={`catalog-grid-${m.name}`}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                                gap: 12,
+                                padding: "4px 12px 14px 12px",
+                                borderTop: "1px solid var(--line)",
+                                background: "var(--bg, #faf8f5)",
+                              }}
+                              className="mp-catalog-grid"
+                            >
+                              {plugins.map(p => {
+                                const installing = installingPlugin && installingPlugin.name === p.name;
+                                return (
+                                  <article
+                                    key={p.name}
+                                    data-testid={`plugin-card-${p.name}`}
+                                    tabIndex={0}
+                                    style={{
+                                      background: "var(--paper)",
+                                      border: "1px solid var(--line)",
+                                      borderRadius: 10,
+                                      padding: 12,
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: 8,
+                                      boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
+                                      transition: "transform 160ms, box-shadow 160ms",
+                                    }}
+                                    className="mp-plugin-card"
+                                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleViewPluginDetails(p); } }}
+                                  >
+                                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, justifyContent: "space-between" }}>
+                                      <span style={{ fontFamily: "var(--serif, Georgia, serif)", fontSize: 16, fontWeight: 600, color: "var(--ink)", lineHeight: 1.25, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>{p.name}</span>
+                                      {p.version && (
+                                        <span data-testid="plugin-version-chip" style={{
+                                          fontSize: 10.5, fontFamily: "var(--mono)",
+                                          fontVariantNumeric: "tabular-nums",
+                                          background: "#fbbf24", color: "#451a03",
+                                          padding: "2px 7px", borderRadius: 999, flexShrink: 0,
+                                          fontWeight: 600,
+                                        }}>v{p.version}</span>
+                                      )}
+                                    </div>
+                                    <p style={{
+                                      fontSize: 12.5, color: "var(--ink-3)",
+                                      lineHeight: 1.5, margin: 0, minHeight: "calc(3 * 1.5em)",
+                                      display: "-webkit-box",
+                                      WebkitLineClamp: 3,
+                                      WebkitBoxOrient: "vertical",
+                                      overflow: "hidden",
+                                    }}>{p.description || "(无描述)"}</p>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, minHeight: 20 }}>
+                                      {p.category && (
+                                        <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, background: "#ede3d0", color: "#6b5d40", fontFamily: "var(--mono)" }}>{p.category}</span>
+                                      )}
+                                      {(p.tags || p.keywords || []).slice(0, 3).map(t => (
+                                        <span key={t} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, background: "#f3ecdc", color: "#8a7a55", fontFamily: "var(--mono)" }}>{t}</span>
+                                      ))}
+                                    </div>
+                                    <div className="mp-plugin-actions" style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                                      <button
+                                        data-testid="plugin-btn-details"
+                                        className="btn sm ghost"
+                                        onClick={() => handleViewPluginDetails(p)}
+                                        style={{ flex: 1, minHeight: 36 }}
+                                      >详情</button>
+                                      <button
+                                        data-testid="plugin-btn-install"
+                                        className="btn sm primary"
+                                        onClick={() => handleInstallClick(m, p)}
+                                        disabled={!!installingPlugin}
+                                        style={{ flex: 1, minHeight: 36 }}
+                                      >{installing ? `${installingPlugin.stage}…` : "安装"}</button>
+                                    </div>
+                                  </article>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {isExpanded && plugins.length === 0 && (
+                            <div style={{ padding: "8px 12px 14px 12px", fontSize: 12, color: "var(--ink-4)", fontStyle: "italic" }}>
+                              catalog 为空(尚未同步或 marketplace.json 无 plugins)
+                            </div>
+                          )}
                         </div>
-                        <button className="btn sm ghost" title="同步" onClick={() => handleSyncMarketplace(m.id, m.name)}>↻</button>
-                        <button className="btn sm ghost" title="移除" onClick={() => handleDeleteMarketplace(m.id, m.name)}>✕</button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

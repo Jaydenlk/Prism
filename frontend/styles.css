@@ -1330,3 +1330,62 @@ html, body {
 
 .content.md strong { font-weight: 600; color: var(--ink); }
 .content.md em     { font-style: italic; }
+
+/* ===================================================================
+   Session 4c — Skills Marketplace catalog browser (ADR-090)
+   =================================================================== */
+
+@keyframes mp-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Plugin card hover (desktop only; respects touch devices) */
+@media (hover: hover) {
+  .mp-plugin-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(184, 128, 58, 0.12) !important;
+    border-color: var(--amber-soft) !important;
+  }
+}
+
+/* Plugin card focus ring (keyboard) */
+.mp-plugin-card:focus-visible {
+  outline: 2.5px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* Active press feedback */
+.mp-plugin-card:active {
+  transform: scale(0.99);
+}
+
+/* Mobile: stack card actions vertically + 44pt touch */
+@media (max-width: 640px) {
+  .mp-catalog-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .mp-plugin-actions {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .mp-plugin-actions .btn {
+    min-height: 44px !important;
+    width: 100%;
+  }
+  .mp-consent-actions {
+    flex-direction: column-reverse !important;
+  }
+  .mp-consent-actions .btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-plugin-card, .mp-plugin-card:hover, .mp-plugin-card:active {
+    transform: none !important;
+    transition: none !important;
+  }
+  @keyframes mp-spin {
+    to { transform: rotate(0deg); }
+  }
+}
