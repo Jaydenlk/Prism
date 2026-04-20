@@ -42,6 +42,7 @@ from app.schemas.im import (
     PairingCodeResponse,
     TestSendRequest,
 )
+from app.core.config import get_settings
 from app.services.credential_cipher import encrypt_config_secrets
 from app.services.im_adapter import IMCardAction, IMOutgoingCard
 from app.services.im_binding_service import IMBindingService
@@ -139,8 +140,8 @@ def update_channel(
     if data.is_enabled is not None:
         row.is_enabled = data.is_enabled
     if data.config is not None:
-        cipher = getattr(request.app.state, "credential_cipher", None)
-        new_config = encrypt_config_secrets(data.config, cipher) if cipher else dict(data.config)
+        key_hex = get_settings().ENCRYPTION_KEY
+        new_config = encrypt_config_secrets(data.config, key_hex)
         merged = dict(row.config or {})
         merged.update(new_config)
         row.config = merged
