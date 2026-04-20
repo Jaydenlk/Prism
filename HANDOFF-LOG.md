@@ -45,6 +45,66 @@
 
 ---
 
+## ✅ 2026-04-20 Session 3 Phase B Phase 2 DOC-IM2 — 完成(merge 3da43e5)
+
+**成果总览**(全部在 develop 分支,local merge 3da43e5,无 remote):
+
+### 做了什么(按 commit 顺序)
+1. **fixture bug fix**(8ad1105)—— `e2e/fixtures/auth.ts` `getAdminToken()` 修 leading-slash bug,改 `BASE = 'http://localhost:8080'` + path `/api/v1/auth/login`。Phase 1 留下的 2 行 chore,独立 commit 在 develop。
+2. **Phase 2 RED**(5b1a207)—— 3 份 Python unit test + 1 份 e2e:
+   - `test_im_feishu_card_sig.py`(5 tests,SHA-1 + verify_token + nonce,确认不交叉事件订阅 SHA-256 路径)
+   - `test_im_slack_signature.py`(5 tests,HMAC-SHA256 v0 前缀 + ±5min 窗口 + url_verification handshake + tampered/expired/future 时间戳拒绝)
+   - `test_im_discord_signature.py`(5 tests,Ed25519 via PyNaCl + PING→PONG + BadSignatureError fail-closed)
+   - `e2e/tests/im-channels.spec.ts`(2 tests,Admin page 4 行 + GET /im/channels 返 slack+discord)
+3. **Phase 2 impl**(b14a896,11 文件 +707/-40)—— 详见 ADR-088;关键:
+   - `im_feishu.py`:新 `verify_card_signature()` SHA-1,修 docstring drift
+   - `im_slack.py`:新文件,HMAC + url_verification + parse_event + send
+   - `im_discord.py`:新文件,Ed25519 + PING/PONG + parse_event + send
+   - `im_adapter.py`:新 `IMOutgoingCard` + `IMCardAction` dataclass(v1 无 abstract send_card)
+   - `config.py`:`SLACK_* / IM_SLACK_MODE` + `DISCORD_*` 字段
+   - `requirements.txt`:`pynacl>=1.5.0`
+   - `api/v1/im.py`:新 `/im/webhook/slack` + `/im/webhook/discord` 路由;`_KNOWN_CHANNELS` 枚举 + `/im/channels` 始终返 5 行占位
+   - `main.py` lifespan:注册 Feishu + Slack + Discord 三个 adapter 到 IMGateway
+   - `admin.html`:`data-testid="im-channel-row-{channel}"` 行级标记
+   - `schemas/im.py`:`IMChannelConfigResponse` `created_at/updated_at` 改 optional
+4. **ADR-088**(38aab05)—— `DECISIONS.md` 追加 Phase 2 ADR 含 5 条偏离点 + future work
+5. **Merge 3da43e5**(no-ff)—— 整套 DOC-IM2 整合到 develop
+
+### 验证结果(evidence-based)
+- **Python unit tests**:`pytest tests/test_im_feishu_card_sig.py tests/test_im_slack_signature.py tests/test_im_discord_signature.py` → **15/15 passed**(0.07s)
+- **e2e im-channels**:2 tests × 2 viewports = **4/4 passes**
+- **Desktop-chromium 完整回归**:**21 pass / 4 skip / 0 fail**(较 Phase 1 merge 后 baseline 多 2 个 pass = 新 im-channels,零回归)
+- **Mobile-safari 完整回归**:19 pass / 3 skip / 3 fail
+  - 3 mobile failures 分析:`loginAsAdmin` 等待 `input[type="email"]` 10s timeout — 跨测试 session state leak。**单跑每个 spec mobile 都全绿**(Phase 1 mobile 4/4 + Phase 2 im-channels mobile 2/2 + skills.spec.ts mobile 单跑 pass),**仅 full-suite 顺序执行才触发**。根因:fixture bug 修好后,previously-skipped test 现在 actually runs,有时在 mobile webkit 下 session restoration 时序漂移 → loginAsAdmin 既见不到 sidebar 又见不到 email 输入框 → timeout。是 **测试 hygiene** 问题,与 DOC-IM2 代码无关。follow-up:`test.beforeEach` 清 storage。
+- **Backend image**:带 PyNaCl 1.5.0 rebuild 成功 + healthy;in-container import chain 4 adapter + IMOutgoingCard 全 load;4 webhook 路由注册(`/webhook/feishu` + `/webhook/slack` + `/webhook/discord` + `/webhook/wecom GET+POST`)
+- **workspace**:clean;develop HEAD = merge 3da43e5
+
+### ⚠️ Phase 3 开工前需注意
+1. **Mobile cross-test flakiness**:上条分析的 session leak;不紧急但需 follow-up。临时绕过:worker-scoped `storageState` 固化 OR `test.beforeEach` 清 storage。
+2. **Docker nginx 现在 mount 在 `.worktrees/redesign-doc-im2/frontend`**(Phase 2 worktree);merge 后主仓 develop 内容等价。Phase 3 开工若切 worktree 再 recreate nginx。
+3. **DOC-IM2 延后项**(ADR-088 偏离点已录):
+   - 真实 `send_card` 方法实现(Feishu interactive card / Slack blocks / Discord embed)
+   - Slack Socket Mode(xapp-app-token)
+   - IM credential AES-encrypted JSONB 迁移(spec I4 未实施)
+   - Admin UI PATCH 编辑入口 + test-send 按钮
+4. **code-reviewer 队列**:累积 Phase 1 + Phase 2 未审;可在 Phase 3 结束前一并跑 `superpowers:requesting-code-review`
+5. **worktree 仍存在**:`.worktrees/redesign-doc-sk` + `.worktrees/redesign-doc-im2` 可清理(`git worktree remove`)或保留调试
+
+### Commits(develop 分支,自下而上)
+```
+8ad1105 fix(e2e): getAdminToken fixture
+5b1a207 test(im): RED phase
+b14a896 feat(im): Slack + Discord + Feishu card sig
+38aab05 docs(adr): ADR-088
+3da43e5 Merge DOC-IM2 Phase 2 → develop (no-ff, no remote)
+```
+
+### Phase 2 完成度
+- Plan Task 9 ~ 16:✅ 全部(含延后项清单)
+- **延后到 Phase 4+**:真实 `send_card` 实现 / Socket Mode / credential JSONB 迁移 / Admin 编辑 UI / code-review chain
+
+---
+
 ## ✅ 2026-04-20 Session 3 Phase B Phase 1 DOC-SK — 完成(merge 74f6750)
 
 **成果总览**(全部在 develop 分支,local merge 74f6750,无 remote):
