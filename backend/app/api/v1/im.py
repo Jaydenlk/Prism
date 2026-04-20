@@ -52,6 +52,10 @@ router = APIRouter(prefix="/im", tags=["im"])
 # Channel config management (admin only)
 # ---------------------------------------------------------------------------
 
+#: 已知 IM 渠道枚举（DOC-IM2 ADR-088 扩展到 slack + discord）
+_KNOWN_CHANNELS = ("feishu", "wecom", "slack", "discord", "telegram")
+
+
 @router.get(
     "/channels",
     response_model=ApiResponse[list[IMChannelConfigResponse]],
@@ -61,22 +65,39 @@ def list_channels(
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[IMChannelConfigResponse]]:
-    """列出 im_channel_configs 中所有渠道配置（config 字段脱敏）。"""
+    """列出所有已知 IM 渠道配置(config 字段脱敏)。
+
+    DB 已有行直接返回;_KNOWN_CHANNELS 中尚未写入 im_channel_configs 的渠道
+    返回占位行(is_enabled=False, config={}),以便 Admin UI 始终展示完整列表。
+    """
     rows = db.query(ImChannelConfig).order_by(ImChannelConfig.channel).all()
-    result = []
-    for row in rows:
-        # 脱敏：移除 secret / token / key 类字段
-        safe_config = _redact_secrets(row.config)
-        result.append(
-            IMChannelConfigResponse(
-                id=row.id,
-                channel=row.channel,
-                is_enabled=row.is_enabled,
-                config=safe_config,
-                created_at=row.created_at,
-                updated_at=row.updated_at,
+    by_channel = {row.channel: row for row in rows}
+
+    result: list[IMChannelConfigResponse] = []
+    for channel in _KNOWN_CHANNELS:
+        row = by_channel.get(channel)
+        if row is None:
+            result.append(
+                IMChannelConfigResponse(
+                    id="",
+                    channel=channel,
+                    is_enabled=False,
+                    config={},
+                    created_at=None,
+                    updated_at=None,
+                )
             )
-        )
+        else:
+            result.append(
+                IMChannelConfigResponse(
+                    id=row.id,
+                    channel=row.channel,
+                    is_enabled=row.is_enabled,
+                    config=_redact_secrets(row.config),
+                    created_at=row.created_at,
+                    updated_at=row.updated_at,
+                )
+            )
     return ApiResponse(data=result)
 
 
@@ -215,6 +236,130 @@ async def webhook_feishu(
         event_type=body.get("header", {}).get("event_type", body.get("type", "unknown")),
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Slack Events API webhook (DOC-IM2 I2, ADR-088)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/webhook/slack",
+    include_in_schema=False,
+    summary="Slack Events API 回调",
+)
+async def webhook_slack(request: Request) -> dict[str, Any]:
+    """
+    Slack Events API 入口。
+
+    Flow(https://docs.slack.dev/apis/events-api/):
+      1. 读取 body bytes(签名覆盖原始 body)
+      2. Fast path:url_verification → {"challenge": "..."}
+      3. 检查 adapter 已配置 + 签名通过(HMAC-SHA256 v0 + 5min 窗口)
+      4. 委托给 SlackAdapter.parse_event → IMGateway._handle_message
+      5. 3s ACK budget:立即返回 {"ok": True},重任务 defer 到后台(v1 简化:同步处理,未来接 TaskService)
+    """
+    body_bytes = await request.body()
+
+    from app.services.im_slack import SlackAdapter
+    gw = getattr(request.app.state, "im_gateway", None)
+    adapter = gw.get_adapter("slack") if gw else None
+    if not isinstance(adapter, SlackAdapter):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Slack adapter not initialized.",
+        )
+
+    # Fast path: URL verification (Slack initial config).
+    challenge = SlackAdapter.build_url_verification_response(body_bytes)
+    if challenge is not None:
+        logger.info("im.webhook.slack.url_verification")
+        return challenge
+
+    if not adapter.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Slack bot not configured.",
+        )
+
+    if not adapter.verify_signature(dict(request.headers), body_bytes):
+        logger.warning("im.webhook.slack.signature_mismatch")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Slack webhook signature.",
+        )
+
+    incoming = await adapter.parse_event(body_bytes)
+    if incoming is not None:
+        # Route via the gateway's message handler (set in register_adapter).
+        if adapter._message_handler is not None:
+            try:
+                await adapter._message_handler(incoming)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("im.webhook.slack.handler_error", error=str(exc))
+
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Discord HTTP Interactions webhook (DOC-IM2 I3, ADR-088)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/webhook/discord",
+    include_in_schema=False,
+    summary="Discord Interactions 回调",
+)
+async def webhook_discord(request: Request) -> dict[str, Any]:
+    """Discord HTTP Interactions 入口。
+
+    Discord 会主动 probe 坏签名,**必须** 在 signature 校验失败时返回 401
+    (non-2xx)而非 200。PING(type=1)回 PONG(type=1)。
+    """
+    body_bytes = await request.body()
+
+    from app.services.im_discord import DiscordAdapter
+    gw = getattr(request.app.state, "im_gateway", None)
+    adapter = gw.get_adapter("discord") if gw else None
+    if not isinstance(adapter, DiscordAdapter):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discord adapter not initialized.",
+        )
+
+    if not adapter.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discord adapter not configured.",
+        )
+
+    # Signature check BEFORE parsing — Discord probes bad sigs.
+    if not adapter.verify_signature(dict(request.headers), body_bytes):
+        logger.warning("im.webhook.discord.signature_mismatch")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Discord webhook signature.",
+        )
+
+    import json as _json
+    try:
+        parsed = _json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+    except Exception:
+        parsed = {}
+
+    pong = DiscordAdapter.build_ping_response(parsed)
+    if pong is not None:
+        logger.info("im.webhook.discord.ping_pong")
+        return pong
+
+    incoming = await adapter.parse_event(body_bytes)
+    if incoming is not None and adapter._message_handler is not None:
+        try:
+            await adapter._message_handler(incoming)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("im.webhook.discord.handler_error", error=str(exc))
+
+    # Defer/empty ACK for a handled interaction (type 5 = DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE)
+    return {"type": 5}
 
 
 @router.get(
