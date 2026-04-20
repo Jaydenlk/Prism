@@ -24,11 +24,11 @@ from __future__ import annotations
 
 import base64
 import os
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Union
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from sqlalchemy.orm import Session
 
@@ -410,6 +410,15 @@ _MANIFEST_BY_TYPE: dict[str, type[_BaseManifest]] = {
     "trigger": TriggerManifest,
 }
 
+# Pydantic discriminated union: validate_python picks the right sub-schema
+# based on manifest["type"] and surfaces the standard Pydantic error format
+# (loc + msg) for both unknown-type and field-level validation failures.
+PluginManifest = Annotated[
+    Union[ToolManifest, AgentStrategyManifest, ExtensionManifest, TriggerManifest],
+    Field(discriminator="type"),
+]
+_plugin_manifest_adapter = TypeAdapter(PluginManifest)
+
 
 class ValidateManifestRequest(BaseModel):
     """POST /plugins/validate-manifest 请求体。"""
@@ -445,22 +454,17 @@ async def validate_manifest(
     body: ValidateManifestRequest,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[ValidateManifestResponse]:
-    """按 type 分派到 type-specific Pydantic sub-schema 校验 manifest(ADR-087)."""
-    manifest = body.manifest or {}
-    ptype = manifest.get("type", "tool")
-    sub = _MANIFEST_BY_TYPE.get(ptype)
-    if sub is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=[{
-                "loc": ["type"],
-                "msg": f"unknown plugin type '{ptype}' (expected tool|agent_strategy|extension|trigger)",
-                "type": "value_error",
-            }],
-        )
-    normalized = {**manifest, "type": ptype}
+    """按 type 分派到 type-specific Pydantic sub-schema 校验 manifest(ADR-087).
+
+    Pydantic v2 discriminated union dispatches on ``manifest["type"]``;
+    unknown types and field-level errors all come back through ``ValidationError``
+    with standard ``errors()`` (loc + msg) preserving 422 detail fidelity.
+    """
+    manifest = body.manifest if body.manifest else {}
+    if "type" not in manifest:
+        manifest = {**manifest, "type": "tool"}
     try:
-        parsed = sub.model_validate(normalized)
+        parsed = _plugin_manifest_adapter.validate_python(manifest)
     except ValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -586,7 +590,7 @@ async def save_plugin(
 
     # Resolve plugin_type: explicit body.type > manifest_json.type > 'tool' default.
     # If an explicit value is outside the enum, reject with 422 (ADR-087 strict on the type field).
-    _valid_types = {"tool", "agent_strategy", "extension", "trigger"}
+    _valid_types = set(_MANIFEST_BY_TYPE)
     effective_type = body.type or (manifest_json.get("type") if isinstance(manifest_json, dict) else None) or "tool"
     if effective_type not in _valid_types:
         raise HTTPException(
