@@ -171,6 +171,21 @@ class IMAdapter(ABC):
         """
         ...
 
+    async def send_card(self, card: "IMOutgoingCard") -> bool:
+        """发送结构化交互卡片(ADR-088 Session 4b, I5 偏离点清零)。
+
+        统一 ``IMOutgoingCard`` → 平台原生结构的翻译:
+          - Feishu  → interactive card JSON(msg_type=interactive)
+          - Slack   → Block Kit blocks(header + section + actions)
+          - Discord → embed + message components(ActionRow + Button)
+
+        支持 cards 的 adapter 必须 override。未 override 时抛
+        NotImplementedError 以显式暴露"某 channel 不支持 card"而非静默吞掉。
+        """
+        raise NotImplementedError(
+            f"{self.channel_name} adapter 未实现 send_card"
+        )
+
     # ------------------------------------------------------------------
     # Concrete helper
     # ------------------------------------------------------------------
