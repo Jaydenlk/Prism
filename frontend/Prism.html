@@ -3072,6 +3072,32 @@ function SkillsSettingsTab({ onToast }) {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [uninstalling, setUninstalling] = useState(null);
+  const [installingSearch, setInstallingSearch] = useState({}); // Fix#3 防重点
+
+  // Fix #3: SkillsSettings 搜索安装死按钮接通(spec af85a27)
+  // /skills/search response 已含 source/source_url/version,直接复用 SkillsPage GitHub install 链路
+  // Key by `${source}:${name}` 避免跨源同名 skill 误锁(I-2);finally 保证 cleanup(I-1)
+  function searchKey(sk) { return `${sk.source}:${sk.skill_name || sk.name}`; }
+  async function handleInstallFromSearch(sk) {
+    const name = sk.skill_name || sk.name;
+    const key = searchKey(sk);
+    if (installingSearch[key]) return;
+    setInstallingSearch(prev => ({ ...prev, [key]: true }));
+    try {
+      await PrismAPI.skills.install({
+        skill_name: name,
+        source: sk.source,
+        source_url: sk.source_url,
+        version: sk.version,
+      });
+      onToast({ id: Date.now(), kind: "success", title: "安装成功", body: name });
+      await loadInstalled();
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "安装失败", body: err.message || String(err) });
+    } finally {
+      setInstallingSearch(prev => { const next = { ...prev }; delete next[key]; return next; });
+    }
+  }
 
   async function loadInstalled() {
     setLoading(true);
@@ -3136,7 +3162,13 @@ function SkillsSettingsTab({ onToast }) {
                     {sk.description && <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3, fontFamily: "var(--serif)", fontStyle: "italic" }}>{sk.description}</div>}
                   </div>
                   {isInst ? <span className="badge teal">已装</span> : (
-                    <button className="btn sm primary" onClick={() => onToast({ id: Date.now(), title: "暂不支持", body: "从搜索结果安装需要提供 source_url/version，请联系管理员操作。" })}>安装</button>
+                    <button
+                      data-testid={`skill-search-install-${sk.source}-${name}`}
+                      className="btn sm primary"
+                      onClick={() => handleInstallFromSearch(sk)}
+                      disabled={!!installingSearch[searchKey(sk)]}
+                      style={{ minHeight: 36 }}
+                    >{installingSearch[searchKey(sk)] ? "安装中…" : "安装"}</button>
                   )}
                 </div>
               );
