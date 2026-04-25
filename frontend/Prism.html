@@ -3076,10 +3076,13 @@ function SkillsSettingsTab({ onToast }) {
 
   // Fix #3: SkillsSettings 搜索安装死按钮接通(spec af85a27)
   // /skills/search response 已含 source/source_url/version,直接复用 SkillsPage GitHub install 链路
+  // Key by `${source}:${name}` 避免跨源同名 skill 误锁(I-2);finally 保证 cleanup(I-1)
+  function searchKey(sk) { return `${sk.source}:${sk.skill_name || sk.name}`; }
   async function handleInstallFromSearch(sk) {
     const name = sk.skill_name || sk.name;
-    if (installingSearch[name]) return;
-    setInstallingSearch(prev => ({ ...prev, [name]: true }));
+    const key = searchKey(sk);
+    if (installingSearch[key]) return;
+    setInstallingSearch(prev => ({ ...prev, [key]: true }));
     try {
       await PrismAPI.skills.install({
         skill_name: name,
@@ -3091,8 +3094,9 @@ function SkillsSettingsTab({ onToast }) {
       await loadInstalled();
     } catch (err) {
       onToast({ id: Date.now(), kind: "danger", title: "安装失败", body: err.message || String(err) });
+    } finally {
+      setInstallingSearch(prev => { const next = { ...prev }; delete next[key]; return next; });
     }
-    setInstallingSearch(prev => { const next = { ...prev }; delete next[name]; return next; });
   }
 
   async function loadInstalled() {
@@ -3159,12 +3163,12 @@ function SkillsSettingsTab({ onToast }) {
                   </div>
                   {isInst ? <span className="badge teal">已装</span> : (
                     <button
-                      data-testid={`skill-search-install-${name}`}
+                      data-testid={`skill-search-install-${sk.source}-${name}`}
                       className="btn sm primary"
                       onClick={() => handleInstallFromSearch(sk)}
-                      disabled={!!installingSearch[name]}
+                      disabled={!!installingSearch[searchKey(sk)]}
                       style={{ minHeight: 36 }}
-                    >{installingSearch[name] ? "安装中…" : "安装"}</button>
+                    >{installingSearch[searchKey(sk)] ? "安装中…" : "安装"}</button>
                   )}
                 </div>
               );

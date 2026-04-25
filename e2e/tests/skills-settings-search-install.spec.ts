@@ -93,7 +93,7 @@ test.describe('Fix #3: SkillsSettings 搜索安装(找茬找错)', () => {
     await page.fill('input[placeholder*="搜索技能名"]', 'demo');
     await page.click('button:has-text("搜索")');
     const installBtn = page.locator(
-      '[data-testid="skill-search-install-demo-skill"]'
+      '[data-testid="skill-search-install-github-demo-skill"]'
     );
     await expect(installBtn).toBeVisible();
     await installBtn.click();
@@ -141,7 +141,7 @@ test.describe('Fix #3: SkillsSettings 搜索安装(找茬找错)', () => {
       page.locator('.badge.teal').filter({ hasText: '已装' }).first()
     ).toBeVisible();
     await expect(
-      page.locator('[data-testid="skill-search-install-demo-skill"]')
+      page.locator('[data-testid="skill-search-install-github-demo-skill"]')
     ).toHaveCount(0);
   });
 
@@ -163,7 +163,7 @@ test.describe('Fix #3: SkillsSettings 搜索安装(找茬找错)', () => {
     await page.fill('input[placeholder*="搜索技能名"]', 'demo');
     await page.click('button:has-text("搜索")');
     const btn = page.locator(
-      '[data-testid="skill-search-install-demo-skill"]'
+      '[data-testid="skill-search-install-github-demo-skill"]'
     );
     await btn.click();
     await btn.click({ force: true });
@@ -190,7 +190,7 @@ test.describe('Fix #3: SkillsSettings 搜索安装(找茬找错)', () => {
     });
     await page.fill('input[placeholder*="搜索技能名"]', 'demo');
     await page.click('button:has-text("搜索")');
-    await page.click('[data-testid="skill-search-install-demo-skill"]');
+    await page.click('[data-testid="skill-search-install-github-demo-skill"]');
     await expect(page.locator('.toast.danger').first()).toBeVisible({
       timeout: 5000,
     });
@@ -211,7 +211,7 @@ test.describe('Fix #3: SkillsSettings 搜索安装(找茬找错)', () => {
     });
     await page.fill('input[placeholder*="搜索技能名"]', 'demo');
     await page.click('button:has-text("搜索")');
-    await page.click('[data-testid="skill-search-install-demo-skill"]');
+    await page.click('[data-testid="skill-search-install-github-demo-skill"]');
     await expect(page.locator('.toast.danger').first()).toBeVisible({
       timeout: 5000,
     });
@@ -264,7 +264,7 @@ test.describe('Fix #3: SkillsSettings 搜索安装(找茬找错)', () => {
     await page.getByText('技能', { exact: true }).first().click();
     await page.fill('input[placeholder*="搜索技能名"]', 'demo');
     await page.click('button:has-text("搜索")');
-    await page.click('[data-testid="skill-search-install-demo-skill"]');
+    await page.click('[data-testid="skill-search-install-github-demo-skill"]');
     await expect(page.locator('.toast.success').first()).toBeVisible({
       timeout: 5000,
     });
@@ -288,7 +288,7 @@ test.describe('Fix #3: SkillsSettings 搜索安装(找茬找错)', () => {
     await page.fill('input[placeholder*="搜索技能名"]', 'demo');
     await page.click('button:has-text("搜索")');
     const btn = page.locator(
-      '[data-testid="skill-search-install-demo-skill"]'
+      '[data-testid="skill-search-install-github-demo-skill"]'
     );
     await expect(btn).toBeVisible();
     const h = await btn.evaluate((el) => el.getBoundingClientRect().height);
@@ -310,7 +310,7 @@ test.describe('Fix #3: SkillsSettings 搜索安装(找茬找错)', () => {
     await page.fill('input[placeholder*="搜索技能名"]', 'demo');
     await page.click('button:has-text("搜索")');
     const btn = page.locator(
-      '[data-testid="skill-search-install-demo-skill"]'
+      '[data-testid="skill-search-install-github-demo-skill"]'
     );
     await btn.focus();
     await expect(btn).toBeFocused();
