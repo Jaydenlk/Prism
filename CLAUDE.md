@@ -1,9 +1,77 @@
 # Prism v2 — Claude Code 项目指引
 
-> **适用**: 本仓库所有 Sonnet 4.6 会话
-> **版本**: 1.0(2026-04-18 初始化)
+> **适用**: 本仓库所有 Sonnet / Opus 会话
+> **版本**: 1.1(2026-04-20 用户硬规则锁定)
 > **完整版**: `PRD_V4/DOC-CC-ONBOARDING.md`
 > **执行策略**: `PRD_V4/2026-04-18-execution-strategy-design.md`
+
+---
+
+## 🔴 用户硬规则(2026-04-20 锁定 — 优先级最高,凌驾下方所有)
+
+### A. 五条开发原则(硬底线,贯穿全部代码改动)
+
+1. **单一职责原则** — 每个服务、方法只负责一个明确的职责域,避免职责混乱
+2. **最简代码原则** — 不做向后兼容,宁愿破坏性更新也要保证代码最简化,删除所有冗余代码
+3. **类型严格原则** — 所有 TypeScript / Python 类型必须正确,不使用 `any`,编译错误立即修复
+4. **KISS 原则** — 保持简单直接,如果需要解释就是太复杂了
+5. **文档置信度原则** — 绝不基于推测写代码,必须基于真实可验证的技术文档。涉及支付 / 数据库 / API / 认证签名 / 加密 等关键功能时,文档置信度不足必须停下,要求用户提供准确资料
+
+### B. Skill 加载硬要求(任一缺失 → 立即停止任务告知用户,严禁盲目无 skill 执行)
+
+任何任务开工 → `superpowers:using-superpowers` 已自动加载
+
+| 阶段 | 必加载 skill |
+|---|---|
+| 创意 / 新功能 / 修改行为 | `superpowers:brainstorming` 必先 |
+| 多步任务 / 写实施 plan | `superpowers:writing-plans` |
+| 实施代码 | `superpowers:test-driven-development` + `superpowers:using-git-worktrees`(隔离开发) |
+| 调试任何 bug / 测试失败 / 异常行为 | `superpowers:systematic-debugging`(根因优先,Phase 1 没完不许提 fix) |
+| 完工审查阶段 | `simplify`(3 subagent 并行 reuse / quality / efficiency)→ `project-review:pjr`(lint / build / 逻辑 / 合并)→ `superpowers:requesting-code-review` |
+| 合并到 develop | `git-merge-to-develop:git-merge-to-develop` 必先加载 |
+| 涉及前端(任何 UI 改动) | **追加** `frontend-design` **和** `ui-ux-pro-max:ui-ux-pro-max` 两个 skill |
+
+**严格遵循 superpowers 系列原则。skill 找不到 → 立即停 + 告知用户,不准盲目执行。**
+
+### C. Worktree 隔离硬要求
+
+- **所有开发必须在 git worktree 里执行**(`.worktrees/<topic>/`)
+- 例外:任务**非常简单**(单文件改 1-3 行 / 文档改 / 配置 toggle),可不用 worktree
+- 涉及前后端逻辑改动 / 多文件 / 跨模块 → 必须 worktree
+
+### D. 端到端测试硬要求(用户最严)
+
+- 用 **Playwright 直接测试**(MCP 浏览器或 local Playwright runtime)
+- **不是只写测试脚本**,要真实驱动浏览器走流程
+- **桌面端 + 移动端双端必测**(viewport 桌面 ≥1280 / 移动 390×844)
+- **每个按钮 / 每个流程完全模拟人走一遍**:注册 / 登录 / CRUD / 取消 / 确认 / 失败路径都要触发并断言
+- **看到页面渲染没问题 ≠ 通过**;必须验证状态变更(network 请求 / DB 写入 / UI 更新)和 error path
+
+### E. 反打补丁硬规则(严格禁止)
+
+- 任何修改 / 修复 / 新增,**严禁**绕过根因打补丁
+- 必须**深度融合到代码逻辑内部**,通过**重构 / 调整 / 结合现有逻辑** 实现改变
+- 出现"加一层 if"、"兜底默认值"、"特殊路径绕过"的冲动 → 先问"根因是什么,能否在源头解决"
+- 最终代码**必须最简**(过程可复杂,结果简洁,完整实现需求)
+- systematic-debugging Phase 1(reproduce / read errors / trace data flow)未完成,**不许提 fix**
+
+### F. 文档置信度扩展硬规则
+
+- 任何官方 / 外部接口:开工前 **WebFetch primary source**(不只看二手调研)
+- 任何参考资料:用 **exa MCP**(`mcp__exa__web_search_exa` / `mcp__exa__web_fetch_exa`)穷尽搜集 — 官方手册 + 真实案例 + 工作原理
+- 调研报告 vs 官方冲突 → 以官方为准 + 写 `docs/superpowers/blockers/<date>-<topic>-blocker.md` 通知用户
+- 关键功能(支付 / DB / API / 认证 / 签名 / 加密)文档置信度不足 → 停 + blocker + 等用户资料,不许靠推断写代码
+
+### G. 需求理解硬规则
+
+- 从**业务角度**理解需求,保证**链路完整** + **符合用户思维**
+- 充分**探索现有代码**(grep / Read / 读 PRD)再开发
+- 技术方案上,只需遵循需求 + 明确含义 + 链路完整;不假设技术栈,确认后写
+
+### H. PJR 阶段对前端硬要求
+
+- PJR 不只是后端检查;前端 **lint + build 必须完整执行**(`node --check` / npx eslint / 必要时 build)
+- 任何只跑后端 PJR 的会话视为不合格
 
 ---
 
