@@ -3072,6 +3072,28 @@ function SkillsSettingsTab({ onToast }) {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [uninstalling, setUninstalling] = useState(null);
+  const [installingSearch, setInstallingSearch] = useState({}); // Fix#3 防重点
+
+  // Fix #3: SkillsSettings 搜索安装死按钮接通(spec af85a27)
+  // /skills/search response 已含 source/source_url/version,直接复用 SkillsPage GitHub install 链路
+  async function handleInstallFromSearch(sk) {
+    const name = sk.skill_name || sk.name;
+    if (installingSearch[name]) return;
+    setInstallingSearch(prev => ({ ...prev, [name]: true }));
+    try {
+      await PrismAPI.skills.install({
+        skill_name: name,
+        source: sk.source,
+        source_url: sk.source_url,
+        version: sk.version,
+      });
+      onToast({ id: Date.now(), kind: "success", title: "安装成功", body: name });
+      await loadInstalled();
+    } catch (err) {
+      onToast({ id: Date.now(), kind: "danger", title: "安装失败", body: err.message || String(err) });
+    }
+    setInstallingSearch(prev => { const next = { ...prev }; delete next[name]; return next; });
+  }
 
   async function loadInstalled() {
     setLoading(true);
@@ -3136,7 +3158,13 @@ function SkillsSettingsTab({ onToast }) {
                     {sk.description && <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3, fontFamily: "var(--serif)", fontStyle: "italic" }}>{sk.description}</div>}
                   </div>
                   {isInst ? <span className="badge teal">已装</span> : (
-                    <button className="btn sm primary" onClick={() => onToast({ id: Date.now(), title: "暂不支持", body: "从搜索结果安装需要提供 source_url/version，请联系管理员操作。" })}>安装</button>
+                    <button
+                      data-testid={`skill-search-install-${name}`}
+                      className="btn sm primary"
+                      onClick={() => handleInstallFromSearch(sk)}
+                      disabled={!!installingSearch[name]}
+                      style={{ minHeight: 36 }}
+                    >{installingSearch[name] ? "安装中…" : "安装"}</button>
                   )}
                 </div>
               );
