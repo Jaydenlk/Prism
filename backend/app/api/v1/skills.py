@@ -91,7 +91,7 @@ class SkillPackageResponse(BaseModel):
     name: str
     description: str
     version: str
-    source: Literal["local", "github"]
+    source: Literal["local", "github", "marketplace"]  # fix#3+ 加 marketplace
     source_url: str
     author: str | None = None
     tags: list[str] = Field(default_factory=list)
@@ -609,19 +609,25 @@ async def get_skill_detail(
 
 
 def _get_registry():
-    """懒加载 SkillsRegistry（不依赖 DB，直接操作文件系统）。"""
+    """懒加载 SkillsRegistry(fix#3+: LocalSource + MarketplaceCatalogSource).
+
+    与 Claude Code 官方 Discover pattern 对齐:用户先注册 marketplace,然后
+    search 从已注册 catalogs 浏览。无 GITHUB_TOKEN 依赖。
+    """
+    from app.core.database import SessionLocal
     from executor.plugins.skills_registry import (
-        GitHubSource,
         LocalSource,
+        MarketplaceCatalogSource,
         SkillsRegistry,
     )
 
     workspace = os.environ.get("PRISM_WORKSPACE", os.getcwd())
     install_dir = os.path.join(workspace, ".prism", "skills")
-    local_source = LocalSource(workspace=workspace)
-    github_source = GitHubSource()  # 无 token 时 search 返回空列表
     return SkillsRegistry(
-        sources=[local_source, github_source],
+        sources=[
+            LocalSource(workspace=workspace),
+            MarketplaceCatalogSource(db_session_factory=SessionLocal),
+        ],
         install_dir=install_dir,
     )
 

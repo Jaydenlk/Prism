@@ -27,7 +27,7 @@ from executor.plugins.skills_registry import (
     InstalledSkill,
     SkillSource,
     LocalSource,
-    GitHubSource,
+    MarketplaceCatalogSource,  # fix#3+ 替代 GitHubSource(已删除)
     SkillsRegistry,
 )
 from executor.plugins.cc_compat import (
@@ -63,7 +63,7 @@ __all__ = [
     "InstalledSkill",
     "SkillSource",
     "LocalSource",
-    "GitHubSource",
+    "MarketplaceCatalogSource",
     "SkillsRegistry",
     # Task 5.7: CC 兼容层（ADR-054/ADR-055）
     "CCPluginAdapter",

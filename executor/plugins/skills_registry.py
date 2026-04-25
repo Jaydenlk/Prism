@@ -2,14 +2,19 @@
 Skills 多源聚合注册表
 
 DOC-05 Task 5.5: Skills Registry & Multi-Source Aggregation（ADR-051）
-ADR-051 (PRD 原标 ADR-047 平移): Phase 1 仅 Local + GitHub 两源。
-  - NpmSource / ManusSource 推迟到 Phase 2（抽象基类已预留扩展点）
+v1.1 (fix#3+): GitHubSource 删除,新 MarketplaceCatalogSource 读 Block 1
+              marketplace_registry.catalog_json plugins[],与 Claude Code
+              官方 Discover tab pattern 对齐(无 GitHub Code Search 需求)。
+
   - 去重策略：按 Skill name 去重，已安装版本优先展示
   - 跨源并行搜索（asyncio.gather）
 
 来源: Master M8, Batch 2 §A5-5; PRD DOC-05 v4 Task 5.5 Part A
+fix#3+ spec: docs/superpowers/specs/2026-04-20-fix-skills-search-data-source.md
 
-进程边界：本模块只 import executor.* + stdlib + httpx，禁止 import backend.app.*
+进程边界：本模块只 import executor.* + stdlib + httpx，禁止 import backend.app.*。
+注:MarketplaceCatalogSource 通过 DI(db_session_factory callable)接 backend
+   DB,调用方(backend/app/api/v1/skills.py::_get_registry)注入。
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ import os
 import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Callable, Literal
 
 import httpx
 import structlog
@@ -37,16 +42,17 @@ logger = structlog.get_logger()
 
 @dataclass
 class SkillPackage:
-    """Skills 搜索结果条目（v4）
+    """Skills 搜索结果条目(v4 → fix#3+)
 
-    source 字段枚举收窄为 Literal["local", "github"]（Phase 1 仅两源）。
+    source 枚举:local(本地文件)/ github(已安装的 GitHub plugin)/ marketplace
+    (从已注册 marketplaces catalog_json 中发现)。
     """
 
-    name: str                           # Skill 名称
-    description: str                    # 简短描述
-    version: str                        # 版本号
-    source: Literal["local", "github"]  # v4: Phase 1 只两种
-    source_url: str                     # 源地址（本地目录路径或 GitHub repo URL）
+    name: str                                          # Skill 名称
+    description: str                                   # 简短描述
+    version: str                                       # 版本号
+    source: Literal["local", "github", "marketplace"]  # fix#3+ 加 marketplace
+    source_url: str                                    # 源地址(本地路径 / GitHub URL / marketplace://name/plugin)
     author: str | None = None
     tags: list[str] = field(default_factory=list)
     installed: bool = False             # 是否已安装
@@ -290,123 +296,83 @@ class LocalSource(SkillSource):
 
 
 # ---------------------------------------------------------------------------
-# GitHubSource — GitHub 仓库直接安装
+# MarketplaceCatalogSource — 从已注册 marketplaces 的 catalog_json 浏览/搜索
+# (fix#3+ 替代 GitHubSource。读 marketplace_registry 表;无外部 API 依赖)
 # ---------------------------------------------------------------------------
 
 
-# GitHub API 相关常量
-_GITHUB_API_BASE = "https://api.github.com"
-_GITHUB_RAW_BASE = "https://raw.githubusercontent.com"
-_DEFAULT_GITHUB_TIMEOUT = 30.0
+class MarketplaceCatalogSource(SkillSource):
+    """Search across registered marketplaces' cached catalog_json (Block 1).
 
+    与 Claude Code 官方 Discover tab pattern 对齐:用户先 `/plugin marketplace
+    add` 注册 catalog,然后 search 在 catalog 内 client-side filter,无需任何
+    外部 API token。
 
-class GitHubSource(SkillSource):
-    """GitHub 仓库直接安装
-
-    支持格式：
-    - github:user/repo               — 默认分支的根目录
-    - github:user/repo#branch        — 指定分支
-    - github:user/repo@v1.0.0        — 指定 tag
-    - github:user/repo/path/to/skill — 仓库内子目录
-
-    实现：通过 GitHub API 获取目录树，通过 raw.githubusercontent.com 下载文件。
-
-    认证：可选 GITHUB_TOKEN 环境变量（提升 API 速率限制 60→5000 req/h）。
+    Args:
+        db_session_factory: 返回 SQLAlchemy Session 的 callable
+            (通常为 app.core.database.SessionLocal)。Search 时新建 session,
+            读完即关。
     """
 
-    source_name: str = "github"  # type: ignore[assignment]
+    source_name: str = "marketplace"  # type: ignore[assignment]
 
-    def __init__(
-        self,
-        github_token: str | None = None,
-        timeout: float = _DEFAULT_GITHUB_TIMEOUT,
-    ) -> None:
-        """
-        Args:
-            github_token: GitHub Personal Access Token（可选，优先级高于环境变量）
-            timeout: HTTP 请求超时秒数
-        """
-        token = github_token or os.environ.get("GITHUB_TOKEN", "")
-        self._headers: dict[str, str] = {
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        if token:
-            self._headers["Authorization"] = f"Bearer {token}"
-        self._timeout = timeout
+    def __init__(self, db_session_factory: Callable[[], Any]) -> None:
+        self._db_factory = db_session_factory
 
     async def search(self, query: str) -> list[SkillPackage]:
-        """通过 GitHub Code Search API 搜索 SKILL.md 文件。
+        """跨已注册 marketplaces 的 catalog_json plugins[] flatten + filter。
 
-        搜索关键词 query 追加 "filename:SKILL.md" 限定。
-        返回最多 30 条结果（GitHub API 单次限额）。
-        注意：需要 GitHub Token 才能调用 code search API（rate limit 严格）。
-        无 Token 时返回空列表并 log warning。
+        query 为空 → 返回所有 plugins(浏览模式);否则 substring match name +
+        description + keywords/tags。
         """
-        if "Authorization" not in self._headers:
-            logger.warning(
-                "github_source.search.no_token",
-                hint="Set GITHUB_TOKEN env var to enable GitHub search",
-            )
-            return []
+        # 后台导入避免 executor 顶层依赖 backend ORM
+        from app.models.marketplace import MarketplaceRegistry  # type: ignore
 
-        search_query = f"{query} filename:SKILL.md" if query else "filename:SKILL.md"
-        url = f"{_GITHUB_API_BASE}/search/code"
-        params = {"q": search_query, "per_page": 30}
+        db = self._db_factory()
+        try:
+            rows = list(db.query(MarketplaceRegistry).all())
+        finally:
+            db.close()
 
-        async with httpx.AsyncClient(
-            headers=self._headers, timeout=self._timeout
-        ) as client:
-            try:
-                resp = await client.get(url, params=params)
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                logger.warning(
-                    "github_source.search.http_error",
-                    status=exc.response.status_code,
-                    query=query,
-                )
-                return []
-            except httpx.RequestError as exc:
-                logger.warning(
-                    "github_source.search.request_error",
-                    error=str(exc),
-                    query=query,
-                )
-                return []
-
-        data = resp.json()
-        items = data.get("items", [])
         results: list[SkillPackage] = []
-        seen: set[str] = set()
+        q = (query or "").lower().strip()
 
-        for item in items:
-            repo = item.get("repository", {})
-            repo_full = repo.get("full_name", "")
-            file_path = item.get("path", "")
-            html_url = item.get("html_url", "")
+        for mp in rows:
+            catalog = mp.catalog_json or {}
+            if not isinstance(catalog, dict):
+                continue
+            for entry in catalog.get("plugins") or []:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("name")
+                if not isinstance(name, str) or not name:
+                    continue
+                if q and not _marketplace_entry_matches(entry, q):
+                    continue
 
-            # 尝试获取 SKILL.md frontmatter 来拿 name/description
-            pkg = await self._fetch_skill_package_from_search_item(
-                repo_full, file_path
-            )
-            if pkg is None:
-                # 降级：用 repo name 作为 skill name
-                pkg = SkillPackage(
-                    name=repo_full.replace("/", "__") or file_path,
-                    description=repo.get("description") or "",
-                    version="latest",
-                    source="github",
-                    source_url=html_url,
+                author_obj = entry.get("author")
+                author = (
+                    author_obj.get("name")
+                    if isinstance(author_obj, dict)
+                    else (author_obj if isinstance(author_obj, str) else None)
                 )
+                tags_raw = entry.get("keywords") or entry.get("tags") or []
+                tags = [str(t) for t in tags_raw if isinstance(t, (str, int))]
 
-            if pkg.name not in seen:
-                seen.add(pkg.name)
-                results.append(pkg)
+                results.append(SkillPackage(
+                    name=name,
+                    description=str(entry.get("description") or ""),
+                    version=str(entry.get("version") or "0.0.0"),
+                    source="marketplace",
+                    source_url=f"marketplace://{mp.name}/{name}",
+                    author=author,
+                    tags=tags,
+                ))
 
         logger.info(
-            "github_source.search",
+            "marketplace_catalog_source.search",
             query=query,
+            marketplaces=len(rows),
             found=len(results),
         )
         return results
@@ -414,274 +380,31 @@ class GitHubSource(SkillSource):
     async def fetch(
         self, package_id: str, version: str | None = None
     ) -> SkillBundle:
-        """从 GitHub 下载 Skill 文件，返回 SkillBundle。
-
-        package_id 格式：
-        - "user/repo"               — 根目录，默认分支
-        - "user/repo#branch"        — 指定分支
-        - "user/repo@v1.0.0"        — 指定 tag
-        - "user/repo/path/to/skill" — 仓库内子目录
-
-        实现：通过 GitHub API 获取 tree，逐文件 raw download。
+        """fetch 仅占位 — install 路径走 backend marketplace_service.install_plugin
+        (Block 1 ADR-090 5-Source Resolver),不经此 source。
         """
-        repo, ref, subpath = self._parse_package_id(package_id)
-
-        # 获取默认分支（如果 ref 未指定）
-        if not ref:
-            ref = await self._get_default_branch(repo)
-
-        # 获取目录树
-        files = await self._download_skill_files(repo, ref, subpath)
-
-        # 解析 SKILL.md 获取元数据
-        skill_md_content = files.get("SKILL.md")
-        if skill_md_content is None:
-            raise FileNotFoundError(
-                f"GitHubSource: SKILL.md not found in {package_id}"
-            )
-
-        skill_md_text = skill_md_content.decode("utf-8", errors="replace")
-        pkg = self._parse_frontmatter_text(
-            skill_md_text,
-            source_url=f"https://github.com/{repo}",
-            version=version or ref,
+        raise NotImplementedError(
+            "MarketplaceCatalogSource.fetch: install 走 marketplace_service."
+            "install_plugin (ADR-090 5-Source Resolver),不经此 path"
         )
-        if pkg is None:
-            pkg = SkillPackage(
-                name=repo.replace("/", "__"),
-                description="",
-                version=version or ref,
-                source="github",
-                source_url=f"https://github.com/{repo}",
-            )
-
-        return SkillBundle(metadata=pkg, files=files)
 
     async def get_versions(self, package_id: str) -> list[str]:
-        """获取 GitHub 仓库的 tag 列表（作为版本列表）。
-
-        package_id 格式与 fetch() 相同。
-        返回列表：最新 tag 在前，最多返回 20 条。
-        若无 tag，返回 ["latest"]（默认分支）。
-        """
-        repo, _ref, _subpath = self._parse_package_id(package_id)
-        url = f"{_GITHUB_API_BASE}/repos/{repo}/tags"
-
-        async with httpx.AsyncClient(
-            headers=self._headers, timeout=self._timeout
-        ) as client:
-            try:
-                resp = await client.get(url, params={"per_page": 20})
-                resp.raise_for_status()
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                logger.warning(
-                    "github_source.get_versions.error",
-                    repo=repo,
-                    error=str(exc),
-                )
-                return ["latest"]
-
-        tags = resp.json()
-        versions = [t.get("name", "") for t in tags if t.get("name")]
-        return versions if versions else ["latest"]
-
-    # ------------------------------------------------------------------
-    # 内部工具
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _parse_package_id(package_id: str) -> tuple[str, str, str]:
-        """解析 package_id 为 (repo, ref, subpath)。
-
-        格式:
-        - "user/repo"               → ("user/repo", "", "")
-        - "user/repo#branch"        → ("user/repo", "branch", "")
-        - "user/repo@v1.0.0"        → ("user/repo", "v1.0.0", "")
-        - "user/repo/path/to/skill" → ("user/repo", "", "path/to/skill")
-        - "github:user/repo"        → 去掉前缀 "github:"
-
-        返回 (repo_full_name, ref, subpath)。
-        """
-        pid = package_id
-        if pid.startswith("github:"):
-            pid = pid[len("github:"):]
-
-        # 先提取 ref（# 或 @）
-        ref = ""
-        if "#" in pid:
-            pid, ref = pid.split("#", 1)
-        elif "@" in pid:
-            # 注意：repo 本身不含 @，tag/branch 可能包含 v1.0.0 格式
-            # user/repo@v1.0.0 → repo="user/repo", ref="v1.0.0"
-            at_idx = pid.rfind("@")
-            before_at = pid[:at_idx]
-            # 只有当 @ 前至少有一个 / （即 user/repo 格式）才提取 ref
-            if before_at.count("/") >= 1:
-                pid = before_at
-                ref = package_id[package_id.rfind("@") + 1:]
-
-        # 分离 repo（前两段 user/repo）和 subpath（后续路径）
-        parts = pid.split("/")
-        if len(parts) >= 2:
-            repo = "/".join(parts[:2])
-            subpath = "/".join(parts[2:])
-        else:
-            repo = pid
-            subpath = ""
-
-        return repo, ref, subpath
-
-    async def _get_default_branch(self, repo: str) -> str:
-        """获取仓库的默认分支名（通常是 main 或 master）。"""
-        url = f"{_GITHUB_API_BASE}/repos/{repo}"
-        async with httpx.AsyncClient(
-            headers=self._headers, timeout=self._timeout
-        ) as client:
-            try:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                return resp.json().get("default_branch", "main")
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                logger.warning(
-                    "github_source.get_default_branch.error",
-                    repo=repo,
-                    error=str(exc),
-                )
-                return "main"
-
-    async def _download_skill_files(
-        self, repo: str, ref: str, subpath: str
-    ) -> dict[str, bytes]:
-        """通过 GitHub API tree 接口获取目录文件列表，下载所有文件。
-
-        返回 {相对路径 → 字节内容} dict。
-        subpath 为仓库内子目录（空表示根目录）。
-
-        采用并发下载（asyncio.gather）加速。
-        """
-        tree_url = f"{_GITHUB_API_BASE}/repos/{repo}/git/trees/{ref}?recursive=1"
-        async with httpx.AsyncClient(
-            headers=self._headers, timeout=self._timeout
-        ) as client:
-            try:
-                resp = await client.get(tree_url)
-                resp.raise_for_status()
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                raise RuntimeError(
-                    f"GitHubSource: failed to fetch tree for {repo}@{ref}: {exc}"
-                ) from exc
-
-        tree_data = resp.json()
-        tree_items = tree_data.get("tree", [])
-
-        # 过滤出 subpath 下的文件
-        file_items: list[tuple[str, str]] = []  # (rel_path, sha/download_url)
-        for item in tree_items:
-            if item.get("type") != "blob":
-                continue
-            path = item.get("path", "")
-            if subpath:
-                if not path.startswith(subpath.rstrip("/") + "/"):
-                    # 允许正好是 subpath/SKILL.md 这类情况
-                    if path != subpath + "/SKILL.md" and path != subpath:
-                        continue
-                rel = path[len(subpath.rstrip("/") + "/"):]
-            else:
-                rel = path
-            if not rel:
-                continue
-            raw_url = (
-                f"{_GITHUB_RAW_BASE}/{repo}/{ref}/{path}"
-            )
-            file_items.append((rel, raw_url))
-
-        if not file_items:
-            raise FileNotFoundError(
-                f"GitHubSource: no files found at {repo}/{subpath} @ {ref}"
-            )
-
-        # 并发下载
-        async def _download(rel_path: str, url: str) -> tuple[str, bytes]:
-            async with httpx.AsyncClient(
-                headers=self._headers, timeout=self._timeout
-            ) as cl:
-                try:
-                    r = await cl.get(url)
-                    r.raise_for_status()
-                    return rel_path, r.content
-                except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                    logger.warning(
-                        "github_source.download_file.error",
-                        url=url,
-                        error=str(exc),
-                    )
-                    return rel_path, b""
-
-        results = await asyncio.gather(*[_download(rp, u) for rp, u in file_items])
-        return {rp: content for rp, content in results if content}
-
-    async def _fetch_skill_package_from_search_item(
-        self, repo_full: str, file_path: str
-    ) -> SkillPackage | None:
-        """从 GitHub Code Search 结果中下载 SKILL.md，解析 frontmatter。
-
-        失败时返回 None（降级处理）。
-        """
-        # 获取默认分支
-        branch = await self._get_default_branch(repo_full)
-        raw_url = f"{_GITHUB_RAW_BASE}/{repo_full}/{branch}/{file_path}"
-
-        async with httpx.AsyncClient(
-            headers=self._headers, timeout=self._timeout
-        ) as client:
-            try:
-                resp = await client.get(raw_url)
-                resp.raise_for_status()
-                text = resp.text
-            except (httpx.HTTPStatusError, httpx.RequestError):
-                return None
-
-        return self._parse_frontmatter_text(
-            text,
-            source_url=f"https://github.com/{repo_full}",
-            version="latest",
-        )
-
-    @staticmethod
-    def _parse_frontmatter_text(
-        text: str,
-        source_url: str,
-        version: str,
-    ) -> SkillPackage | None:
-        """从 SKILL.md 文本解析 frontmatter，构建 SkillPackage。"""
-        if not text.startswith("---"):
-            return None
-        end = text.find("---", 3)
-        if end == -1:
-            return None
-        try:
-            fm = yaml.safe_load(text[3:end]) or {}
-        except yaml.YAMLError:
-            return None
-
-        name = fm.get("name")
-        if not name:
-            return None
-
-        return SkillPackage(
-            name=str(name),
-            description=str(fm.get("description", "")),
-            version=str(fm.get("version", version)),
-            source="github",
-            source_url=source_url,
-            author=fm.get("author"),
-            tags=list(fm.get("tags", [])),
-        )
+        """get_versions 占位 — 同上,catalog 内 plugin 版本即 entry.version。"""
+        return []
 
 
-# Phase 2 预留扩展点（禁止在 Phase 1 实现）：
-# class NpmSource(SkillSource): ...    # Phase 2: npm 包安装（需容器内 npm + 安全审计）
-# class ManusSource(SkillSource): ...  # Phase 2: Manus API（契约未稳定）
+def _marketplace_entry_matches(entry: dict, q: str) -> bool:
+    """Substring match (case-insensitive) on name + description + tags/keywords."""
+    if q in str(entry.get("name", "")).lower():
+        return True
+    if q in str(entry.get("description") or "").lower():
+        return True
+    for t in (entry.get("keywords") or entry.get("tags") or []):
+        if q in str(t).lower():
+            return True
+    return False
+
+
 
 
 # ---------------------------------------------------------------------------

@@ -1737,8 +1737,16 @@ function SkillsPage() {
           {searching ? (
             <div style={{ color: "var(--ink-3)", padding: "16px 0", fontSize: 13 }}>搜索中…</div>
           ) : searchResults.length === 0 ? (
-            <div style={{ color: "var(--ink-3)", padding: "16px 0", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>
-              {q ? `没有找到匹配 "${q}" 的技能` : "暂无可用技能"}
+            <div data-testid="skillspage-search-empty" style={{ padding: "16px 0" }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 4 }}>
+                {q ? `无匹配 "${q}"` : "暂无可搜索内容"}
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+                {q ? "检查拼写,或尝试其他关键词。" : "在右侧 Marketplace tab 注册一个 catalog,或上传本地 skill。"}
+                {marketplaces.length === 0 && q && (
+                  <>{" 还没注册 marketplace? 在右侧 Marketplace tab 添加。"}</>
+                )}
+              </div>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -3073,6 +3081,14 @@ function SkillsSettingsTab({ onToast }) {
   const [searching, setSearching] = useState(false);
   const [uninstalling, setUninstalling] = useState(null);
   const [installingSearch, setInstallingSearch] = useState({}); // Fix#3 防重点
+  const [marketplacesCount, setMarketplacesCount] = useState(null); // fix#3+ empty-state 引导(null=loading,数字=已知)
+
+  useEffect(() => {
+    PrismAPI.marketplaces.list().then(resp => {
+      const arr = resp && resp.data !== undefined ? resp.data : resp;
+      setMarketplacesCount(Array.isArray(arr) ? arr.length : 0);
+    }).catch(() => setMarketplacesCount(0));
+  }, []);
 
   // Fix #3: SkillsSettings 搜索安装死按钮接通(spec af85a27)
   // /skills/search response 已含 source/source_url/version,直接复用 SkillsPage GitHub install 链路
@@ -3176,7 +3192,25 @@ function SkillsSettingsTab({ onToast }) {
           </div>
         </div>
       )}
-      {q && !searching && searchResults.length === 0 && <div style={{ color: "var(--ink-3)", marginBottom: 20 }}>无匹配技能</div>}
+      {q && !searching && searchResults.length === 0 && (
+        <div data-testid="skills-search-empty" style={{ display: "block", width: "100%", padding: "16px 12px", marginBottom: 20, background: "var(--bg)", borderRadius: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 4 }}>无匹配 "{q}"</div>
+          <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+            检查拼写,或尝试其他关键词。
+            {marketplacesCount === 0 && (
+              <>
+                {" 还没注册 marketplace? "}
+                <a
+                  data-testid="skills-search-empty-register-link"
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); window.location.hash = "#skills"; }}
+                  style={{ color: "var(--amber)", textDecoration: "underline" }}
+                >去注册</a>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="section-title" style={{ marginBottom: 10 }}>已安装</div>
       {loading ? <div style={{ color: "var(--ink-3)" }}>加载中…</div> : installed.length === 0 ? (
