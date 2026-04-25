@@ -37,6 +37,42 @@
 
 ---
 
+## ✅ 2026-04-25 Fix #3+ — Skills search 数据源根因式重构(删 GitHubSource + MarketplaceCatalogSource)
+
+**Trigger**: fix#3 验收时发现 `/skills/search` 永远返空(GITHUB_TOKEN 未设 → GitHubSource 返 [];LocalSource 文件系统空)。
+
+**Root cause**(systematic-debugging Phase 1 + WebFetched Claude Code primary source):
+GitHubSource 调 GitHub Code Search API 是 **anti-pattern**,与 Claude Code 官方 plugin discovery pattern(`/plugin marketplace add` → Discover tab 浏览已注册 catalogs)完全不同。Prism 已有 marketplace_registry + catalog_json(Block 1),但 search 从未消费。
+
+**Fix**(根因式 + 反打补丁):
+- 删 `GitHubSource` 整个 class + 内部 helper + Phase 2 注释(executor/plugins/skills_registry.py L298-690,~390 LOC)
+- 新 `MarketplaceCatalogSource`(~120 LOC):读 marketplace_registry.catalog_json plugins[] flatten + substring filter(name/desc/keywords/tags),DI 注入 db_session_factory 避免 executor → backend 反向依赖
+- `SkillPackage.source` Literal 加 "marketplace"
+- backend `_get_registry` 注入 `SessionLocal`
+- 前端 SkillsSettingsTab + SkillsPage 替换简陋 empty state 为 Linear 风格(2 行:主"无匹配 ${q}" + 副"检查拼写...";0 marketplaces 时含 "去注册" inline 链接 → nav#skills)
+- `executor/plugins/__init__.py` export 改
+
+**Verification**:
+- backend unit: 9/9(empty / single / name match / description match / keywords-tags match / no match / multi-mp / missing-name skip / author-normalize)
+- e2e double-viewport: 7 pass + 1 proper skip = 8/8 effective
+- critical regression subset(4 spec)22 pass / 4 pre-existing flaky / 0 regression
+
+**Commits**(merged to develop):
+- `45d9946` spec(brainstorming + Source of Truth WebFetched discover-plugins.md)
+- `7f6e5f4` plan
+- `3e4049f` impl
+- merge commit on develop
+
+**用户验收路径**:
+1. /Prism.html 登录 → 设置 → 技能 → 搜任意 → 应见 empty state "无匹配 ..." + 0 marketplaces 时 "去注册"链接
+2. 点链接跳到 #skills → SkillsPage Marketplace tab → 注册 `anthropics/claude-plugins-official`
+3. catalog 拉回后,返设置 → 技能 → 搜 "github" / "commit" → 应出 catalog 中 plugin 结果
+4. 任选一条 → 点安装(fix#3 已接通)→ 走完 install 流
+
+**SkillPackage.source 为 "marketplace" 后,fix#3 button data-testid 命名也用 source 前缀**(Block 1 fix#3 spec 已对齐)。
+
+---
+
 ## ✅ 2026-04-20 Fix #3 — SkillsSettings 搜索安装死按钮接通(9 缺陷清单第 1 个清零)
 
 **Directive**: 用户全量改造 audit 9 个死内容/死按钮,本次聚焦 #3。

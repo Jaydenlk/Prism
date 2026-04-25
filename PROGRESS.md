@@ -202,6 +202,7 @@
 | # | 缺陷 | Status | Commit | 工作量 |
 |---|---|---|---|---|
 | 3 | SkillsSettings 搜索安装死按钮 | ✅ completed 2026-04-20 | merge on develop (含 9c98c0b + 071d72c) | 0.3 session |
+| 3+ | Skills search 数据源(/skills/search 返空根因)| ✅ completed 2026-04-25 | merge on develop (含 3e4049f) | 0.5 session |
 | 2 | ProfileTab 修改密码死按钮 | pending | — | 0.3 session |
 | 1 | ObsPage 整页死数据 | pending | — | 1-2 session |
 | 6 | admin 账务 Placeholder | pending | — | 0.5-1 session |
