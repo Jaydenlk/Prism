@@ -197,6 +197,22 @@
 |---|---|---|---|---|---|
 | Session 4c: Skills Market catalog + 5-source install | completed | 2026-04-20 | 2026-04-20 | 908d7ce | ADR-086 Session 3 骨架 → 4c 完整交付;5-Source Resolver(relative/github HTTPS tarball/url/git-subdir cone mode/npm packument+tarball);MarketplaceService `_try_fetch` 双模式 + install_plugin + Redis lock;Python 3.12 tarfile filter='data' + realpath CVE-2025-4517 防御;SSRF scheme allowlist + urlparse netloc exact-match;前端 catalog grid + details modal + install consent + honest single spinner;Dockerfile 加 git;44 Python unit + 20 Playwright e2e pass;Simplify 3-subagent + 6 次累积 code-reviewer 队列消化;1 concurrent-rmtree 偏离点 → docs/superpowers/blockers。详见 HANDOFF-LOG Session 4c 条目 + DECISIONS ADR-086 Session 4c section。 |
 
+## Dead-content audit (2026-04-20)— 9 个缺陷清零进度
+
+| # | 缺陷 | Status | Commit | 工作量 |
+|---|---|---|---|---|
+| 3 | SkillsSettings 搜索安装死按钮 | ✅ completed 2026-04-20 | merge on develop (含 9c98c0b + 071d72c) | 0.3 session |
+| 2 | ProfileTab 修改密码死按钮 | pending | — | 0.3 session |
+| 1 | ObsPage 整页死数据 | pending | — | 1-2 session |
+| 6 | admin 账务 Placeholder | pending | — | 0.5-1 session |
+| 4 | admin 护栏 Placeholder | pending | — | 2-3 session |
+| 5 | admin Skills 审核 Placeholder | pending | — | 2-3 session |
+| 7 | admin 基础设施 Placeholder | pending | — | 2 session |
+| 8 | admin 可观测 Placeholder(复用 #1) | pending | — | 0.5 session |
+| 9 | admin 安全 Placeholder | pending | — | 3-5 session |
+
+---
+
 ### Block 2/3 pending(硬前置 exa 清单见 HANDOFF-LOG)
 
 | Block | Status | Scope | 工作量 |

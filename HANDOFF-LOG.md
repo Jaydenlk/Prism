@@ -37,6 +37,60 @@
 
 ---
 
+## ✅ 2026-04-20 Fix #3 — SkillsSettings 搜索安装死按钮接通(9 缺陷清单第 1 个清零)
+
+**Directive**: 用户全量改造 audit 9 个死内容/死按钮,本次聚焦 #3。
+
+### 本次所做(commit chain)
+
+- `af85a27` spec
+- `14e9a1f` plan(8-task inline-exec,完整 RED/GREEN code blocks)
+- `9c98c0b`(fix branch)— Task 3 GREEN: Prism.html SkillsSettingsTab L3068-3171 加 installingSearch state + handleInstallFromSearch async function + button onClick wire + data-testid + disabled + minHeight 36
+- `e2e/tests/skills-settings-search-install.spec.ts` 新 — 8 场景 × 双端 = 16 tests
+- `071d72c`(fix branch)code-review fix:finally cleanup(I-1)+ key by source:name 防同名锁(I-2)
+- merge commit on develop
+
+### Root cause
+
+`/skills/search` response 已含 source/source_url/version(skills.py:184-197);死按钮 toast '暂不支持' 是早期 stale safeguard,与后端能力脱节。修复 = 删死代码 + wire 现有 /skills/install endpoint(同 SkillsPage GitHub tab 链路;0 backend 改动)。
+
+### 验证
+
+- e2e 双端: 15 pass + 1 proper skip = 16/16 effective
+- 关键子集 regression(skills-settings-search-install + sk-catalog + skills.spec): 19 pass + 3 pre-existing flaky skip,零 regression
+- code-reviewer 累积: 2 Important fix 已 commit(I-1 finally + I-2 source:name 复合 key)
+- PJR: FastAPI 112 routes / apiClient.js node --check OK / git clean
+
+### 用户验收路径(本机已 deploy)
+
+1. /Prism.html 登录 → 设置 → 技能 sub-tab
+2. 搜索框输入 keyword → 点搜索
+3. 任选 search result(若不在 Installed list)→ 点"安装"
+4. 30s 内绿色 toast"安装成功" + 已安装区域出现该 skill
+5. 失败路径:断网点击 → 红色 toast 含具体 error
+6. 移动端 viewport(F12 iPhone 14 Pro 390×844): 同样流程
+
+### 9 缺陷剩余 follow-up(顺序按 ROI)
+
+- [✅ 已清零] #3 SkillsSettings 搜索安装(本次)
+- [pending] #2 ProfileTab 修改密码(0.3 session)
+- [pending] #1 ObsPage 整页死数据(1-2 session)
+- [pending] #6 admin 账务(0.5-1 session)
+- [pending] #4 admin 护栏(2-3 session)
+- [pending] #5 admin Skills 与插件审核(2-3 session)
+- [pending] #7 admin 基础设施(2 session)
+- [pending] #8 admin 可观测(0.5 session,#1 后)
+- [pending] #9 admin 安全(3-5 session)
+
+### Out-of-scope follow-up(本 fix 涉及但跨 DOC)
+
+- N-1: `.btn.sm` minHeight 36 < 44 mobile WCAG 2.5.5 — 全局样式系统升级
+- N-2: `err.message || String(err)` toast 透出可能 stack — 项目级 PrismAPI 错误统一
+- N-3: `id: Date.now()` toast collision — 项目级 toast id 用 uuid
+- 概念:install endpoint 对 source="github" 实际不下载文件 (本 fix 与现有 SkillsPage GitHub tab 行为一致;同一更深层 bug 列入 follow-up)
+
+---
+
 ## ✅ 2026-04-20 Session 4c — Skills Marketplace Catalog Browser + 5-source Install(生产级完整,ADR-086 清零)
 
 **Directive**(用户 2026-04-20):"生产级完整交付,没有取舍,ROI 特别低才允许不做;所有功能必须 WebFetch 官方 + exa 全搜集。"
