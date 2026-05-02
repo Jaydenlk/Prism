@@ -1,8 +1,8 @@
 # Handoff: main → qa-engineer (Task 7 / W7 / L8)
 
-## 状态: PENDING_BATCH_2_COMPLETE
+## 状态: BLOCKED
 
-> **Pre-condition**: Batch 2 (Tasks 5 + 6) 全部 commit 后才能开工。
+> **Pre-condition**: Batch 2 ✅ 全部 commit (HEAD 81ba928 含 W5 + W6 集成)。
 
 ## 任务描述
 Playwright 真实驱动浏览器双端（desktop 1440×900 + mobile-safari iPhone 13）端到端验证 plugin bootstrap 全链路：admin 看见 exa 自动注册 → 用户起会话问"今天 AI 新闻" → agent **真调** `mcp__exa__web_search_exa` → 渲染**真实** URL 结果。
@@ -46,10 +46,36 @@ Playwright 真实驱动浏览器双端（desktop 1440×900 + mobile-safari iPhon
 - 工作树路径: `E:\Agent program\PrismV3\.worktrees\plugin-bootstrap`
 
 ## 已完成
-（qa-engineer 完成后填）
+- 读 handoff + plan Task 7 完整 spec 模板
+- 审查现有前端 (Prism.html / admin.html) 确认所有 selector 真实存在：
+  - 登录：`input[type="email"]`, `input[type="password"]`, `button.btn.primary`
+  - 新对话：`button.btn.primary:has-text("新对话")`
+  - 消息区：`.agent-msg`, `.caret`（streaming 完成标志）
+  - 工具卡：`.tool-card .name`（文本判断 mcp__exa__ 前缀），`.tool-body pre.tool-code`（输出）
+  - Admin MCP Servers：`.rail-item .lbl:has-text("MCP Servers")` → `table.table tbody tr`（exa 行）
+  - 修正 plan 模板中错误 selector（data-tool-name/data-role/data-testid="message-complete" 均不存在）
+- 创建 `e2e/tests/plugin-bootstrap-real-call.spec.ts` 
+  - 6 tests（3 scenarios × 2 projects: desktop-chromium + mobile-safari）
+  - `npx playwright test --list` 确认全部 6 tests 正确枚举
+  - Test 1: admin sees exa in MCP Servers table (transport=http, url含mcp.exa.ai)
+  - Test 2: user sends AI news prompt → assert .tool-card with mcp__exa__ name + tool output contains https:// URL + final message not a refusal
+  - Test 3: skip (requires backend restart with bad key)
+- Docker daemon 无法连接（Docker Desktop 未启动），跳过 docker compose + Playwright 执行
 
 ## 产出物
-（qa-engineer 完成后填）
+- `e2e/tests/plugin-bootstrap-real-call.spec.ts`：6 tests，Playwright 可解析（--list 验证通过）
 
 ## 遗留问题
-（如有，写这里 — 特别是真实 exa 调用是否成功 / 哪些 selector 与现有前端不匹配）
+1. **Docker daemon 不可用**：`docker ps` 报 "failed to connect to the docker API ... dockerDesktopLinuxEngine"。需用户本机启动 Docker Desktop 后执行：
+   ```
+   cd "E:\Agent program\PrismV3\.worktrees\plugin-bootstrap"
+   docker compose -p prismv3-bootstrap up -d --build --force-recreate backend executor
+   # 等 backend healthy：curl http://localhost:8080/health/ready
+   # 验证 exa 已注册：
+   docker exec prismv3-bootstrap-postgres-1 psql -U prism -d prism -c "select name, transport, url from mcp_servers where name='exa';"
+   # 跑 e2e：
+   cd e2e && BASE_URL=http://localhost:8080 npx playwright test plugin-bootstrap-real-call.spec.ts --reporter=list
+   ```
+2. **Test 2 超时**：`test.setTimeout(120_000)` 已在 spec 内设置（覆盖 config 的 30s），无需改动 playwright.config.ts。LLM+exa round-trip 预计 30-90s，120s 足够。
+3. **admin.html login gate**：admin.html 未内嵌登录表单，通过 sessionStorage token 鉴权；spec 先 goto `/` 登录再 goto `/admin.html` 路径正确，但若 token 过期（30min）需重新登录。
+4. **Test 2 使用 admin 账号执行聊天**：handoff prompt 提到 `user@prism.dev`，但 e2e fixtures 没有建立该账号；spec 复用 `admin@prism.dev` 作为聊天用户，admin 同样可以发起 session，功能等价。如需真正用户账号，请 main agent 在 DB seed 中添加 user@prism.dev 后调整 spec。
