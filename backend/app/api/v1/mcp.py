@@ -109,8 +109,13 @@ async def test_mcp_server(
     current_user: Annotated[User, Depends(get_current_user)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
 ) -> dict[str, Any]:
-    """Real connection test: transient MCPClient, 10s timeout."""
-    return await MCPService(db).test_server(server_id)
+    """Real connection test: transient MCPClient, 10s timeout.
+
+    Enforces user ownership: system-scope readable to all, user-scope owner-only.
+    """
+    return await MCPService(db).test_server(
+        server_id=server_id, user_id=str(current_user.id)
+    )
 
 
 # ---------------------------------------------------------------------------

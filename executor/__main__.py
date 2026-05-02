@@ -284,29 +284,26 @@ async def bootstrap_plugins(
 ) -> tuple[list[dict], list[dict]]:
     """Fetch user-installed skills + accessible MCP servers from backend internal API.
 
+    Two endpoints are independent → fetched concurrently via asyncio.gather.
     Returns (skills, servers) — both empty list on any failure (graceful, log warning).
     """
     import httpx
     headers = {"X-Callback-Secret": callback_secret}
-    skills: list[dict] = []
-    servers: list[dict] = []
     try:
         async with httpx.AsyncClient(timeout=10.0) as http:
-            resp_skills = await http.get(
-                f"{backend_url}/api/v1/internal/users/{user_id}/installed-skills",
-                headers=headers,
+            resp_skills, resp_servers = await asyncio.gather(
+                http.get(f"{backend_url}/api/v1/internal/users/{user_id}/installed-skills", headers=headers),
+                http.get(f"{backend_url}/api/v1/internal/users/{user_id}/mcp-servers", headers=headers),
             )
             resp_skills.raise_for_status()
-            skills = resp_skills.json().get("skills", [])
-            resp_servers = await http.get(
-                f"{backend_url}/api/v1/internal/users/{user_id}/mcp-servers",
-                headers=headers,
-            )
             resp_servers.raise_for_status()
-            servers = resp_servers.json().get("servers", [])
+            return (
+                resp_skills.json().get("skills", []),
+                resp_servers.json().get("servers", []),
+            )
     except Exception as exc:
         logger.warning("executor.plugin_bootstrap_failed", error=str(exc), user_id=user_id)
-    return skills, servers
+        return [], []
 
 
 # ---------------------------------------------------------------------------
@@ -569,10 +566,11 @@ async def main() -> None:
             assembler=assembler,
         )
 
-        # MCP servers (stdio + http via W5 transport dispatch)
-        for srv in servers_data:
+        # MCP servers — start concurrently (each is independent IO; stdio handshake
+        # or HTTP initialize round-trip can be slow, parallel keeps startup tight)
+        async def _safe_start(srv: dict) -> None:
             try:
-                await plugin_host._start_mcp_server(srv)
+                await plugin_host.start_server(srv)
             except Exception as exc:
                 logger.warning(
                     "executor.mcp_load_failed",
@@ -580,6 +578,8 @@ async def main() -> None:
                     transport=srv.get("transport", "stdio"),
                     error=str(exc),
                 )
+        if servers_data:
+            await asyncio.gather(*[_safe_start(srv) for srv in servers_data])
 
         # Skills — register each user-installed skill from its install_path
         for skill_data in skills_data:
@@ -598,10 +598,9 @@ async def main() -> None:
 
         # Refresh prompt with newly registered MCP tools + skill descriptions
         assembler.update_tools(registry.list_definitions())
-        skill_descriptions = skill_loader.get_descriptions_for_prompt(agent_type)
-        if skill_descriptions:
-            # Phase 1 injection point for skill grammar — appended to dynamic tail
-            assembler._extra_dynamic_tail = skill_descriptions
+        assembler.set_extra_dynamic_tail(
+            skill_loader.get_descriptions_for_prompt(agent_type)
+        )
 
         # ----------------------------------------------------------------
         # Step 5: Harness Runtime — wires middleware pipeline + permission

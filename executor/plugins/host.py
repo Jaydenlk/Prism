@@ -497,6 +497,14 @@ class PluginHost:
             user_config=config.user_config,
         )
 
+    async def start_server(self, server_config: dict) -> None:
+        """Public entry: start one MCP server, register its tools, record instructions.
+
+        Use this from external callers (executor bootstrap, etc.).
+        Idempotent re-entry is NOT guaranteed; caller must avoid double-starting.
+        """
+        await self._start_mcp_server(server_config)
+
     async def _start_mcp_server(self, server_config: dict) -> None:
         """Dispatch on transport: stdio (existing) or http (new).
 

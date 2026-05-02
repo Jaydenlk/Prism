@@ -247,7 +247,16 @@ class MCPClient:
     # ------------------------------------------------------------------
 
     async def _start_http(self) -> None:
-        """Initialize MCP session over HTTP Streamable transport."""
+        """Initialize MCP session over HTTP Streamable transport.
+
+        Closes prior client (if any — re-init path on session expiry) before
+        creating a new one to avoid connection/file-descriptor leaks.
+        """
+        if self._http_client is not None:
+            try:
+                await self._http_client.aclose()
+            except Exception:
+                pass
         self._http_client = httpx.AsyncClient(timeout=30.0)
         await self._http_request({
             "jsonrpc": "2.0",
@@ -260,6 +269,12 @@ class MCPClient:
             },
         })
         self._next_id += 1
+        # Populate cached tools so get_tool_definitions() works on http transport
+        # (parity with stdio behavior post-start).
+        try:
+            self._tools = await self._list_tools_http()
+        except Exception as exc:
+            logger.warning("mcp_client.http_list_tools_failed", error=str(exc), server=self._server_name)
 
     async def _stop_http(self) -> None:
         if self._http_client is not None:
@@ -291,7 +306,12 @@ class MCPClient:
         return "\n".join(texts)
 
     async def _http_request(self, payload: dict, retry_on_410: bool = True) -> Any:
-        """Send JSON-RPC over HTTP, parse SSE or JSON response, return result."""
+        """Send JSON-RPC over HTTP, stream SSE response, return result.
+
+        Streams the response body (httpx.stream + aiter_lines) so we can return
+        as soon as the matching `id` event arrives rather than waiting for full
+        body buffering — important for SSE servers that hold the connection open.
+        """
         if self._http_client is None:
             raise RuntimeError("HTTP client not started")
         req_headers = dict(self.headers)
@@ -300,38 +320,56 @@ class MCPClient:
         if self.session_id:
             req_headers["Mcp-Session-Id"] = self.session_id
 
-        resp = await self._http_client.post(self.url, json=payload, headers=req_headers)
+        async with self._http_client.stream(
+            "POST", self.url, json=payload, headers=req_headers
+        ) as resp:
+            if resp.status_code == 410 and retry_on_410:
+                # Session expired — drain + close + reinit + retry once
+                await resp.aread()
+                self.session_id = None
+                await self._start_http()
+                return await self._http_request(payload, retry_on_410=False)
+            resp.raise_for_status()
 
-        if resp.status_code == 410 and retry_on_410:
-            self.session_id = None
-            await self._start_http()
-            return await self._http_request(payload, retry_on_410=False)
+            new_session = resp.headers.get("Mcp-Session-Id")
+            if new_session:
+                self.session_id = new_session
 
-        resp.raise_for_status()
+            ctype = resp.headers.get("content-type", "")
+            expected_id = payload["id"]
+            if "text/event-stream" in ctype:
+                return await self._consume_sse_stream(resp, expected_id)
+            if "application/json" in ctype:
+                body = await resp.aread()
+                data = json.loads(body)
+                return data.get("result") if data.get("id") == expected_id else None
+            return None
 
-        new_session = resp.headers.get("Mcp-Session-Id")
-        if new_session:
-            self.session_id = new_session
+    async def _consume_sse_stream(self, resp: "httpx.Response", expected_id: int) -> Any:
+        """Read SSE frames line-by-line, return first result whose id matches.
 
-        ctype = resp.headers.get("content-type", "")
-        if "text/event-stream" in ctype:
-            return self._parse_sse_for_result(resp.text, payload["id"])
-        if "application/json" in ctype:
-            data = resp.json()
-            return data.get("result") if data.get("id") == payload["id"] else None
-        return None
-
-    def _parse_sse_for_result(self, body: str, expected_id: int) -> Any:
-        """Extract the JSON-RPC result whose id matches expected_id from SSE body."""
-        for block in body.split("\n\n"):
-            if not block.strip():
+        SSE frame format per MCP spec 2025-03-26:
+            event: message
+            data: {"jsonrpc":"2.0","id":N,"result":{...}}
+            <blank>
+        Multi-line `data:` is concatenated with newlines.
+        """
+        data_buf: list[str] = []
+        async for line in resp.aiter_lines():
+            if line == "":
+                # Frame boundary — try to match
+                if data_buf:
+                    try:
+                        msg = json.loads("\n".join(data_buf))
+                    except json.JSONDecodeError:
+                        msg = None
+                    data_buf.clear()
+                    if isinstance(msg, dict) and msg.get("id") == expected_id and "result" in msg:
+                        return msg["result"]
                 continue
-            data_lines = [ln[6:] for ln in block.splitlines() if ln.startswith("data: ")]
-            if not data_lines:
-                continue
-            data = json.loads("\n".join(data_lines))
-            if data.get("id") == expected_id and "result" in data:
-                return data["result"]
+            if line.startswith("data: "):
+                data_buf.append(line[6:])
+        # Stream ended without matching id
         return None
 
 

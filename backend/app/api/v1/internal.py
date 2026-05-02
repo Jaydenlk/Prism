@@ -21,7 +21,6 @@ POST /api/v1/internal/run-crashed (v4 新增)
 """
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -30,7 +29,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import decrypt_value
 from app.models.mcp_server import McpServer, UserMcpInstall
 from app.models.skill_install import SkillInstall
 from app.services.callback_service import CallbackService
@@ -295,9 +293,10 @@ async def get_user_mcp_servers(
         .all()
     )
 
+    from app.services.mcp_service import _decrypt_headers
     out: list[dict[str, Any]] = []
     for r in system_rows + user_rows:
-        transport = getattr(r, "transport", "stdio")
+        transport = r.transport or "stdio"
         d: dict[str, Any] = {
             "id": r.id,
             "name": r.name,
@@ -308,12 +307,7 @@ async def get_user_mcp_servers(
             "env": r.env,
         }
         if transport == "http":
-            d["url"] = getattr(r, "url", None)
-            ciphertext = getattr(r, "headers_encrypted", None)
-            d["headers"] = (
-                json.loads(decrypt_value(ciphertext, settings.ENCRYPTION_KEY))
-                if ciphertext
-                else {}
-            )
+            d["url"] = r.url
+            d["headers"] = _decrypt_headers(r.headers_encrypted)
         out.append(d)
     return {"servers": out}

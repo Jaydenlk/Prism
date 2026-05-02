@@ -25,7 +25,10 @@ ADR compliance:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -33,6 +36,27 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.security import decrypt_value, encrypt_value
+
+
+_ENV_VAR_PATTERN = re.compile(r"\$\{env:(\w+)\}")
+
+
+def _expand_env_vars(text: str) -> str:
+    """Substitute `${env:VAR_NAME}` with os.environ.get('VAR_NAME', '')."""
+    return _ENV_VAR_PATTERN.sub(lambda m: os.environ.get(m.group(1), ""), text)
+
+
+def _decrypt_headers(ciphertext: str | None) -> dict[str, str]:
+    """Decrypt headers_encrypted ciphertext (AES-256-GCM JSON envelope) → plaintext dict.
+
+    Returns {} when ciphertext is None / empty (e.g., stdio rows).
+    """
+    if not ciphertext:
+        return {}
+    return json.loads(decrypt_value(ciphertext, settings.ENCRYPTION_KEY))
 
 from app.models.mcp_server import McpServer, UserMcpInstall
 from app.schemas.mcp import (
@@ -227,32 +251,37 @@ class MCPService:
             user_id=user_id,
         )
 
-    async def test_server(self, server_id: str) -> dict[str, Any]:
+    async def test_server(self, server_id: str, user_id: str) -> dict[str, Any]:
         """Real connection test: transient MCPClient, list tools, 10s timeout.
 
         Returns {success, tools, error, latency_ms}.
-        HTTP transport returns graceful failure until Task 5 lands.
+        Enforces 铁律 4: user must own user-scope server (system-scope readable to all).
         """
         server = self._db.get(McpServer, server_id)
         if server is None:
             return {"success": False, "tools": [], "error": "Server not found", "latency_ms": 0}
+        self._assert_readable(server, user_id)
 
-        transport = getattr(server, "transport", "stdio") or "stdio"
         started = time.monotonic()
+        if server.transport == "http":
+            headers = _decrypt_headers(server.headers_encrypted)
+            client = MCPClient(
+                server_name=server.name,
+                transport="http",
+                url=server.url,
+                headers=headers,
+            )
+        else:
+            client = MCPClient(
+                server_name=server.name,
+                command=server.command,
+                args=list(server.args or []),
+                env=dict(server.env or {}),
+            )
 
-        if transport == "http":
-            return {"success": False, "tools": [], "error": "HTTP transport branch not yet available", "latency_ms": 0}
-
-        client = MCPClient(
-            server_name=server.name,
-            command=server.command,
-            args=list(server.args or []),
-            env=dict(server.env or {}),
-        )
         try:
             await asyncio.wait_for(client.start(), timeout=10.0)
-            tools = [t.get("name") if isinstance(t, dict) else getattr(t, "name", str(t))
-                     for t in client.get_tool_definitions()]
+            tools = [t["name"] for t in await client.list_tools()]
             elapsed_ms = int((time.monotonic() - started) * 1000)
             return {"success": True, "tools": tools, "error": None, "latency_ms": elapsed_ms}
         except asyncio.TimeoutError:
@@ -370,13 +399,18 @@ class MCPService:
     # ------------------------------------------------------------------
 
     def register_builtin_servers(self) -> None:
-        """Register or refresh _BUILTIN_MCP_SERVERS, skipping entries whose env var is unset."""
-        import os
-        import json as _json
-        import re
-        from app.core.security import encrypt_value
-        from app.core.config import settings as _settings
+        """Register or refresh _BUILTIN_MCP_SERVERS, skipping entries whose env var is unset.
 
+        Single batch fetch of existing system rows + single commit at end (avoid N+1).
+        """
+        names = [s["name"] for s in _BUILTIN_MCP_SERVERS]
+        existing_by_name: dict[str, McpServer] = {
+            r.name: r for r in self._db.query(McpServer)
+            .filter(McpServer.name.in_(names), McpServer.scope == "system")
+            .all()
+        }
+
+        any_change = False
         for spec in _BUILTIN_MCP_SERVERS:
             env_var = spec.get("env_var")
             api_key = os.environ.get(env_var) if env_var else None
@@ -386,14 +420,8 @@ class MCPService:
 
             transport = spec.get("transport", "stdio")
             if transport == "http":
-                template = spec.get("headers_template", {})
-
-                def _sub(s: str) -> str:
-                    return re.sub(r"\$\{env:(\w+)\}", lambda m: os.environ.get(m.group(1), ""), s)
-
-                headers = {k: _sub(v) for k, v in template.items()}
-                ciphertext = encrypt_value(_json.dumps(headers), _settings.ENCRYPTION_KEY)
-                row_kwargs: dict = dict(
+                headers = {k: _expand_env_vars(v) for k, v in spec.get("headers_template", {}).items()}
+                row_kwargs: dict[str, Any] = dict(
                     name=spec["name"],
                     description=spec.get("description"),
                     scope="system",
@@ -402,7 +430,7 @@ class MCPService:
                     env={},
                     transport="http",
                     url=spec["url"],
-                    headers_encrypted=ciphertext,
+                    headers_encrypted=encrypt_value(json.dumps(headers), settings.ENCRYPTION_KEY),
                 )
             else:
                 row_kwargs = dict(
@@ -417,17 +445,18 @@ class MCPService:
                     headers_encrypted=None,
                 )
 
-            existing = self._db.query(McpServer).filter_by(name=spec["name"], scope="system").first()
+            existing = existing_by_name.get(spec["name"])
             if existing:
                 for k, v in row_kwargs.items():
                     setattr(existing, k, v)
-                self._db.commit()
-                continue
-            row_kwargs["created_at"] = datetime.now(timezone.utc)
-            row = McpServer(**row_kwargs)
-            self._db.add(row)
+            else:
+                row_kwargs["created_at"] = datetime.now(timezone.utc)
+                self._db.add(McpServer(**row_kwargs))
+                logger.info("mcp.builtin.registered", name=spec["name"], transport=transport)
+            any_change = True
+
+        if any_change:
             self._db.commit()
-            logger.info("mcp.builtin.registered", name=spec["name"], transport=transport)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -466,26 +495,20 @@ class MCPService:
         headers_encrypted is decrypted inline; validator masks sensitive keys.
         url only populated for http transport.
         """
-        import json
-
-        env: dict
+        env: dict[str, str]
         if server.scope == "system" and server.env:
             env = {k: "***" for k in server.env}
         else:
             env = server.env or {}
 
-        transport = getattr(server, "transport", "stdio") or "stdio"
-        url = getattr(server, "url", None) if transport == "http" else None
+        transport = server.transport or "stdio"
+        url = server.url if transport == "http" else None
         headers: dict[str, str] | None = None
-        if transport == "http":
-            ciphertext = getattr(server, "headers_encrypted", None)
-            if ciphertext:
-                try:
-                    from app.core.config import settings
-                    from app.core.security import decrypt_value
-                    headers = json.loads(decrypt_value(ciphertext, settings.ENCRYPTION_KEY))
-                except Exception:
-                    headers = None
+        if transport == "http" and server.headers_encrypted:
+            try:
+                headers = _decrypt_headers(server.headers_encrypted)
+            except Exception:
+                headers = None
 
         return McpServerResponse(
             id=server.id,

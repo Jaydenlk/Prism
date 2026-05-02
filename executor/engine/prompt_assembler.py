@@ -123,6 +123,14 @@ class PromptAssembler:
         # 非 None/非空时，_build_dynamic 会在末尾拼接此文本
         self._extra_dynamic_tail: str | None = None
 
+    def set_extra_dynamic_tail(self, content: str | None) -> None:
+        """Append extra section to the end of dynamic prompt tail.
+
+        Used by: executor bootstrap (skill grammar) + ForkManager (hard constraints).
+        Replaces any prior tail; pass None or empty to clear.
+        """
+        self._extra_dynamic_tail = content if content else None
+
     def _compute_tools_hash(self) -> str:
         """根据工具名 + description 计算 hash，供 cache 失效判断。
 
