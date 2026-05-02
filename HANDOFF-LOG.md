@@ -37,6 +37,39 @@
 
 ---
 
+## ✅ 2026-05-02 Plugin Bootstrap — Skills + MCP 真实运行复活（feat/plugin-bootstrap, 15 commits）
+
+**根因（systematic-debugging Phase 1）**:
+`executor/__main__.py` Step 3d **从未实例化 PluginHost / SkillLoader**。代码完整性 OK 但缺一个调用入口 — 导致 3 个用户投诉同根：(a) Skills 装了不生效 (b) MCP 注册了 agent 看不见 tool (c) 搜索是摆设。
+
+**交付（11 文件改动 + 9 测试文件 + 4 文档）**:
+- L1: backend `/internal/users/{uid}/installed-skills` + `/mcp-servers` (CALLBACK_SECRET) — 6072474+6c10cd4
+- L2: executor Step 3d-bis bootstrap PluginHost + SkillLoader（**根因修复**）— d1e2fe2+81ba928+4441767
+- L3: `POST /mcp-servers/{id}/test` 真连接（含 user_id 权限校验恢复）— bf1b21c+4441767
+- L4: 启动期默认 marketplace 自动注册 — adf84a2
+- L5a/b: HTTP transport schema + alembic 010 + MCPClient HTTP Streamable (spec 2025-03-26) + SSE streaming + 410 reinit — adf84a2+76d91ef+4441767
+- L6: exa builtin entry (HTTP) + AES-256-GCM headers 加密 — d1e2fe2+4441767
+- L7: Brave + Tavily stdio builtins (env_var gate) — adf84a2
+- L8: e2e Playwright 真调 mcp.exa.ai 真返 URL — 202bdc5+edb6996
+- Simplify: 3-subagent (reuse/quality/efficiency) findings 全修 — 4441767
+
+**验证（真实 docker compose live）**:
+- 128 backend pytest pass + 10 executor pass + 4/4 effective e2e pass（双端 desktop+mobile）
+- 真 exa sample URL: `https://www.cnn.com/2026/05/01/tech/pentagon-ai-anthropic`
+- DB 验证: mcp_servers 含 exa 行（transport=http, headers_encrypted=257 chars AES）
+- Agent 真 cite 真 URL 在 markdown links 内 ✓
+
+**关键决策（DEC-004/005）**:
+- secret: headers_encrypted TEXT 整体 AES-256-GCM；解密在 backend service 层（executor 不持 ENCRYPTION_KEY，进程边界=信任边界铁律）
+- builtin 用 `${env:VAR_NAME}` 模板；env 缺失 → graceful skip
+- exa 协议探测确认 2025-03-26 + Mcp-Session-Id stateful + SSE
+
+**已知不动账（separate PR / non-blocking）**:
+- 前端 tool_card output 渲染：消息持久化双写产生 input:{} 重复行；前端按 tool_use_id 配对被空副本覆盖。修复方向：callback_service tool_start 不写 placeholder，或前端去重取非空 input。不阻塞本 PR（agent 真用 exa 真返 URL）。
+- `MCPTestResponse` schema 无 caller，可清
+
+---
+
 ## ✅ 2026-04-25 Fix #3+ — Skills search 数据源根因式重构(删 GitHubSource + MarketplaceCatalogSource)
 
 **Trigger**: fix#3 验收时发现 `/skills/search` 永远返空(GITHUB_TOKEN 未设 → GitHubSource 返 [];LocalSource 文件系统空)。
