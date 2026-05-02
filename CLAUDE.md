@@ -168,6 +168,12 @@ Prism v2 = 自托管 AI Agent 编排平台。用户从 Web / IM 提问,Agent 在
 | `PRD_V4/DOC-CC-ONBOARDING.md` | 完整先导文档 | 冻结 |
 | `PRD_V4/2026-04-18-execution-strategy-design.md` | 执行策略 spec | 冻结 |
 | `.plan/<task-id>.md` | 单 Task 实施计划 | 每 Task 开工 |
+| `.claude/agents/*.md` | 4 个项目级 subagent(implementer/reviewer/qa-engineer/explorer) | 稀少 |
+| `.claude/rules/*.md` | 5 条按需加载规则(dev-principles/subagent-constraints/anti-drift/acceptance-frontend/acceptance-backend) | 稀少 |
+| `.claude/memory/decisions.md` | 任务内即时决策(brainstorm/plan 阶段),与项目根 DECISIONS.md 分工 | 每决策追加 |
+| `.claude/memory/scratchpad.md` | 临时发现共享 buffer | 每任务清理 |
+| `.claude/plans/active-plan.md` | 当前任务子 agent 派单计划 | 每任务覆盖 |
+| `.claude/plans/handoff-*.md` | 子 agent 间一次性 handoff 卡 | 每子任务 |
 
 ---
 
@@ -180,3 +186,67 @@ Prism v2 = 自托管 AI Agent 编排平台。用户从 Web / IM 提问,Agent 在
 - ❌ 改 Schema 不跑 alembic revision
 - ❌ 跨 DOC refactor(当前 Task 无关的代码不动)
 - ❌ 自行决定回退 commit(走 §10.2 Phase 级回退流程)
+
+---
+
+## 工作流纪律(2026-05-02 部署)
+
+> 这套纪律在 superpowers 流程之上叠加,管"做事的纪律"(范围锁定 / 子 agent 派单 / 决策记录 / 防漂移)。
+> superpowers 管"做事的流程"。两者互补,不冲突。superpowers skill 照常触发,触发时遵守此处定义的行为规则。
+> 详细规则按需加载 `.claude/rules/` 下对应文件。
+
+### 路由表(按需加载)
+
+| 需求类型 | 指向 |
+|---|---|
+| 5 条开发原则 & coding standards | `.claude/rules/dev-principles.md`(等同本文件第 A 节,作展开补充) |
+| 子 agent 派单 & 通信协议 | `.claude/rules/subagent-constraints.md` |
+| 防漂移 & 防摸鱼详细规则 | `.claude/rules/anti-drift.md` |
+| 前端验收标准(vanilla HTML/JS) | `.claude/rules/acceptance-frontend.md` |
+| 后端验收标准(Python FastAPI) | `.claude/rules/acceptance-backend.md` |
+
+### Subagent 调度
+
+项目级 4 个自定义 subagent(`.claude/agents/`):
+
+| Agent | 模型 | 工具 | 用途 |
+|---|---|---|---|
+| `implementer` | Sonnet | Read/Write/Edit/Bash/Glob/Grep | 在 handoff 限定的范围内写代码 |
+| `reviewer` | Opus | Read/Glob/Grep(只读) | 找错而不是确认对 |
+| `qa-engineer` | Haiku | Read/Bash/Glob/Grep + Playwright MCP | 真实驱动浏览器找 bug |
+| `explorer` | Haiku | Read/Glob/Grep | 限定范围内的快速代码摸底 |
+
+调度三原则(违反即停):
+1. **派单必须含 5 字段**(任务描述 / 输入文件范围 / 禁止触碰 / 产出预期 / 决策上下文)— 详见 `subagent-constraints.md`
+2. **子 agent 之间不通过上下文传递**,通过 `.claude/plans/handoff-{from}-to-{to}-{topic}.md` 文件状态机通信
+3. **子 agent 不读全局状态**(不读 CLAUDE.md / DECISIONS.md / PROGRESS.md),由主 agent 提炼后注入 handoff
+
+状态机流转:`READY_FOR_ARCH → READY_FOR_IMPL → READY_FOR_REVIEW → READY_FOR_QA → DONE`
+
+### 决策/计划/handoff 三套并存的分工
+
+| 文件 | 粒度 | 谁写 | 何时清 |
+|---|---|---|---|
+| 项目根 `DECISIONS.md` (171K) | ADR 级长期落地台账 | 主 agent + 用户 | 永不清,append-only |
+| `.claude/memory/decisions.md` | 任务内即时决策(brainstorm/plan 选了什么排了什么) | **仅主 agent**,子 agent 无写权限 | 永不清,append-only |
+| 项目根 `PROGRESS.md` (28K) | Task 状态总表 | 主 agent | 每 Task 完成 |
+| `.plan/<task-id>.md`(罕用) | 单 Task 实施计划备忘 | 主 agent | 每 Task 开工 |
+| `.claude/plans/active-plan.md` | 当前任务的子 agent 派单计划 | 主 agent | 每任务覆盖,完成归档 `.claude/plans/archive/` |
+| `.claude/plans/handoff-*.md` | 子 agent 间一次性派单卡 | 主 agent 写 + 子 agent 完成时回填状态 | 每子任务结束归档 |
+| 项目根 `HANDOFF-LOG.md` (230K) | 跨 session 交接日志 | session 结束时主 agent | 永不清,append-only |
+| `.claude/memory/scratchpad.md` | "发现但当前不处理"临时记录 | 主 agent + 子 agent 都可写 | 每任务清理 |
+
+### Compaction 指令(/compact 时必须保留)
+
+- 已修改文件的完整列表
+- 当前任务的剩余步骤
+- 所有未解决的决策点
+- `.claude/memory/decisions.md` 中本次 session 新增的条目摘要
+- 项目根 PROGRESS.md / HANDOFF-LOG.md 当前 session 新增段落
+
+### 与现有 superpowers 调度的关系(冲突解析)
+
+- superpowers 内置 `Explore` agent(全局)与项目 `explorer` 并存:**全局 Explore 用于通用探索;项目 explorer 用于"严格范围内的一次性摸底"**
+- superpowers `superpowers:requesting-code-review` 与项目 `reviewer` 并存:**前者是流程触发器(开 review 阶段);后者是被派单执行的 subagent**
+- 用户硬规则 B 的 skill 加载链优先级 > 本节 subagent 调度。当用户硬规则要求加载某 skill,先加载 skill 再考虑是否派单 subagent
+- 用户硬规则 D(E2E 真实驱动浏览器)优先级 > 本节 qa-engineer 流程。如果 qa-engineer 的 Playwright MCP 路径不可用,fall back 到 `e2e/` 下的 `@playwright/test` 本地 runtime
