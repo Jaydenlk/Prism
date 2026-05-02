@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from executor.plugins.mcp_client import MCPClient, MCPToolWrapper
 from executor.plugins.namespace import PluginNamespace
 from executor.plugins.plugin_types import PluginConfig, PluginScope
 
@@ -53,7 +54,6 @@ if TYPE_CHECKING:
     from executor.harness.hooks.handlers import HookHandlerConfig
     from executor.harness.hooks.system import HookSystem
     from executor.plugins.cc_compat import CCPluginAdapter
-    from executor.plugins.mcp_client import MCPClient, MCPToolWrapper
     from executor.plugins.skill_loader import SkillLoader
     from executor.tools.registry import ToolRegistry
 
@@ -335,12 +335,7 @@ class PluginHost:
         # --- Step 5: MCP Servers ---
         for mcp_conf in config.mcp_servers:
             qualified_server = ns.qualify(mcp_conf.get("name", "unknown"))
-            await self._start_mcp_server(
-                server_name=qualified_server,
-                command=mcp_conf.get("command", ""),
-                args=mcp_conf.get("args", []),
-                env=mcp_conf.get("env", {}),
-            )
+            await self._start_mcp_server({**mcp_conf, "name": qualified_server})
 
         # PluginHost.update_tools — 使 PromptAssembler cache 失效
         self._assembler.update_tools(self._registry.list_definitions())
@@ -502,41 +497,45 @@ class PluginHost:
             user_config=config.user_config,
         )
 
-    async def _start_mcp_server(
-        self,
-        server_name: str,
-        command: str,
-        args: list[str],
-        env: dict[str, str],
-    ) -> None:
-        """启动单个 MCP Server，注册工具到 ToolRegistry，记录 instructions。
+    async def _start_mcp_server(self, server_config: dict) -> None:
+        """Dispatch on transport: stdio (existing) or http (new).
 
-        若 command 为空（测试场景或配置占位），跳过启动并 log warning。
+        Registers tools to ToolRegistry and records instructions after start.
         """
-        from executor.plugins.mcp_client import MCPClient, MCPToolWrapper
+        server_name = server_config["name"]
+        transport = server_config.get("transport", "stdio")
 
-        if not command:
-            logger.warning(
-                "plugin_host.mcp_empty_command",
+        if transport == "http":
+            client = MCPClient(
                 server_name=server_name,
+                transport="http",
+                url=server_config["url"],
+                headers=server_config.get("headers", {}),
             )
-            return
+        else:
+            command = server_config.get("command", "")
+            if not command:
+                logger.warning(
+                    "plugin_host.mcp_empty_command",
+                    server_name=server_name,
+                )
+                return
+            client = MCPClient(
+                server_name=server_name,
+                transport="stdio",
+                command=command,
+                args=server_config.get("args", []),
+                env=server_config.get("env", {}),
+            )
 
-        client = MCPClient(
-            server_name=server_name,
-            command=command,
-            args=args,
-            env=env,
-        )
         await client.start()
         self._mcp_clients.append(client)
 
-        # 注册 MCP 工具到 ToolRegistry
-        for mcp_tool in client.get_tool_definitions():
+        tools = await client.list_tools()
+        for mcp_tool in tools:
             wrapper = MCPToolWrapper(server_name, mcp_tool, client)
             self._registry.register(wrapper)
 
-        # 记录 instructions（ADR-046 第一通道）
         instructions = client.get_instructions()
         if instructions:
             self._mcp_instructions[server_name] = instructions
@@ -544,6 +543,6 @@ class PluginHost:
         logger.info(
             "plugin_host.mcp_started",
             server_name=server_name,
-            tool_count=len(client.get_tool_definitions()),
+            tool_count=len(tools),
             has_instructions=bool(instructions),
         )
