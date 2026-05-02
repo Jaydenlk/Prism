@@ -35,4 +35,10 @@
 选择: workflow upgrade 上线(项目级 subagent + handoff 状态机机制运转正常)
 排除: 暂不撤回部署(原因:行为合规全 PASS,技术加载机制只需 session 重启即可激活)
 影响范围: 整个 .claude/ 部署,所有未来子 agent 派单遵循本次验证的派单纪律
-备注: dry-run 实测 PASS 项 — (a) 5 字段派单格式被严格读取并执行;(b) handoff 顶部状态从 READY_FOR_IMPL → READY_FOR_REVIEW 自动回填;(c) 子 agent 仅读 handoff 范围内 3/4 文件(styles.css 自判不必要跳过 — 边界判断良好);(d) decisions.md / 其他 handoff / 后端 / PRD_V4 全部未触碰;(e) 子 agent 输出 39 行 ≤ 50 限制;(f) 子 agent token 57k / 20 tool_uses,作为 baseline 记录。待 session 重启后用 Agent(subagent_type='explorer') 直接调用做加载机制验证
+备注: dry-run 实测 PASS 项 — (a) 5 字段派单格式被严格读取并执行;(b) handoff 顶部状态从 READY_FOR_IMPL → READY_FOR_REVIEW 自动回填;(c) 子 agent 仅读 handoff 范围内 3/4 文件(styles.css 自判不必要跳过 — 边界判断良好);(d) decisions.md / 其他 handoff / 后端 / PRD_V4 全部未触碰;(e) 子 agent 输出 39 行 ≤ 50 限制;(f) 子 agent token 57k / 20 tool_uses,作为 baseline 记录
+
+## DEC-003 | 2026-05-02 | 加载机制验证(更正 DEC-002 误判)
+选择: harness mid-session 动态加载 `.claude/agents/` 已确认,**不需要 session 重启**
+排除: 原 DEC-002 备注"待 session 重启后验证"的假设(原因:实测当场调用 `Agent(subagent_type='explorer')` 成功,工具集 [Read, Glob, Grep] 与 model=haiku 与 description 全部跟 explorer.md frontmatter 完全一致)
+影响范围: 整个 .claude/agents/ 部署 — 现在起所有派单都可直接 `subagent_type=<custom name>`,无需 general-purpose 模拟
+备注: 实测 baseline — 单次 explorer 加载验证 13k tokens / 1 tool_use / 3.8s。harness 在 .claude/agents/*.md 文件落地后即时 register,P0 修 qa-engineer.md 的 tools 字段(加 Playwright MCP 通配符)也在系统 agent 列表里被正确反映
