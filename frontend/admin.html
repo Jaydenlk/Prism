@@ -410,6 +410,7 @@ const NAV = [
   { id: "runs", icon: "play", label: "Runs" },
   { id: "guardrails", icon: "shield", label: "护栏" },
   { id: "plugins", icon: "plugin", label: "Skills" },
+  { id: "mcpServers", icon: "server", label: "MCP Servers" },
   { id: "billing", icon: "coin", label: "账务" },
   { id: "audit", icon: "book", label: "审计" },
   { id: "infra", icon: "server", label: "基础设施" },
@@ -1473,6 +1474,152 @@ function Audit() {
   );
 }
 
+function McpServers() {
+  const [servers, setServers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [transport, setTransport] = useState("stdio");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await PrismAPI.mcp.listServers();
+      setServers(Array.isArray(data) ? data : (data?.data || []));
+    } catch (e) {
+      toast('加载 MCP Servers 失败: ' + e.message, 'err');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, []);
+
+  async function handleAdd(e) {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const tr = fd.get("transport");
+    const body = {
+      name: fd.get("name"),
+      description: fd.get("description") || undefined,
+      transport: tr,
+    };
+    if (tr === "stdio") {
+      body.command = fd.get("command");
+      try { body.args = JSON.parse(fd.get("args") || "[]"); } catch { body.args = []; }
+      try { body.env = JSON.parse(fd.get("env") || "{}"); } catch { body.env = {}; }
+    } else {
+      body.command = "__http__";
+      body.url = fd.get("url");
+      try { body.headers = JSON.parse(fd.get("headers") || "null"); } catch { body.headers = null; }
+    }
+    setSaving(true);
+    try {
+      await PrismAPI.mcp.createServer(body);
+      toast('已添加', 'ok');
+      setShowForm(false);
+      setTransport("stdio");
+      e.target.reset();
+      load();
+    } catch (e2) {
+      toast('添加失败: ' + e2.message, 'err');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function del(s) {
+    if (!window.confirm(`确认删除 "${s.name}"？`)) return;
+    try {
+      await PrismAPI.mcp.deleteServer(s.id);
+      toast('已删除', 'ok');
+      load();
+    } catch (e) {
+      toast('删除失败: ' + e.message, 'err');
+    }
+  }
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="page-title">MCP Servers</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>管理 Stdio 子进程与 HTTP Streamable MCP 服务器。</div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-head">
+          <Icon name="server" size={14}/>
+          <h3>全部 MCP Servers</h3>
+          <div style={{ flex: 1 }}/>
+          <button className="btn sm" onClick={() => setShowForm(v => !v)}>
+            {showForm ? "取消" : "+ 添加"}
+          </button>
+        </div>
+
+        {showForm && (
+          <form onSubmit={handleAdd} style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", background: "var(--paper-2)" }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+              <input name="name" required placeholder="名称" style={{ flex: "1 1 160px" }} className="input"/>
+              <input name="description" placeholder="描述（可选）" style={{ flex: "2 1 240px" }} className="input"/>
+            </div>
+            <div style={{ marginBottom: 12, display: "flex", gap: 20 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="radio" name="transport" value="stdio" checked={transport === "stdio"} onChange={() => setTransport("stdio")}/>
+                Stdio（子进程）
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="radio" name="transport" value="http" checked={transport === "http"} onChange={() => setTransport("http")}/>
+                HTTP（Streamable + SSE）
+              </label>
+            </div>
+            {transport === "stdio" && (
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                <input name="command" required placeholder="命令，例：npx" style={{ flex: "1 1 140px" }} className="input"/>
+                <input name="args" placeholder='参数，例：["-y","@modelcontextprotocol/server-brave-search"]' style={{ flex: "2 1 300px" }} className="input"/>
+                <input name="env" placeholder='环境变量，例：{"BRAVE_API_KEY":"xxx"}' style={{ flex: "2 1 300px" }} className="input"/>
+              </div>
+            )}
+            {transport === "http" && (
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                <input name="url" required placeholder="URL，例：https://mcp.exa.ai/mcp" style={{ flex: "2 1 300px" }} className="input"/>
+                <input name="headers" placeholder='请求头，例：{"Authorization":"Bearer xxx"}' style={{ flex: "2 1 300px" }} className="input"/>
+              </div>
+            )}
+            <button type="submit" className="btn sm" disabled={saving}>{saving ? "保存中…" : "保存"}</button>
+          </form>
+        )}
+
+        <div className="panel-body" style={{ padding: 0 }}>
+          {loading ? <Spinner/> : servers.length === 0 ? (
+            <EmptyState msg="暂无 MCP Servers"/>
+          ) : (
+            <table className="table" style={{ width: "100%" }}>
+              <thead><tr><th>名称</th><th>Transport</th><th>Command / URL</th><th>Scope</th><th></th></tr></thead>
+              <tbody>
+                {servers.map(s => (
+                  <tr key={s.id}>
+                    <td>{s.name}</td>
+                    <td><span style={{ background: s.transport === "http" ? "var(--amber)" : "var(--border)", borderRadius: 4, padding: "2px 6px", fontSize: 11 }}>{s.transport || "stdio"}</span></td>
+                    <td style={{ fontFamily: "monospace", fontSize: 11, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.transport === "http" ? s.url : s.command}
+                    </td>
+                    <td>{s.scope}</td>
+                    <td style={{ textAlign: "right" }}>
+                      {s.scope !== "system" && (
+                        <button className="btn sm ghost" onClick={() => del(s)}>删除</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Placeholder({ title, sub }) {
   return (
     <div>
@@ -1498,6 +1645,7 @@ const PAGES = {
   runs: { r: (props) => <Runs {...props}/>, title: "Runs" },
   guardrails: { r: () => <Placeholder title="护栏编辑器" sub="写规则、绑 Skill、按租户分发。"/>, title: "护栏" },
   plugins: { r: () => <Placeholder title="Skills 与插件审核" sub="私有 registry、待审核队列、签名密钥管理。"/>, title: "Skills" },
+  mcpServers: { r: () => <McpServers/>, title: "MCP Servers" },
   billing: { r: () => <Placeholder title="账务" sub="Provider 用量、月度花费、导出。"/>, title: "账务" },
   audit: { r: (props) => <Audit {...props}/>, title: "审计" },
   infra: { r: () => <Placeholder title="基础设施" sub="Postgres、Redis、OTel、备份、子进程池。"/>, title: "基础设施" },

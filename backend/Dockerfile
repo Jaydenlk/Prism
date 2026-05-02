@@ -3,8 +3,10 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # System deps (git required for Session 4c SourceResolver 3/4 — git clone + sparse-checkout)
+# nodejs+npm required for npx-based MCP servers (brave-search, tavily)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget git \
+    nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps (build context = repo root so we can COPY executor/)

@@ -8,13 +8,16 @@ Schema map:
   MCPInstallResponse      — install list item (includes JOIN mcp_servers.name)
   UpdateMCPInstallRequest — PATCH /mcp-installs/{id}
   MCPTestResponse         — POST /mcp-servers/{id}/test
+
+  McpServerBase / McpServerCreate / McpServerUpdate / McpServerResponse
+    — HTTP transport schema additions (L5a)
 """
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -96,3 +99,58 @@ class MCPTestResponse(BaseModel):
     server_id: str
     detected_capabilities: list[str] = []   # e.g. ["tools", "resources", "prompts"]
     error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# HTTP transport schema additions (L5a)
+# ---------------------------------------------------------------------------
+
+_SENSITIVE_HEADER_KEYS = {"authorization", "x-api-key", "api-key", "x-auth-token", "cookie"}
+
+
+class McpServerBase(BaseModel):
+    name: str
+    description: str | None = None
+    transport: Literal["stdio", "http"] = "stdio"
+    command: str | None = None
+    args: list[str] = []
+    env: dict[str, str] = {}
+    url: str | None = None
+    headers: dict[str, str] | None = None
+
+
+class McpServerCreate(McpServerBase):
+    @model_validator(mode="after")
+    def _validate_transport_fields(self):
+        if self.transport == "stdio":
+            if not self.command or self.command == "__http__":
+                raise ValueError("stdio transport requires a real command")
+        elif self.transport == "http":
+            if not self.url:
+                raise ValueError("http transport requires url")
+            if not self.command:
+                self.command = "__http__"
+        return self
+
+
+class McpServerUpdate(McpServerBase):
+    name: str | None = None
+
+
+class McpServerResponse(McpServerBase):
+    id: str
+    scope: str
+
+    @field_validator("headers")
+    @classmethod
+    def _mask_sensitive_headers(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return None
+        out = {}
+        for k, val in v.items():
+            if k.lower() in _SENSITIVE_HEADER_KEYS:
+                parts = (val or "").split(" ", 1)
+                out[k] = f"{parts[0]} ***" if len(parts) == 2 else "***"
+            else:
+                out[k] = val
+        return out

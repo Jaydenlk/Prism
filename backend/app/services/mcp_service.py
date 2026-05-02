@@ -58,14 +58,26 @@ _BUILTIN_MCP_SERVERS: list[dict] = [
         "description": "网页搜索 — Anthropic MCP Web Search",
         "command": "npx",
         "args": ["-y", "@anthropic/mcp-web-search"],
-        "env": {},
     },
     {
         "name": "filesystem",
         "description": "文件系统访问 — 读写本地文件",
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
-        "env": {},
+    },
+    {
+        "name": "brave-search",
+        "description": "Brave Search MCP — independent web index with 2000 free queries/month.",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+        "env_var": "BRAVE_API_KEY",
+    },
+    {
+        "name": "tavily",
+        "description": "Tavily AI Search MCP — agentic search with 1000 free queries/month.",
+        "command": "npx",
+        "args": ["-y", "tavily-mcp@latest"],
+        "env_var": "TAVILY_API_KEY",
     },
 ]
 
@@ -334,57 +346,36 @@ class MCPService:
     # Lifespan: register built-in system MCP Servers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def register_builtin_servers(db: Session) -> int:
-        """Idempotent bootstrap of system-scoped built-in MCP Servers.
-
-        Called once during FastAPI lifespan. Skips servers already present
-        (matched by name + scope='system').
-
-        Returns the number of newly inserted rows.
-        """
-        inserted = 0
+    def register_builtin_servers(self) -> None:
+        """Register or refresh _BUILTIN_MCP_SERVERS, skipping entries whose env var is unset."""
+        import os
         for spec in _BUILTIN_MCP_SERVERS:
-            existing = (
-                db.query(McpServer)
-                .filter(McpServer.scope == "system", McpServer.name == spec["name"])
-                .first()
-            )
-            if existing is not None:
-                logger.debug(
-                    "mcp_server.bootstrap_skip",
-                    name=spec["name"],
-                    reason="already exists",
-                )
+            env_var = spec.get("env_var")
+            if env_var:
+                api_key = os.environ.get(env_var)
+                if not api_key:
+                    logger.info("mcp.builtin.skipped", name=spec["name"], reason=f"{env_var} not set")
+                    continue
+                env = {env_var: api_key}
+            else:
+                env = {}
+            existing = self._db.query(McpServer).filter_by(name=spec["name"], scope="system").first()
+            if existing:
+                existing.env = env
+                self._db.commit()
                 continue
-
-            server = McpServer(
+            row = McpServer(
                 name=spec["name"],
                 description=spec.get("description"),
                 scope="system",
-                user_id=None,
                 command=spec["command"],
-                args=spec["args"],
-                env=spec["env"],
+                args=spec.get("args", []),
+                env=env,
                 created_at=datetime.now(timezone.utc),
             )
-            db.add(server)
-            inserted += 1
-            logger.info(
-                "mcp_server.bootstrap_insert",
-                name=spec["name"],
-                command=spec["command"],
-            )
-
-        if inserted > 0:
-            db.commit()
-
-        logger.info(
-            "mcp_server.bootstrap_complete",
-            total_builtins=len(_BUILTIN_MCP_SERVERS),
-            inserted=inserted,
-        )
-        return inserted
+            self._db.add(row)
+            self._db.commit()
+            logger.info("mcp.builtin.registered", name=spec["name"])
 
     # ------------------------------------------------------------------
     # Private helpers

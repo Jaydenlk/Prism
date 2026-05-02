@@ -102,12 +102,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from app.services.mcp_service import MCPService
 
         with SessionLocal() as db:
-            inserted = MCPService.register_builtin_servers(db)
-            logger.info(
-                "prism.mcp_bootstrap",
-                inserted=inserted,
-                message=f"MCP built-in servers bootstrapped ({inserted} new).",
-            )
+            MCPService(db).register_builtin_servers()
+            logger.info("prism.mcp_bootstrap", message="MCP built-in servers bootstrapped.")
     except Exception as exc:
         logger.warning(
             "prism.mcp_bootstrap_failed",
@@ -132,6 +128,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "prism.admin_bootstrap_failed",
             error=str(exc),
             message="Admin bootstrap failed (DB may not be ready). Will retry on next startup.",
+        )
+
+    # 5b. Bootstrap default marketplace (idempotent, requires admin to exist)
+    try:
+        from app.core.database import SessionLocal
+        from app.models.user import User
+        from app.services.marketplace_service import MarketplaceService
+
+        with SessionLocal() as db:
+            admin = db.query(User).filter(User.role == "admin").first()
+            if admin is not None:
+                MarketplaceService(db).bootstrap_default_marketplace(admin.id)
+            else:
+                logger.info("prism.marketplace_bootstrap_skipped", reason="no_admin_user")
+    except Exception as exc:
+        logger.warning(
+            "prism.marketplace_bootstrap_failed",
+            error=str(exc),
+            message="Marketplace bootstrap failed (DB may not be ready).",
         )
 
     # 6. Initialize ProcessManager singleton (ADR-066 subprocess scheduler)

@@ -407,6 +407,25 @@ class MarketplaceService:
             url_normalized = f"https://github.com/{url_normalized}.git"
         return _MARKETPLACE_CACHE / _safe_name_from_url(url_normalized)
 
+    def bootstrap_default_marketplace(self, created_by: str) -> None:
+        """Register default Anthropic plugin marketplace if registry is empty.
+
+        Idempotent: skips if any marketplace already exists (DEC-004).
+        created_by must be a valid user id (caller passes admin id from lifespan).
+        """
+        if self._db.query(MarketplaceRegistry).first() is not None:
+            logger.info("marketplace.bootstrap_skipped", reason="non_empty_registry")
+            return
+        default = MarketplaceRegistry(
+            name="anthropics/claude-plugins-official",
+            url="https://github.com/anthropics/claude-plugins-official",
+            catalog_json={"plugins": []},
+            created_by=created_by,
+        )
+        self._db.add(default)
+        self._db.commit()
+        logger.info("marketplace.bootstrap_default", name=default.name)
+
     async def install_plugin(
         self, marketplace_id: str, plugin_name: str, user_id: str
     ) -> InstallReport:

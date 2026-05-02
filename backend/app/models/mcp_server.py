@@ -65,6 +65,11 @@ class McpServer(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    transport: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="stdio", server_default="stdio"
+    )
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    headers_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     user_installs: Mapped[list["UserMcpInstall"]] = relationship(
