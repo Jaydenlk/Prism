@@ -22,7 +22,7 @@ ADR-010 pattern (from Task 2.3):
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
@@ -32,11 +32,10 @@ from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.schemas.common import ApiResponse
 from app.schemas.mcp import (
-    CreateMCPServerRequest,
     InstallMCPRequest,
     MCPInstallResponse,
-    MCPServerResponse,
-    MCPTestResponse,
+    McpServerCreate,
+    McpServerResponse,
     UpdateMCPInstallRequest,
 )
 from app.services.mcp_service import MCPService
@@ -52,12 +51,12 @@ router = APIRouter(tags=["mcp"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/mcp-servers", response_model=ApiResponse[list[MCPServerResponse]])
+@router.get("/mcp-servers", response_model=ApiResponse[list[McpServerResponse]])
 def list_mcp_servers(
     include_system: bool = True,
     current_user: Annotated[User, Depends(get_current_user)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
-) -> ApiResponse[list[MCPServerResponse]]:
+) -> ApiResponse[list[McpServerResponse]]:
     """List all MCP Servers visible to the current user.
 
     Returns system-scope (built-ins) plus the user's own custom servers.
@@ -69,14 +68,14 @@ def list_mcp_servers(
 
 @router.post(
     "/mcp-servers",
-    response_model=ApiResponse[MCPServerResponse],
+    response_model=ApiResponse[McpServerResponse],
     status_code=status.HTTP_201_CREATED,
 )
 def create_mcp_server(
-    data: CreateMCPServerRequest,
+    data: McpServerCreate,
     current_user: Annotated[User, Depends(get_current_user)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
-) -> ApiResponse[MCPServerResponse]:
+) -> ApiResponse[McpServerResponse]:
     """Create a new user-scoped MCP Server configuration.
 
     The ``scope`` is always forced to 'user' — system servers are bootstrapped
@@ -104,23 +103,14 @@ def delete_mcp_server(
     svc.delete_server(server_id=server_id, user_id=str(current_user.id))
 
 
-@router.post(
-    "/mcp-servers/{server_id}/test",
-    response_model=ApiResponse[MCPTestResponse],
-)
-def test_mcp_server(
+@router.post("/mcp-servers/{server_id}/test", status_code=200)
+async def test_mcp_server(
     server_id: str,
     current_user: Annotated[User, Depends(get_current_user)] = None,
     db: Annotated[Session, Depends(get_db)] = None,
-) -> ApiResponse[MCPTestResponse]:
-    """Test MCP Server connectivity and detect capabilities (stub).
-
-    Phase 1 stub: always returns success=True with ["tools"].
-    Full async probing via MCPClient (DOC-05) is wired in a later task.
-    """
-    svc = MCPService(db)
-    result = svc.test_server(server_id=server_id, user_id=str(current_user.id))
-    return ApiResponse(data=result)
+) -> dict[str, Any]:
+    """Real connection test: transient MCPClient, 10s timeout."""
+    return await MCPService(db).test_server(server_id)
 
 
 # ---------------------------------------------------------------------------

@@ -2,15 +2,13 @@
 Prism v2 — MCP Server Pydantic Schemas (DOC-09 Task 9.1)
 
 Schema map:
-  CreateMCPServerRequest  — POST /mcp-servers (user-created, scope=user)
-  MCPServerResponse       — GET  /mcp-servers item
+  McpServerCreate         — POST /mcp-servers (user-created, scope=user)
+  McpServerUpdate         — PATCH /mcp-servers/{id}
+  McpServerResponse       — GET  /mcp-servers item
   InstallMCPRequest       — POST /mcp-installs
   MCPInstallResponse      — install list item (includes JOIN mcp_servers.name)
   UpdateMCPInstallRequest — PATCH /mcp-installs/{id}
   MCPTestResponse         — POST /mcp-servers/{id}/test
-
-  McpServerBase / McpServerCreate / McpServerUpdate / McpServerResponse
-    — HTTP transport schema additions (L5a)
 """
 from __future__ import annotations
 
@@ -18,41 +16,6 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-
-
-# ---------------------------------------------------------------------------
-# MCP Server schemas
-# ---------------------------------------------------------------------------
-
-
-class CreateMCPServerRequest(BaseModel):
-    """Request body for creating a user-scoped MCP Server configuration."""
-
-    name: str = Field(..., min_length=1, max_length=100)
-    description: str | None = None
-    command: str = Field(..., min_length=1, max_length=500)
-    args: list[str] = []
-    env: dict[str, str] = {}
-
-
-class MCPServerResponse(BaseModel):
-    """Response representation of a single MCP Server.
-
-    ``scope`` is either 'system' (built-in, undeletable) or 'user'.
-    ``env`` values for system-scope servers are masked (returned as '***')
-    to prevent leaking credentials embedded in system config.
-    """
-
-    id: str
-    name: str
-    description: str | None
-    scope: str                      # 'system' | 'user'
-    command: str
-    args: list[str]
-    env: dict[str, Any]            # system scope env values masked
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +103,9 @@ class McpServerUpdate(McpServerBase):
 class McpServerResponse(McpServerBase):
     id: str
     scope: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
     @field_validator("headers")
     @classmethod

@@ -15,7 +15,7 @@ scope rules (align with Task 2.3 Provider scope pattern):
 Credentials in env are NOT additionally encrypted for MCP (env values are
 plain-text in the DB for now — user manages secrets via config_override).
 Sensitive system-scope env values are masked at the *schema* serialisation
-layer (MCPServerResponse), never in the DB.
+layer (McpServerResponse), never in the DB.
 
 ADR compliance:
   -铁律 4: all list/delete/install/uninstall methods accept user_id and filter
@@ -24,9 +24,11 @@ ADR compliance:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -34,16 +36,13 @@ from sqlalchemy.orm import Session
 
 from app.models.mcp_server import McpServer, UserMcpInstall
 from app.schemas.mcp import (
-    CreateMCPServerRequest,
     InstallMCPRequest,
     MCPInstallResponse,
-    MCPServerResponse,
-    MCPTestResponse,
+    McpServerCreate,
+    McpServerResponse,
     UpdateMCPInstallRequest,
 )
-
-if TYPE_CHECKING:
-    pass
+from executor.plugins.mcp_client import MCPClient
 
 import structlog
 logger = structlog.get_logger()
@@ -101,7 +100,7 @@ class MCPService:
         self,
         user_id: str,
         include_system: bool = True,
-    ) -> list[MCPServerResponse]:
+    ) -> list[McpServerResponse]:
         """List MCP Servers visible to this user.
 
         Returns system-scope (if include_system=True) UNION user's own servers.
@@ -154,8 +153,8 @@ class MCPService:
     def create_server(
         self,
         user_id: str,
-        data: CreateMCPServerRequest,
-    ) -> MCPServerResponse:
+        data: McpServerCreate,
+    ) -> McpServerResponse:
         """Create a user-scoped MCP Server configuration.
 
         scope is always forced to 'user' — system servers are only created
@@ -169,6 +168,8 @@ class MCPService:
             command=data.command,
             args=data.args,
             env=data.env,
+            transport=data.transport,
+            url=data.url,
             created_at=datetime.now(timezone.utc),
         )
         self._db.add(server)
@@ -215,33 +216,44 @@ class MCPService:
             user_id=user_id,
         )
 
-    def test_server(self, server_id: str, user_id: str) -> MCPTestResponse:
-        """Capability-detection stub for POST /mcp-servers/{id}/test.
+    async def test_server(self, server_id: str) -> dict[str, Any]:
+        """Real connection test: transient MCPClient, list tools, 10s timeout.
 
-        Phase 1: synchronous stub — always returns success=True with a
-        placeholder capabilities list. Full async probing (stdio/SSE launch)
-        is deferred to DOC-05 MCPClient integration.
+        Returns {success, tools, error, latency_ms}.
+        HTTP transport returns graceful failure until Task 5 lands.
         """
         server = self._db.get(McpServer, server_id)
         if server is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"MCP Server {server_id} not found.",
-            )
-        self._assert_readable(server, user_id)
+            return {"success": False, "tools": [], "error": "Server not found", "latency_ms": 0}
 
-        # Stub: report the standard MCP protocol capability set
-        detected = ["tools"]
-        logger.info(
-            "mcp_server.test_stub",
-            server_id=server_id,
-            detected=detected,
+        transport = getattr(server, "transport", "stdio") or "stdio"
+        started = time.monotonic()
+
+        if transport == "http":
+            return {"success": False, "tools": [], "error": "HTTP transport branch not yet available", "latency_ms": 0}
+
+        client = MCPClient(
+            server_name=server.name,
+            command=server.command,
+            args=list(server.args or []),
+            env=dict(server.env or {}),
         )
-        return MCPTestResponse(
-            success=True,
-            server_id=server_id,
-            detected_capabilities=detected,
-        )
+        try:
+            await asyncio.wait_for(client.start(), timeout=10.0)
+            tools = [t.get("name") if isinstance(t, dict) else getattr(t, "name", str(t))
+                     for t in client.get_tool_definitions()]
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            return {"success": True, "tools": tools, "error": None, "latency_ms": elapsed_ms}
+        except asyncio.TimeoutError:
+            return {"success": False, "tools": [], "error": "Connection timeout (10s)", "latency_ms": 10_000}
+        except Exception as exc:
+            return {"success": False, "tools": [], "error": f"{type(exc).__name__}: {exc}",
+                    "latency_ms": int((time.monotonic() - started) * 1000)}
+        finally:
+            try:
+                await client.stop()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Install-level operations (user_mcp_installs)
@@ -407,26 +419,45 @@ class MCPService:
         return install
 
     @staticmethod
-    def _to_server_response(server: McpServer) -> MCPServerResponse:
+    def _to_server_response(server: McpServer) -> McpServerResponse:
         """Convert McpServer ORM to response schema.
 
         system scope env values are masked to '***' to prevent secret leakage.
-        user scope env is returned as-is.
+        headers_encrypted is decrypted inline; validator masks sensitive keys.
+        url only populated for http transport.
         """
+        import json
+
         env: dict
         if server.scope == "system" and server.env:
             env = {k: "***" for k in server.env}
         else:
             env = server.env or {}
 
-        return MCPServerResponse(
+        transport = getattr(server, "transport", "stdio") or "stdio"
+        url = getattr(server, "url", None) if transport == "http" else None
+        headers: dict[str, str] | None = None
+        if transport == "http":
+            ciphertext = getattr(server, "headers_encrypted", None)
+            if ciphertext:
+                try:
+                    from app.core.config import settings
+                    from app.core.security import decrypt_value
+                    headers = json.loads(decrypt_value(ciphertext, settings.ENCRYPTION_KEY))
+                except Exception:
+                    headers = None
+
+        return McpServerResponse(
             id=server.id,
             name=server.name,
             description=server.description,
             scope=server.scope,
+            transport=transport,
             command=server.command,
             args=server.args or [],
             env=env,
+            url=url,
+            headers=headers,
             created_at=server.created_at,
         )
 

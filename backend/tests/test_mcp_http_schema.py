@@ -24,12 +24,14 @@ def test_create_http_with_url_ok():
 
 
 def test_response_masks_authorization():
+    from datetime import datetime, timezone
     r = McpServerResponse(
         id="00000000-0000-0000-0000-000000000000",
         name="x", scope="system", transport="http",
         url="https://example/mcp", command="__http__",
         args=[], env={},
         headers={"Authorization": "Bearer secret-abc-123", "Content-Type": "application/json"},
+        created_at=datetime.now(timezone.utc),
     )
     d = r.model_dump()
     assert d["headers"]["Authorization"] == "Bearer ***"
