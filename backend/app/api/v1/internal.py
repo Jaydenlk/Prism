@@ -21,6 +21,7 @@ POST /api/v1/internal/run-crashed (v4 新增)
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -29,6 +30,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.security import decrypt_value
+from app.models.mcp_server import McpServer, UserMcpInstall
+from app.models.skill_install import SkillInstall
 from app.services.callback_service import CallbackService
 from app.services.run_lifecycle import RunLifecycle
 from app.services.sse_manager import SSEManager
@@ -219,3 +223,97 @@ async def run_crashed(
         )
 
     return {"success": True, "new_run_id": new_run_id}
+
+
+# ---------------------------------------------------------------------------
+# GET /internal/users/{user_id}/installed-skills
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/users/{user_id}/installed-skills",
+    include_in_schema=False,
+)
+async def get_user_installed_skills(
+    user_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(_verify_callback_secret),
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Executor 启动期拉取 user-installed skills.
+
+    返回结构: {"skills": [{"skill_name", "install_path", "source", "source_url", "version"}, ...]}
+    """
+    query = db.query(SkillInstall).filter(SkillInstall.user_id == user_id)
+    if hasattr(SkillInstall, "status"):
+        query = query.filter(SkillInstall.status == "installed")  # type: ignore[attr-defined]
+    rows = query.all()
+    return {
+        "skills": [
+            {
+                "skill_name": r.skill_name,
+                "install_path": getattr(r, "install_path", None),
+                "source": r.source,
+                "source_url": r.source_url,
+                "version": r.version,
+            }
+            for r in rows
+        ]
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /internal/users/{user_id}/mcp-servers
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/users/{user_id}/mcp-servers",
+    include_in_schema=False,
+)
+async def get_user_mcp_servers(
+    user_id: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(_verify_callback_secret),
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Executor 启动期拉取该 user 可用的 MCP servers (system-scope + user-installed user-scope).
+
+    返回结构: {"servers": [{...row..., transport, headers (plaintext if http)}, ...]}
+    HTTP 行的 headers_encrypted 在此处解密为 plaintext headers 字典.
+    """
+    system_rows = (
+        db.query(McpServer)
+        .filter(McpServer.scope == "system", McpServer.user_id.is_(None))
+        .all()
+    )
+    user_rows = (
+        db.query(McpServer)
+        .join(UserMcpInstall, UserMcpInstall.mcp_server_id == McpServer.id)
+        .filter(
+            UserMcpInstall.user_id == user_id,
+            UserMcpInstall.is_enabled.is_(True),
+        )
+        .all()
+    )
+
+    out: list[dict[str, Any]] = []
+    for r in system_rows + user_rows:
+        transport = getattr(r, "transport", "stdio")
+        d: dict[str, Any] = {
+            "id": r.id,
+            "name": r.name,
+            "scope": r.scope,
+            "transport": transport,
+            "command": r.command,
+            "args": r.args,
+            "env": r.env,
+        }
+        if transport == "http":
+            d["url"] = getattr(r, "url", None)
+            ciphertext = getattr(r, "headers_encrypted", None)
+            d["headers"] = (
+                json.loads(decrypt_value(ciphertext, settings.ENCRYPTION_KEY))
+                if ciphertext
+                else {}
+            )
+        out.append(d)
+    return {"servers": out}

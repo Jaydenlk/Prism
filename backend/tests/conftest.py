@@ -5,11 +5,13 @@ without Docker or a full Prism installation.
 import os
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
 
@@ -38,7 +40,10 @@ def pytest_configure(config):
         "CALLBACK_SECRET",
         "test_callback_secret_ccccccccccccccccccccccccccccccccccccccccccccccc",
     )
-    os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+    os.environ.setdefault(
+        "DATABASE_URL",
+        "postgresql://prism:prism_dev_pass@localhost:5432/prism_test",
+    )
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 
@@ -67,6 +72,7 @@ def db():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
 
     @event.listens_for(engine, "connect")
@@ -139,12 +145,15 @@ def seeded_user_with_skill(db) -> tuple[str, str]:
     db.add(user)
     db.flush()
 
+    now = datetime.now(timezone.utc)
     kwargs: dict = dict(
         user_id=user.id,
         skill_name="test-skill",
         source="local",
         source_url=None,
         version="1.0",
+        installed_at=now,
+        updated_at=now,
     )
     if hasattr(SkillInstall, "install_path"):
         kwargs["install_path"] = "/tmp/test"
@@ -171,6 +180,7 @@ def seeded_user_with_mcp(db) -> str:
     db.add(user)
     db.flush()
 
+    now = datetime.now(timezone.utc)
     server = McpServer(
         name="test-stdio",
         scope="user",
@@ -178,6 +188,7 @@ def seeded_user_with_mcp(db) -> str:
         command="echo",
         args=["hi"],
         env={},
+        created_at=now,
     )
     db.add(server)
     db.flush()
@@ -186,6 +197,7 @@ def seeded_user_with_mcp(db) -> str:
         user_id=user.id,
         mcp_server_id=server.id,
         is_enabled=True,
+        created_at=now,
     )
     db.add(install)
     db.commit()
@@ -212,6 +224,7 @@ def seeded_user_with_http_mcp(db) -> str:
     headers = {"Authorization": "Bearer token-abc", "Content-Type": "application/json"}
     encrypted = encrypt_value(json.dumps(headers), settings.ENCRYPTION_KEY)
 
+    now = datetime.now(timezone.utc)
     server = McpServer(
         name="test-http",
         scope="user",
@@ -222,6 +235,7 @@ def seeded_user_with_http_mcp(db) -> str:
         transport="http",
         url="https://example.test/mcp",
         headers_encrypted=encrypted,
+        created_at=now,
     )
     db.add(server)
     db.flush()
@@ -230,6 +244,7 @@ def seeded_user_with_http_mcp(db) -> str:
         user_id=user.id,
         mcp_server_id=server.id,
         is_enabled=True,
+        created_at=now,
     )
     db.add(install)
     db.commit()
