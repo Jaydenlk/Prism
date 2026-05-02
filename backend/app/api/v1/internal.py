@@ -243,20 +243,20 @@ async def get_user_installed_skills(
 
     返回结构: {"skills": [{"skill_name", "install_path", "source", "source_url", "version"}, ...]}
     """
-    query = db.query(SkillInstall).filter(SkillInstall.user_id == user_id)
-    if hasattr(SkillInstall, "status"):
-        query = query.filter(SkillInstall.status == "installed")  # type: ignore[attr-defined]
-    rows = query.all()
+    rows = db.query(SkillInstall).filter(SkillInstall.user_id == user_id).all()
+    # install_path + status live in metadata_ JSONB (skill_install_service.py
+    # writes them at install time; ADR: row absence = uninstalled, no soft-delete).
     return {
         "skills": [
             {
                 "skill_name": r.skill_name,
-                "install_path": getattr(r, "install_path", None),
+                "install_path": (r.metadata_ or {}).get("install_path"),
                 "source": r.source,
                 "source_url": r.source_url,
                 "version": r.version,
             }
             for r in rows
+            if (r.metadata_ or {}).get("status", "installed") == "installed"
         ]
     }
 

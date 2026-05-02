@@ -146,7 +146,7 @@ def seeded_user_with_skill(db) -> tuple[str, str]:
     db.flush()
 
     now = datetime.now(timezone.utc)
-    kwargs: dict = dict(
+    si = SkillInstall(
         user_id=user.id,
         skill_name="test-skill",
         source="local",
@@ -154,13 +154,8 @@ def seeded_user_with_skill(db) -> tuple[str, str]:
         version="1.0",
         installed_at=now,
         updated_at=now,
+        metadata_={"install_path": "/tmp/test", "status": "installed"},
     )
-    if hasattr(SkillInstall, "install_path"):
-        kwargs["install_path"] = "/tmp/test"
-    if hasattr(SkillInstall, "status"):
-        kwargs["status"] = "installed"
-
-    si = SkillInstall(**kwargs)
     db.add(si)
     db.commit()
     return user.id, "test-skill"

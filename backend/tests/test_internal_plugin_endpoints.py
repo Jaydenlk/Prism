@@ -31,13 +31,10 @@ def test_installed_skills_unknown_user_returns_empty_list(client: TestClient, ca
     assert res.json() == {"skills": []}
 
 
-@pytest.mark.skipif(
-    not hasattr(SkillInstall, "status"),
-    reason="Task 4 schema (SkillInstall.status / install_path) not yet merged",
-)
 def test_installed_skills_returns_user_skills(
     client: TestClient, callback_secret: str, seeded_user_with_skill
 ):
+    """install_path lives in metadata_ JSONB (skill_install_service convention)."""
     user_id, skill_name = seeded_user_with_skill
     res = client.get(
         f"/api/v1/internal/users/{user_id}/installed-skills",
@@ -47,8 +44,8 @@ def test_installed_skills_returns_user_skills(
     skills = res.json()["skills"]
     assert any(s["skill_name"] == skill_name for s in skills)
     s = next(s for s in skills if s["skill_name"] == skill_name)
-    assert "install_path" in s
-    assert "source" in s
+    assert s["install_path"] == "/tmp/test"
+    assert s["source"] == "local"
 
 
 def test_mcp_servers_returns_user_scoped_plus_system(
