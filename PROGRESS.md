@@ -220,3 +220,23 @@
 |---|---|---|---|
 | **Block 2 = Session 4d: IM 三小尾**(ADR-088 延后项) | pending | Slack Socket Mode / card button action 回传 3 平台 / sensitive key 单一源 | 0.5-1 session |
 | **Block 3 = Session 4e+: 分布式任务拆解**(新 ADR) | pending | Planner-Executor 架构(Anthropic Agent SDK sub-agent + LangGraph 参考,Manus 黑箱仅 motivation) | 4-5 session,首 session only spec |
+
+---
+
+## Plugin Bootstrap PR (2026-05-02 — feat/plugin-bootstrap, 14 commits)
+
+| Task | Status | Commit | Session Notes |
+|---|---|---|---|
+| L1 Backend internal endpoints (skills + mcp servers) | completed | 6072474 + 6c10cd4 | CALLBACK_SECRET-protected; HTTP server headers decrypted in service layer (executor never holds ENCRYPTION_KEY) |
+| L2 Executor __main__.py PluginHost + SkillLoader bootstrap | completed | d1e2fe2 + 81ba928 + 4441767 | **根因修复**: Step 3d-bis 实例化 + asyncio.gather concurrent server start; SkillLoader.register_from_path used; assembler.set_extra_dynamic_tail public API |
+| L3 POST /mcp-servers/{id}/test real connection | completed | bf1b21c + 4441767 | Real MCPClient transient + 10s timeout; restored user_id _assert_readable (security regression fix); supports both stdio and http transport |
+| L4 Default marketplace bootstrap | completed | adf84a2 | Lifespan auto-registers anthropics/claude-plugins-official if registry empty |
+| L5a MCP HTTP transport DB schema + migration 010 + admin.html UI | completed | adf84a2 | transport/url/headers_encrypted columns; AES-256-GCM headers ciphertext; transport radio + conditional fields in admin tab |
+| L5b MCPClient HTTP Streamable transport (spec 2025-03-26) | completed | 76d91ef + 4441767 | POST + SSE streaming via httpx.stream + aiter_lines (early return on matching id); Mcp-Session-Id stateful; 410 reinit with proper aclose |
+| L6 exa builtin entry (HTTP) | completed | d1e2fe2 + 4441767 | Auto-registered if EXA_API_KEY in .env; ${env:VAR} substitution + AES headers encryption; verified live with user's Bearer token |
+| L7 Brave + Tavily stdio builtins | completed | adf84a2 | npx-based stdio servers; env_var gate (graceful skip if key unset) |
+| L8 e2e Playwright real-call validation | completed | 202bdc5 + edb6996 | 4/4 effective tests PASS double-viewport; live exa returns real CNN/sina/xinhuanet URLs cited in agent's final response |
+| Simplify (3-subagent reuse/quality/efficiency) | completed | 4441767 | P0 security: test_server user_id; N+1 register_builtin commits; SSE stream; httpx leak; PluginHost.start_server + assembler.set_extra_dynamic_tail public APIs; _decrypt_headers + _expand_env_vars helpers |
+
+**Total**: 14 commits, 128 backend pass + 10 executor pass + 4 e2e effective pass.
+**Real validation**: agent invokes `mcp__exa__web_search_exa` against live mcp.exa.ai, exa returns real URLs, agent cites them in markdown links in final response. Verified via DB inspection of session messages.
