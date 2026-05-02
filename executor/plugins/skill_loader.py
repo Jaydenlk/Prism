@@ -133,6 +133,38 @@ class SkillLoader:
                         skill_file=skill_file,
                     )
 
+    def register_from_path(self, install_path: str) -> "SkillMetadata | None":
+        """注册单个 install_path 下的 SKILL.md（user-installed skill 显式加载）。
+
+        与 scan_and_register 平行：scan 是按目录扫描，本方法是按已知路径注册。
+        executor 启动期 plugin bootstrap 用这个：从 backend internal endpoint
+        拉到的 install_path 列表里逐条注册（每条 = 一个用户已安装的 skill）。
+
+        install_path 期望是包含 SKILL.md 的目录（约定 `.prism/skills/@{source}/{skill_name}/`）。
+        若目录或 SKILL.md 不存在则 log warning 返回 None。
+        """
+        if not os.path.isdir(install_path):
+            logger.warning("skill.register_from_path.dir_missing", install_path=install_path)
+            return None
+        skill_file = os.path.join(install_path, "SKILL.md")
+        if not os.path.exists(skill_file):
+            logger.warning("skill.register_from_path.skill_md_missing", install_path=install_path)
+            return None
+        metadata = self._parse_frontmatter(skill_file)
+        if not metadata:
+            logger.warning("skill.register_from_path.parse_failed", install_path=install_path)
+            return None
+        metadata.path = skill_file
+        self._registry[metadata.name] = metadata
+        logger.info(
+            "skill.registered",
+            name=metadata.name,
+            install_path=install_path,
+            triggers=len(metadata.triggers),
+            agents_filter=metadata.agents or "(all)",
+        )
+        return metadata
+
     # ------------------------------------------------------------------
     # Level 1 — 描述注入
     # ------------------------------------------------------------------

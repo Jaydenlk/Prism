@@ -569,24 +569,39 @@ async def main() -> None:
             assembler=assembler,
         )
 
+        # MCP servers (stdio + http via W5 transport dispatch)
         for srv in servers_data:
-            if srv.get("transport", "stdio") != "stdio":
-                continue
             try:
-                await plugin_host._start_mcp_server(
-                    server_name=srv.get("name", ""),
-                    command=srv.get("command", ""),
-                    args=srv.get("args", []),
-                    env=srv.get("env", {}),
-                )
+                await plugin_host._start_mcp_server(srv)
             except Exception as exc:
                 logger.warning(
                     "executor.mcp_load_failed",
                     server=srv.get("name"),
+                    transport=srv.get("transport", "stdio"),
                     error=str(exc),
                 )
 
+        # Skills — register each user-installed skill from its install_path
+        for skill_data in skills_data:
+            install_path = skill_data.get("install_path")
+            if not install_path:
+                continue
+            try:
+                skill_loader.register_from_path(install_path)
+            except Exception as exc:
+                logger.warning(
+                    "executor.skill_register_failed",
+                    skill=skill_data.get("skill_name"),
+                    install_path=install_path,
+                    error=str(exc),
+                )
+
+        # Refresh prompt with newly registered MCP tools + skill descriptions
         assembler.update_tools(registry.list_definitions())
+        skill_descriptions = skill_loader.get_descriptions_for_prompt(agent_type)
+        if skill_descriptions:
+            # Phase 1 injection point for skill grammar — appended to dynamic tail
+            assembler._extra_dynamic_tail = skill_descriptions
 
         # ----------------------------------------------------------------
         # Step 5: Harness Runtime — wires middleware pipeline + permission

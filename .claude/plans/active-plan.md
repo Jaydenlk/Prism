@@ -1,29 +1,55 @@
-# Active Plan
+# Active Plan — Plugin Bootstrap (2026-05-02)
 
-> 当前正在执行的任务计划。主 agent 维护,子 agent 只读自己相关的部分。
-> 任务完成后归档到 `.claude/plans/archive/`。
+> 当前任务的子 agent 派单计划。每任务覆盖。完成后归档到 `.claude/plans/archive/`。
 
-## 任务: workflow upgrade dry-run — 验证子 agent 派单 + handoff 状态机 + 决策记录链路
+## 总目标
+修复"executor `__main__.py` Step 3d 从未实例化 PluginHost / SkillLoader"根因 + 加 HTTP transport + 集成 exa/Brave/Tavily 三家搜索 builtin。
 
-## 状态: DONE(归档于 2026-05-02)
+## Spec & Plan
+- Spec: `docs/superpowers/specs/2026-05-02-plugin-bootstrap-design.md`
+- Plan: `docs/superpowers/plans/2026-05-02-plugin-bootstrap.md`
 
-## 涉及文件/模块
-- `frontend/Prism.html`(只读)
-- `frontend/admin.html`(只读)
-- `backend/app/`(只读 1-2 个入口文件)
-- `.claude/plans/handoff-main-to-explorer-frontend-structure.md`(handoff 卡)
-- `.claude/memory/decisions.md`(决策追加)
+## Branch
+`feat/plugin-bootstrap` (worktree: `.worktrees/plugin-bootstrap`)
 
-## 步骤
-1. [x] 写 DEC-001 到 decisions.md → 执行者: main
-2. [x] 起 active-plan.md → 执行者: main
-3. [x] 创建 handoff-main-to-explorer-frontend-structure.md(5 字段) → 执行者: main
-4. [x] 派 general-purpose 模拟 explorer 执行结构摸底 → 执行者: subagent (模拟 explorer)
-5. [x] 验证子 agent 是否守了范围 + 回填 handoff → 执行者: main(全 PASS,见 decisions.md DEC-002)
-6. [x] 归档 handoff 到 archive/,更新本计划状态为 DONE → 执行者: main
+## 派单状态
 
-## 相关决策
-- DEC-001: 选 explorer 排除 implementer 因纯只读;排除 Explore 因要测项目级 subagent 链路
+### Batch 1a (parallel sonnet x3) — IN FLIGHT
+| Task | Worker | Handoff | TaskList ID | 状态 |
+|---|---|---|---|---|
+| Task 1 / L1 | implementer (W1) | `handoff-main-to-implementer-L1-internal-endpoints.md` | #1 | READY_FOR_IMPL → 运行中 |
+| Task 3 / L4+L7 | implementer (W3) | `handoff-main-to-implementer-L4L7-marketplace-stdio-builtins.md` | #4 + #8 | READY_FOR_IMPL → 运行中 |
+| Task 4 / L5a | implementer (W4) | `handoff-main-to-implementer-L5a-http-transport-schema.md` | #5 | READY_FOR_IMPL → 运行中 |
 
-## 当前阻塞
-- 无(注:刚部署的 .claude/agents/*.md 在本会话不可被 Agent 工具直接调用,需 session 重启;dry-run 用 general-purpose 模拟,验证行为机制而非加载机制)
+### Batch 1b (sequential after 1a) — QUEUED
+| Task | Worker | Handoff | TaskList ID | 状态 |
+|---|---|---|---|---|
+| Task 2 / L3 | implementer (W2) | `handoff-main-to-implementer-L3-test-server-real.md` | #3 | 等待 1a |
+
+> 排队原因: T2 与 T3 都改 `mcp_service.py`，串行避免文件写竞态。
+
+### Batch 2 (parallel sonnet x2) — QUEUED
+| Task | Worker | Handoff | TaskList ID | 状态 |
+|---|---|---|---|---|
+| Task 5 / L5b | implementer (W5) | `handoff-main-to-implementer-L5b-mcp-http-branch.md` | #6 | 等待 Batch 1 |
+| Task 6 / L2+L6 | implementer (W6) | `handoff-main-to-implementer-L2L6-executor-bootstrap-exa.md` | #2 + #7 | 等待 Batch 1 |
+
+### Batch 3 — QUEUED
+| Task | Worker | TaskList ID | 状态 |
+|---|---|---|---|
+| Task 7 / L8 | qa-engineer (W7) | #9 | 等待 Batch 2 |
+
+## 下一步触发
+Batch 1a 完成后:
+1. 主 agent 集成: 检查 git log, run pytest 确认 4 任务测试都 PASS (T1 的 http skip 在 T4 完成后应当转 PASS — 触发再跑一次)
+2. 派 T2 (W2) 单独跑
+3. T2 完成 → 派 Batch 2 (W5 + W6 并行)
+4. Batch 2 完成 → 派 W7 qa-engineer 跑 e2e Playwright 真实 exa 调用
+
+## 状态机流转
+`READY_FOR_IMPL → READY_FOR_REVIEW → DONE` (单 implementer 任务)
+
+子 agent 完成时回填 handoff 顶部状态 + "已完成" + "产出物" + "遗留问题" 段落。主 agent 读后归档到 `.claude/plans/archive/`。
+
+## 归档前一任务
+旧的 `workflow upgrade dry-run` 任务（DEC-001/002/003）完成于 2026-05-02 早些时候，归档应在 `.claude/plans/archive/` 下，本文件已被新任务覆盖。
