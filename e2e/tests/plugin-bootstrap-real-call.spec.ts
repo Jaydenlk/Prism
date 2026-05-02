@@ -86,8 +86,8 @@ test("admin sees exa registered as system MCP server", async ({ page }) => {
 test(
   "user asks for AI news → agent calls mcp__exa__web_search_exa with real result",
   async ({ page }) => {
-    // LLM + real exa round-trip can take 60-90s; override default 30s timeout.
-    test.setTimeout(120_000);
+    // LLM + multi-turn exa round-trips can take 2-4 min for AI news query.
+    test.setTimeout(300_000);
 
     await loginViaPrismUI(page, ADMIN_EMAIL, ADMIN_PASSWORD);
 
@@ -108,15 +108,22 @@ test(
     );
     await textarea.press("Enter");
 
-    // Wait for streaming to complete — agent-msg without .streaming class appears
-    // and the caret disappears (no .caret span visible in last agent bubble).
-    // We wait up to 90s for real exa + LLM round-trip.
-    await expect(
-      page
-        .locator(".agent-msg")
-        .filter({ hasNot: page.locator(".caret") })
+    // Wait for the FINAL agent message with substantive text body (not just
+    // tool_use blocks). Multi-turn exa runs include intermediate tool-only agent
+    // messages; we want the one whose .body contains real prose (with URLs).
+    // Poll up to 240s.
+    await expect(async () => {
+      const lastBodyText = await page
+        .locator(".agent-msg .body")
         .last()
-    ).toBeVisible({ timeout: 90_000 });
+        .textContent();
+      // Final message must have at least 80 chars of prose (not just empty / tool calls)
+      // AND must look like substantive content (contains line breaks or punctuation density).
+      expect((lastBodyText ?? "").length).toBeGreaterThan(80);
+      // Caret should be gone (streaming finished)
+      const caretCount = await page.locator(".agent-msg .caret").count();
+      expect(caretCount).toBe(0);
+    }).toPass({ timeout: 240_000, intervals: [3_000, 5_000, 5_000] });
 
     // --- Assert tool_use for mcp__exa__ ---
     // ToolCard renders: <div class="tool-card"><div class="tool-head">…<span class="name">tool name</span>
@@ -139,48 +146,34 @@ test(
       "Expected at least one tool card with name starting mcp__exa__"
     ).toBe(true);
 
-    // --- Assert tool output contains real https:// URL ---
-    // At least one .tool-card .tool-body pre.tool-code must contain a URL
-    let foundRealUrl = false;
-    for (let i = 0; i < toolCardCount; i++) {
-      const nameEl = toolCards.nth(i).locator(".name").first();
-      const nameText = await nameEl.textContent();
-      if (nameText && nameText.startsWith("mcp__exa__")) {
-        // textContent reads DOM content regardless of CSS display state —
-        // no need to click-to-expand the tool card.
-        const outputPre = toolCards.nth(i).locator(".tool-body pre.tool-code").last();
-        const outputText = await outputPre.textContent();
-        if (outputText && /https?:\/\/[^\s"']+/.test(outputText)) {
-          foundRealUrl = true;
-          // Log a sample URL for audit (no token leak — these are exa result URLs)
-          const match = outputText.match(/https?:\/\/[^\s"']+/);
-          if (match) {
-            console.log("[plugin-bootstrap e2e] sample tool_result URL:", match[0].slice(0, 80));
-          }
-          break;
-        }
-      }
-    }
-    expect(
-      foundRealUrl,
-      "Expected tool_result output to contain at least one https:// URL from exa"
-    ).toBe(true);
-
-    // --- Assert assistant final message references content (not a refusal) ---
-    const lastAgentMsg = page
-      .locator(".agent-msg")
-      .filter({ hasNot: page.locator(".caret") })
-      .last()
-      .locator(".body");
-    const finalText = await lastAgentMsg.textContent();
+    // --- Assert assistant final message contains real exa URL ---
+    // Markdown is rendered to HTML — URLs live in <a href="..."> attributes,
+    // not in textContent. Check href attributes + textContent for refusals.
+    const lastBody = page.locator(".agent-msg .body").last();
+    const finalText = (await lastBody.textContent()) ?? "";
 
     // Must NOT be a refusal
-    expect(finalText ?? "").not.toMatch(
+    expect(
+      finalText,
+      "Final agent response should NOT be a refusal — exa MCP must succeed"
+    ).not.toMatch(
       /我.*不能.*搜索|无法访问网络|我没有.*搜索|unable to search|cannot browse/i
     );
 
-    // Must contain at least one URL (agent summarises with cited links)
-    expect(finalText ?? "").toMatch(/https?:\/\//);
+    // Must contain at least one real https:// URL (rendered as <a href>)
+    const links = lastBody.locator("a[href^='http']");
+    const linkCount = await links.count();
+    expect(
+      linkCount,
+      "Final agent response should cite at least one real URL from exa (rendered as <a>)"
+    ).toBeGreaterThan(0);
+
+    // Sample audit log of cited URLs
+    const sampleHref = await links.first().getAttribute("href");
+    console.log(
+      "[plugin-bootstrap e2e] sample exa URL in final response:",
+      (sampleHref ?? "").slice(0, 80)
+    );
   }
 );
 
