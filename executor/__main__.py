@@ -274,6 +274,42 @@ async def heartbeat_writer(
 
 
 # ---------------------------------------------------------------------------
+# Plugin bootstrap helper（DEC-004: L2 根因修复）
+# ---------------------------------------------------------------------------
+
+async def bootstrap_plugins(
+    backend_url: str,
+    user_id: str,
+    callback_secret: str,
+) -> tuple[list[dict], list[dict]]:
+    """Fetch user-installed skills + accessible MCP servers from backend internal API.
+
+    Returns (skills, servers) — both empty list on any failure (graceful, log warning).
+    """
+    import httpx
+    headers = {"X-Callback-Secret": callback_secret}
+    skills: list[dict] = []
+    servers: list[dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            resp_skills = await http.get(
+                f"{backend_url}/api/v1/internal/users/{user_id}/installed-skills",
+                headers=headers,
+            )
+            resp_skills.raise_for_status()
+            skills = resp_skills.json().get("skills", [])
+            resp_servers = await http.get(
+                f"{backend_url}/api/v1/internal/users/{user_id}/mcp-servers",
+                headers=headers,
+            )
+            resp_servers.raise_for_status()
+            servers = resp_servers.json().get("servers", [])
+    except Exception as exc:
+        logger.warning("executor.plugin_bootstrap_failed", error=str(exc), user_id=user_id)
+    return skills, servers
+
+
+# ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
 
@@ -507,6 +543,50 @@ async def main() -> None:
 
         assembler = PromptAssembler(agent_type=agent_type, tools=registry.list_definitions())
         pipeline = ToolExecutionPipeline(registry, context_budget=budget)
+
+        # ----------------------------------------------------------------
+        # Step 3d-bis: Plugin Bootstrap (skills + MCP servers) — DEC-004
+        # ----------------------------------------------------------------
+        from executor.plugins.host import PluginHost
+        from executor.plugins.skill_loader import SkillLoader
+        from executor.harness.hooks.system import HookSystem
+
+        skills_data, servers_data = await bootstrap_plugins(
+            backend_url=os.environ.get("BACKEND_URL", "http://backend:8000"),
+            user_id=args.user_id,
+            callback_secret=os.environ.get("CALLBACK_SECRET", args.callback_secret),
+        )
+
+        hook_system = HookSystem()
+        skill_loader = SkillLoader(
+            skills_dir=os.environ.get("PRISM_PLUGIN_DIR", "plugins/skills"),
+            hook_system=hook_system,
+        )
+        plugin_host = PluginHost(
+            skill_loader=skill_loader,
+            hook_system=hook_system,
+            tool_registry=registry,
+            assembler=assembler,
+        )
+
+        for srv in servers_data:
+            if srv.get("transport", "stdio") != "stdio":
+                continue
+            try:
+                await plugin_host._start_mcp_server(
+                    server_name=srv.get("name", ""),
+                    command=srv.get("command", ""),
+                    args=srv.get("args", []),
+                    env=srv.get("env", {}),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "executor.mcp_load_failed",
+                    server=srv.get("name"),
+                    error=str(exc),
+                )
+
+        assembler.update_tools(registry.list_definitions())
 
         # ----------------------------------------------------------------
         # Step 5: Harness Runtime — wires middleware pipeline + permission

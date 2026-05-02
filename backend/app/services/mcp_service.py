@@ -78,6 +78,17 @@ _BUILTIN_MCP_SERVERS: list[dict] = [
         "args": ["-y", "tavily-mcp@latest"],
         "env_var": "TAVILY_API_KEY",
     },
+    {
+        "name": "exa",
+        "description": "Exa AI 搜索 — 神经网络驱动的语义搜索 + URL 内容提取（HTTP transport）。",
+        "transport": "http",
+        "url": "https://mcp.exa.ai/mcp",
+        "headers_template": {
+            "Authorization": "Bearer ${env:EXA_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        "env_var": "EXA_API_KEY",
+    },
 ]
 
 
@@ -361,33 +372,62 @@ class MCPService:
     def register_builtin_servers(self) -> None:
         """Register or refresh _BUILTIN_MCP_SERVERS, skipping entries whose env var is unset."""
         import os
+        import json as _json
+        import re
+        from app.core.security import encrypt_value
+        from app.core.config import settings as _settings
+
         for spec in _BUILTIN_MCP_SERVERS:
             env_var = spec.get("env_var")
-            if env_var:
-                api_key = os.environ.get(env_var)
-                if not api_key:
-                    logger.info("mcp.builtin.skipped", name=spec["name"], reason=f"{env_var} not set")
-                    continue
-                env = {env_var: api_key}
+            api_key = os.environ.get(env_var) if env_var else None
+            if env_var and not api_key:
+                logger.info("mcp.builtin.skipped", name=spec["name"], reason=f"{env_var} not set")
+                continue
+
+            transport = spec.get("transport", "stdio")
+            if transport == "http":
+                template = spec.get("headers_template", {})
+
+                def _sub(s: str) -> str:
+                    return re.sub(r"\$\{env:(\w+)\}", lambda m: os.environ.get(m.group(1), ""), s)
+
+                headers = {k: _sub(v) for k, v in template.items()}
+                ciphertext = encrypt_value(_json.dumps(headers), _settings.ENCRYPTION_KEY)
+                row_kwargs: dict = dict(
+                    name=spec["name"],
+                    description=spec.get("description"),
+                    scope="system",
+                    command="__http__",
+                    args=[],
+                    env={},
+                    transport="http",
+                    url=spec["url"],
+                    headers_encrypted=ciphertext,
+                )
             else:
-                env = {}
+                row_kwargs = dict(
+                    name=spec["name"],
+                    description=spec.get("description"),
+                    scope="system",
+                    command=spec["command"],
+                    args=spec.get("args", []),
+                    env={env_var: api_key} if env_var else {},
+                    transport="stdio",
+                    url=None,
+                    headers_encrypted=None,
+                )
+
             existing = self._db.query(McpServer).filter_by(name=spec["name"], scope="system").first()
             if existing:
-                existing.env = env
+                for k, v in row_kwargs.items():
+                    setattr(existing, k, v)
                 self._db.commit()
                 continue
-            row = McpServer(
-                name=spec["name"],
-                description=spec.get("description"),
-                scope="system",
-                command=spec["command"],
-                args=spec.get("args", []),
-                env=env,
-                created_at=datetime.now(timezone.utc),
-            )
+            row_kwargs["created_at"] = datetime.now(timezone.utc)
+            row = McpServer(**row_kwargs)
             self._db.add(row)
             self._db.commit()
-            logger.info("mcp.builtin.registered", name=spec["name"])
+            logger.info("mcp.builtin.registered", name=spec["name"], transport=transport)
 
     # ------------------------------------------------------------------
     # Private helpers
