@@ -420,40 +420,86 @@ class MCPService:
 
             transport = spec.get("transport", "stdio")
             if transport == "http":
-                headers = {k: _expand_env_vars(v) for k, v in spec.get("headers_template", {}).items()}
+                headers_plaintext = {
+                    k: _expand_env_vars(v) for k, v in spec.get("headers_template", {}).items()
+                }
+            else:
+                headers_plaintext = None
+
+            existing = existing_by_name.get(spec["name"])
+            if existing:
+                # Compare against existing decrypted state to keep registration
+                # idempotent — AES-GCM nonce randomization would otherwise force
+                # an UPDATE every startup even when the inputs are unchanged.
+                fields_changed = (
+                    existing.description != spec.get("description")
+                    or existing.scope != "system"
+                    or existing.transport != transport
+                )
+                if transport == "http":
+                    fields_changed = fields_changed or (
+                        existing.command != "__http__"
+                        or list(existing.args or []) != []
+                        or dict(existing.env or {}) != {}
+                        or existing.url != spec["url"]
+                        or _decrypt_headers(existing.headers_encrypted) != headers_plaintext
+                    )
+                else:
+                    expected_env = {env_var: api_key} if env_var else {}
+                    fields_changed = fields_changed or (
+                        existing.command != spec["command"]
+                        or list(existing.args or []) != spec.get("args", [])
+                        or dict(existing.env or {}) != expected_env
+                        or existing.url is not None
+                        or existing.headers_encrypted is not None
+                    )
+                if not fields_changed:
+                    continue
+
+                existing.description = spec.get("description")
+                existing.scope = "system"
+                existing.transport = transport
+                if transport == "http":
+                    existing.command = "__http__"
+                    existing.args = []
+                    existing.env = {}
+                    existing.url = spec["url"]
+                    existing.headers_encrypted = encrypt_value(
+                        json.dumps(headers_plaintext, sort_keys=True), settings.ENCRYPTION_KEY
+                    )
+                else:
+                    existing.command = spec["command"]
+                    existing.args = spec.get("args", [])
+                    existing.env = {env_var: api_key} if env_var else {}
+                    existing.url = None
+                    existing.headers_encrypted = None
+                any_change = True
+                logger.info("mcp.builtin.updated", name=spec["name"], transport=transport)
+            else:
                 row_kwargs: dict[str, Any] = dict(
                     name=spec["name"],
                     description=spec.get("description"),
                     scope="system",
-                    command="__http__",
-                    args=[],
-                    env={},
-                    transport="http",
-                    url=spec["url"],
-                    headers_encrypted=encrypt_value(json.dumps(headers), settings.ENCRYPTION_KEY),
+                    transport=transport,
+                    created_at=datetime.now(timezone.utc),
                 )
-            else:
-                row_kwargs = dict(
-                    name=spec["name"],
-                    description=spec.get("description"),
-                    scope="system",
-                    command=spec["command"],
-                    args=spec.get("args", []),
-                    env={env_var: api_key} if env_var else {},
-                    transport="stdio",
-                    url=None,
-                    headers_encrypted=None,
-                )
-
-            existing = existing_by_name.get(spec["name"])
-            if existing:
-                for k, v in row_kwargs.items():
-                    setattr(existing, k, v)
-            else:
-                row_kwargs["created_at"] = datetime.now(timezone.utc)
+                if transport == "http":
+                    row_kwargs["command"] = "__http__"
+                    row_kwargs["args"] = []
+                    row_kwargs["env"] = {}
+                    row_kwargs["url"] = spec["url"]
+                    row_kwargs["headers_encrypted"] = encrypt_value(
+                        json.dumps(headers_plaintext, sort_keys=True), settings.ENCRYPTION_KEY
+                    )
+                else:
+                    row_kwargs["command"] = spec["command"]
+                    row_kwargs["args"] = spec.get("args", [])
+                    row_kwargs["env"] = {env_var: api_key} if env_var else {}
+                    row_kwargs["url"] = None
+                    row_kwargs["headers_encrypted"] = None
                 self._db.add(McpServer(**row_kwargs))
+                any_change = True
                 logger.info("mcp.builtin.registered", name=spec["name"], transport=transport)
-            any_change = True
 
         if any_change:
             self._db.commit()

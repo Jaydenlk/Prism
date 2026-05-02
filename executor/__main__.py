@@ -284,26 +284,38 @@ async def bootstrap_plugins(
 ) -> tuple[list[dict], list[dict]]:
     """Fetch user-installed skills + accessible MCP servers from backend internal API.
 
-    Two endpoints are independent → fetched concurrently via asyncio.gather.
-    Returns (skills, servers) — both empty list on any failure (graceful, log warning).
+    Two endpoints are independent and fetched concurrently. Each is evaluated
+    independently — partial fault (e.g. skills succeed, servers fail) preserves
+    the successful side rather than dropping both, so logs remain diagnostic.
     """
     import httpx
     headers = {"X-Callback-Secret": callback_secret}
-    try:
+
+    async def _fetch(path: str) -> dict:
         async with httpx.AsyncClient(timeout=10.0) as http:
-            resp_skills, resp_servers = await asyncio.gather(
-                http.get(f"{backend_url}/api/v1/internal/users/{user_id}/installed-skills", headers=headers),
-                http.get(f"{backend_url}/api/v1/internal/users/{user_id}/mcp-servers", headers=headers),
-            )
-            resp_skills.raise_for_status()
-            resp_servers.raise_for_status()
-            return (
-                resp_skills.json().get("skills", []),
-                resp_servers.json().get("servers", []),
-            )
-    except Exception as exc:
-        logger.warning("executor.plugin_bootstrap_failed", error=str(exc), user_id=user_id)
-        return [], []
+            resp = await http.get(f"{backend_url}{path}", headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+
+    skills_res, servers_res = await asyncio.gather(
+        _fetch(f"/api/v1/internal/users/{user_id}/installed-skills"),
+        _fetch(f"/api/v1/internal/users/{user_id}/mcp-servers"),
+        return_exceptions=True,
+    )
+
+    if isinstance(skills_res, Exception):
+        logger.warning("executor.plugin_bootstrap_skills_failed", error=str(skills_res), user_id=user_id)
+        skills: list[dict] = []
+    else:
+        skills = skills_res.get("skills", [])
+
+    if isinstance(servers_res, Exception):
+        logger.warning("executor.plugin_bootstrap_servers_failed", error=str(servers_res), user_id=user_id)
+        servers: list[dict] = []
+    else:
+        servers = servers_res.get("servers", [])
+
+    return skills, servers
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +563,7 @@ async def main() -> None:
         skills_data, servers_data = await bootstrap_plugins(
             backend_url=os.environ.get("BACKEND_URL", "http://backend:8000"),
             user_id=args.user_id,
-            callback_secret=os.environ.get("CALLBACK_SECRET", args.callback_secret),
+            callback_secret=args.callback_secret,
         )
 
         hook_system = HookSystem()

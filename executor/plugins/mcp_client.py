@@ -270,9 +270,20 @@ class MCPClient:
         })
         self._next_id += 1
         # Populate cached tools so get_tool_definitions() works on http transport
-        # (parity with stdio behavior post-start).
+        # (parity with stdio behavior post-start). Disable 410 retry to prevent
+        # recursive _start_http loop if the new session expires immediately.
         try:
-            self._tools = await self._list_tools_http()
+            res = await self._http_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": self._next_id,
+                    "method": "tools/list",
+                    "params": {},
+                },
+                retry_on_410=False,
+            )
+            self._next_id += 1
+            self._tools = (res or {}).get("tools", [])
         except Exception as exc:
             logger.warning("mcp_client.http_list_tools_failed", error=str(exc), server=self._server_name)
 
@@ -367,8 +378,9 @@ class MCPClient:
                     if isinstance(msg, dict) and msg.get("id") == expected_id and "result" in msg:
                         return msg["result"]
                 continue
-            if line.startswith("data: "):
-                data_buf.append(line[6:])
+            if line.startswith("data:"):
+                # SSE spec: "data:" with or without leading space (one SP stripped if present)
+                data_buf.append(line[5:].lstrip(" "))
         # Stream ended without matching id
         return None
 
