@@ -129,6 +129,37 @@ services:
           memory: 400M
 
   # ---------------------------------------------------------------------------
+  # SearXNG — self-hosted metasearch engine (aggregates Google/Bing/DDG)
+  # mcp-searxng stdio process (in backend container) connects via docker DNS
+  # ---------------------------------------------------------------------------
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    networks:
+      - prism-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+
+  # ---------------------------------------------------------------------------
   # nginx 1.27 — reverse proxy + SSE passthrough
   # ADR-115: limits 0.3 CPU / 150M RAM; reservations 0.1 CPU / 50M RAM
   # SSE: X-Accel-Buffering: no + proxy_read_timeout 3600s (see nginx/nginx.conf)

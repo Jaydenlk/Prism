@@ -89,11 +89,12 @@ _BUILTIN_MCP_SERVERS: list[dict] = [
         "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
     },
     {
-        "name": "brave-search",
-        "description": "Brave Search MCP — independent web index with 2000 free queries/month.",
+        "name": "searxng",
+        "description": "SearXNG 自托管 metasearch (聚合 Google/Bing/DDG, 隐私优先, 无配额)",
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-        "env_var": "BRAVE_API_KEY",
+        "args": ["-y", "mcp-searxng"],
+        "env_var": None,
+        "extra_env": {"SEARXNG_URL": "http://searxng:8080"},
     },
     {
         "name": "tavily",
@@ -414,6 +415,7 @@ class MCPService:
         for spec in _BUILTIN_MCP_SERVERS:
             env_var = spec.get("env_var")
             api_key = os.environ.get(env_var) if env_var else None
+            extra_env: dict[str, str] = spec.get("extra_env") or {}
             if env_var and not api_key:
                 logger.info("mcp.builtin.skipped", name=spec["name"], reason=f"{env_var} not set")
                 continue
@@ -445,7 +447,7 @@ class MCPService:
                         or _decrypt_headers(existing.headers_encrypted) != headers_plaintext
                     )
                 else:
-                    expected_env = {env_var: api_key} if env_var else {}
+                    expected_env = ({env_var: api_key} if env_var else {}) | extra_env
                     fields_changed = fields_changed or (
                         existing.command != spec["command"]
                         or list(existing.args or []) != spec.get("args", [])
@@ -470,7 +472,7 @@ class MCPService:
                 else:
                     existing.command = spec["command"]
                     existing.args = spec.get("args", [])
-                    existing.env = {env_var: api_key} if env_var else {}
+                    existing.env = ({env_var: api_key} if env_var else {}) | extra_env
                     existing.url = None
                     existing.headers_encrypted = None
                 any_change = True
@@ -494,7 +496,7 @@ class MCPService:
                 else:
                     row_kwargs["command"] = spec["command"]
                     row_kwargs["args"] = spec.get("args", [])
-                    row_kwargs["env"] = {env_var: api_key} if env_var else {}
+                    row_kwargs["env"] = ({env_var: api_key} if env_var else {}) | extra_env
                     row_kwargs["url"] = None
                     row_kwargs["headers_encrypted"] = None
                 self._db.add(McpServer(**row_kwargs))
