@@ -1,6 +1,6 @@
 # Handoff: main → implementer (W8 / Action Tools Tests)
 
-## 状态: READY_FOR_IMPL
+## 状态: READY_FOR_REVIEW
 
 ## 任务描述
 为 7 个新内置 action tool 写完整 unit tests（happy path + error path）。工具源码已就绪在 `executor/tools/builtin/`。
@@ -39,10 +39,13 @@
 - 工作树: `E:\Agent program\PrismV3\.worktrees\plugin-bootstrap`
 
 ## 已完成
-（implementer 完成后填）
+- 创建 `executor/tests/test_action_tools.py`，覆盖 7 个工具
+- 43 tests，全部 PASS（pytest executor/tests/test_action_tools.py -v）
+- 全套回归 171 passed, 1 skipped，零回归
+- commit: 0ac2d2a
 
 ## 产出物
-（implementer 完成后填）
+- `executor/tests/test_action_tools.py`: 43 tests，7 class，每工具 happy + 2+ error/edge case
 
 ## 遗留问题
-（如有）
+无

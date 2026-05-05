@@ -54,17 +54,32 @@ require_env() {
 
   blue "✓ .env 必填密钥已设置。"
 
+  # SearXNG self-hosted — auto-generate secret if missing (zero user friction)
+  if ! grep -qE "^SEARXNG_SECRET_KEY=.+" .env; then
+    if command -v python >/dev/null 2>&1; then
+      key=$(python -c "import secrets; print(secrets.token_hex(32))")
+    elif command -v openssl >/dev/null 2>&1; then
+      key=$(openssl rand -hex 32)
+    else
+      key="changeme-$(date +%s%N)-$(whoami 2>/dev/null || echo dev)"
+      yellow "  ⚠ python/openssl 都没有，SEARXNG_SECRET_KEY 用降级随机值（生产请手填）"
+    fi
+    # Strip any pre-existing empty SEARXNG_SECRET_KEY= line, then append fresh
+    sed -i.bak '/^SEARXNG_SECRET_KEY=$/d' .env && rm -f .env.bak
+    printf '\nSEARXNG_SECRET_KEY=%s\n' "$key" >> .env
+    green "  ✓ SEARXNG_SECRET_KEY 自动生成（self-hosted SearXNG，免费无限）"
+  else
+    green "  ✓ SEARXNG_SECRET_KEY 已配置 → searxng MCP 启动期会注册"
+  fi
+
   # Search MCP keys — informational only
   if grep -qE "^EXA_API_KEY=.+" .env; then
-    green "  ✓ EXA_API_KEY 已配置 → exa MCP 启动期会自动注册"
+    green "  ✓ EXA_API_KEY 已配置 → exa MCP 启动期会自动注册（语义搜索备用）"
   else
-    yellow "  ⚠ EXA_API_KEY 未设 → exa 搜索功能不可用（可后续编辑 .env 后 ./start.sh restart）"
-  fi
-  if grep -qE "^BRAVE_API_KEY=.+" .env; then
-    green "  ✓ BRAVE_API_KEY 已配置 → brave-search MCP 启动期会注册"
+    yellow "  ⚠ EXA_API_KEY 未设 → exa 备用不可用（可选；searxng 已能覆盖大部分搜索）"
   fi
   if grep -qE "^TAVILY_API_KEY=.+" .env; then
-    green "  ✓ TAVILY_API_KEY 已配置 → tavily MCP 启动期会注册"
+    green "  ✓ TAVILY_API_KEY 已配置 → tavily MCP 启动期会注册（AI 友好搜索备用）"
   fi
 }
 
@@ -124,6 +139,8 @@ cmd_rebuild() {
   require_env
   blue "→ docker compose -p ${PROJECT} build backend"
   docker compose -p "$PROJECT" -f "$COMPOSE_FILE" build backend
+  blue "→ 启动 searxng（首次拉镜像 ~80MB）"
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up -d searxng
   blue "→ 重启 backend（保留 postgres/redis 数据）"
   docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up -d --force-recreate --no-deps backend
   blue "→ 重启 nginx（同步 frontend 静态文件）"

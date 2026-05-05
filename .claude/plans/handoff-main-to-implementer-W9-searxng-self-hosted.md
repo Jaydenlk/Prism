@@ -1,6 +1,6 @@
 # Handoff: main → implementer (W9 / SearXNG self-hosted + drop Brave)
 
-## 状态: READY_FOR_IMPL
+## 状态: READY_FOR_REVIEW
 
 ## 任务描述
 2 件事：
@@ -43,10 +43,20 @@
 - searxng 镜像建议：`searxng/searxng:latest` （compose 里也可以 pin 具体版本）
 
 ## 已完成
-（implementer 完成后填）
+- docker-compose.yml: 新增 searxng 服务 (searxng/searxng:latest, prism-net, 内部 8080, volume ./searxng:/etc/searxng:rw)
+- searxng/settings.yml: 最小化配置 (google/bing/duckduckgo engines, json format, limiter: false, secret_key via env)
+- mcp_service.py: 删除 brave-search 条目; 追加 searxng 条目 (env_var=None, extra_env={SEARXNG_URL})
+- register_builtin_servers: 支持 extra_env 字段合并（idempotency compare + update + new-row 三处均已更新）
+- test_mcp_builtin_stdio.py: 删除 brave 三测试, 加 test_searxng_in_builtins + test_register_creates_searxng_unconditionally
+- 测试结果: 3 PASS
+- commit: 295d5db
 
 ## 产出物
-（implementer 完成后填）
+- `docker-compose.yml`: +searxng service
+- `searxng/settings.yml`: 新建
+- `backend/app/services/mcp_service.py`: -brave +searxng +extra_env 支持
+- `backend/tests/test_mcp_builtin_stdio.py`: -brave tests +searxng tests
 
 ## 遗留问题
-（如有）
+- 存量 dev DB 中若有 brave-search system 行，register_builtin_servers 不会自动清除（不在 spec 内的行不删）。需主 agent 决策是否补清理逻辑或手工 SQL 清除。
+- searxng/settings.yml 的 secret_key 使用占位符 changeme-replace-in-production，生产部署时需在 .env 中设置 SEARXNG_SECRET_KEY。
