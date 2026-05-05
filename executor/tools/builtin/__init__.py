@@ -2,7 +2,6 @@
 内置工具包
 
 提供 register_builtin_tools() 函数，将所有内置工具注册到 ToolRegistry。
-Task 3.1 仅注册 EchoTool；Task 4.2 追加可选 ForkTool；Task 5.6 追加 SkillsSearchTool。
 
 进程边界：本模块只 import executor.*，禁止 import backend.app.*
 """
@@ -11,8 +10,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from executor.tools.builtin.bash import BashTool
 from executor.tools.builtin.echo import EchoTool
+from executor.tools.builtin.edit import EditTool
+from executor.tools.builtin.glob import GlobTool
+from executor.tools.builtin.grep import GrepTool
+from executor.tools.builtin.read import ReadTool
 from executor.tools.builtin.skills_search import SkillsSearchTool
+from executor.tools.builtin.web_fetch import WebFetchTool
+from executor.tools.builtin.write import WriteTool
 from executor.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
@@ -30,19 +36,45 @@ def register_builtin_tools(
     MCP 工具优先级高于内置工具（同名时由 MCP 工具覆盖），
     因此本函数应在 MCP 工具注册之前调用。
 
-    Args:
-        registry: 目标工具注册表。
-        fork_manager: 若非 None，则注册 ForkTool（v4 Task 4.2）。
-                      主 Agent 通过此工具主动派生子 Agent。
-        skills_registry: 若非 None，则注入到 SkillsSearchTool（v4 Task 5.6，ADR-052）。
-                         为 None 时 SkillsSearchTool 懒加载默认注册表（含 LocalSource）。
+    Tool inventory (capability tag in []):
+      - Echo            [—]              debug echo
+      - Read            [read_file]      read file with line numbers
+      - Write           [write_file]     overwrite/create file
+      - Edit            [write_file]     find-replace edit
+      - Glob            [read_file]      file pattern match
+      - Grep            [read_file]      regex content search (rg + py fallback)
+      - Bash            [exec_shell]     shell command with timeout
+      - WebFetch        [web_access]     HTTP GET, html→text
+      - SkillsSearch    [—]              search installed skills (read-only)
+      - Fork            [fork_agent]     spawn sub-agent (only when fork_manager set)
+
+    Per-agent capability filtering happens in the executor pipeline via
+    AgentDefinition.allowed_capabilities; this function registers everything
+    and lets the pipeline gate at execution time.
     """
     registry.register(EchoTool())
-    # v4 Task 5.6 ADR-052: Agent 只读搜索工具（无 install/uninstall 权限）
+    registry.register(ReadTool())
+    registry.register(WriteTool())
+    registry.register(EditTool())
+    registry.register(GlobTool())
+    registry.register(GrepTool())
+    registry.register(BashTool())
+    registry.register(WebFetchTool())
     registry.register(SkillsSearchTool(registry=skills_registry))
     if fork_manager is not None:
         from executor.tools.builtin.fork import ForkTool
         registry.register(ForkTool(fork_manager))
 
 
-__all__ = ["register_builtin_tools", "SkillsSearchTool"]
+__all__ = [
+    "register_builtin_tools",
+    "BashTool",
+    "EchoTool",
+    "EditTool",
+    "GlobTool",
+    "GrepTool",
+    "ReadTool",
+    "SkillsSearchTool",
+    "WebFetchTool",
+    "WriteTool",
+]

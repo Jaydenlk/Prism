@@ -548,7 +548,10 @@ async def main() -> None:
         budget = ContextBudgetManager(estimator=estimator, max_context_tokens=max_context_tokens)
 
         registry = ToolRegistry()
-        # NOTE: register_builtin_tools not yet implemented — empty registry is fine for Phase 1
+        from executor.tools.builtin import register_builtin_tools
+        # Built-in action tools: Read/Write/Edit/Bash/Glob/Grep/WebFetch + Echo + SkillsSearch.
+        # Registered before MCP tools so MCP can override on name collision (ADR-046).
+        register_builtin_tools(registry)
 
         assembler = PromptAssembler(agent_type=agent_type, tools=registry.list_definitions())
         pipeline = ToolExecutionPipeline(registry, context_budget=budget)
