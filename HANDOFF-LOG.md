@@ -72,7 +72,18 @@
 - 前端：详情面板（右侧滑入，README 渲染 + 安装按钮 + 查看源码链接）
 - E2E 验证：搜索 "weather" → 15 个 GitHub 结果 → 点击详情面板正常显示
 
-**下一个 session**: Skills Market CLI 命令 + Playground 试用 + Agent 被动/主动双层调用
+**追加修复**:
+- README 端点 fallback 到 README.md（SKILL.md 不存在时）
+- apiClient.js 缓存破除
+
+**本 session 共 15 commits on develop**
+
+**下一个 session**: 
+1. Skills Market CLI 命令（`/skill search`、`/skill install`）
+2. Playground 试用（安装前试用 Skill）
+3. Agent 被动/主动双层调用
+4. 侧栏会话 rename/delete
+5. Plugin Builder UX 改进（模板/持久化/增量编辑 — 见 memory）
 
 ---
 
