@@ -61,6 +61,55 @@ def test_mcp_servers_returns_user_scoped_plus_system(
     assert all("transport" in s for s in servers)
 
 
+def test_mcp_servers_system_excluded_when_user_toggles_off(
+    client: TestClient, callback_secret: str, db
+):
+    """System MCP server toggled off by user must NOT appear in response."""
+    import uuid
+    from datetime import datetime, timezone
+    from app.models.user import User
+    from app.models.mcp_server import McpServer, UserMcpInstall
+
+    user = User(
+        email=f"t4-{uuid.uuid4()}@test.local",
+        username=f"t4user{uuid.uuid4().hex[:8]}",
+        password_hash="x",
+        role="user",
+    )
+    db.add(user)
+    db.flush()
+
+    now = datetime.now(timezone.utc)
+    system_server = McpServer(
+        name="system-tool",
+        scope="system",
+        user_id=None,
+        command="echo",
+        args=[],
+        env={},
+        created_at=now,
+    )
+    db.add(system_server)
+    db.flush()
+
+    toggle_off = UserMcpInstall(
+        user_id=user.id,
+        mcp_server_id=system_server.id,
+        is_enabled=False,
+        created_at=now,
+    )
+    db.add(toggle_off)
+    db.commit()
+
+    res = client.get(
+        f"/api/v1/internal/users/{user.id}/mcp-servers",
+        headers={"X-Callback-Secret": callback_secret},
+    )
+    assert res.status_code == 200
+    server_ids = [s["id"] for s in res.json()["servers"]]
+    assert system_server.id not in server_ids
+
+
 @pytest.mark.skipif(
     not hasattr(McpServer, "transport"),
     reason="Task 4 schema (McpServer.transport/url/headers_encrypted) not yet merged",

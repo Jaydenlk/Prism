@@ -413,8 +413,13 @@ class MarketplaceService:
         Idempotent: skips if any marketplace already exists (DEC-004).
         created_by must be a valid user id (caller passes admin id from lifespan).
         """
-        if self._db.query(MarketplaceRegistry).first() is not None:
-            logger.info("marketplace.bootstrap_skipped", reason="non_empty_registry")
+        exists = (
+            self._db.query(MarketplaceRegistry)
+            .filter(MarketplaceRegistry.name == "anthropics/claude-plugins-official")
+            .first()
+        )
+        if exists is not None:
+            logger.info("marketplace.bootstrap_skipped", reason="default_already_registered")
             return
         default = MarketplaceRegistry(
             name="anthropics/claude-plugins-official",

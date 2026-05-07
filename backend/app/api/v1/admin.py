@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
@@ -344,21 +344,29 @@ def revoke_invite_code(
 @router.get("/usage", response_model=ApiResponse[dict])
 def get_usage(
     db: Annotated[Session, Depends(get_db)],
+    group_by: Literal["day", "provider", "user"] = Query(default="day"),
+    start_date: Optional[datetime] = Query(default=None),
+    end_date: Optional[datetime] = Query(default=None),
 ) -> ApiResponse[dict]:
     """Return global usage statistics aggregated from the runs table.
 
     Includes:
       - total_runs, total_input_tokens, total_output_tokens, total_cost_usd
       - per_provider breakdown (provider_id → token/cost totals)
-      - daily trend for the last 30 days (date → {runs, input_tokens, output_tokens})
+      - daily trend for the queried range (date → {runs, input_tokens, output_tokens})
     """
+    if start_date is None:
+        start_date = datetime.now(timezone.utc) - timedelta(days=30)
+    if end_date is None:
+        end_date = datetime.now(timezone.utc)
+
     # --- Totals -----------------------------------------------------------
     totals = db.query(
         func.count(Run.id).label("total_runs"),
         func.coalesce(func.sum(Run.input_tokens), 0).label("total_input_tokens"),
         func.coalesce(func.sum(Run.output_tokens), 0).label("total_output_tokens"),
         func.coalesce(func.sum(Run.cost_usd), 0).label("total_cost_usd"),
-    ).one()
+    ).filter(Run.created_at >= start_date, Run.created_at <= end_date).one()
 
     # --- Per-provider breakdown -------------------------------------------
     provider_rows = db.query(
@@ -367,6 +375,8 @@ def get_usage(
         func.coalesce(func.sum(Run.input_tokens), 0).label("input_tokens"),
         func.coalesce(func.sum(Run.output_tokens), 0).label("output_tokens"),
         func.coalesce(func.sum(Run.cost_usd), 0).label("cost_usd"),
+    ).filter(
+        Run.created_at >= start_date, Run.created_at <= end_date
     ).group_by(Run.provider_id).all()
 
     per_provider = [
@@ -380,15 +390,14 @@ def get_usage(
         for row in provider_rows
     ]
 
-    # --- Daily trend (last 30 days) ---------------------------------------
-    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    # --- Daily trend (within date range) ----------------------------------
     daily_rows = db.query(
         func.date(Run.created_at).label("date"),
         func.count(Run.id).label("runs"),
         func.coalesce(func.sum(Run.input_tokens), 0).label("input_tokens"),
         func.coalesce(func.sum(Run.output_tokens), 0).label("output_tokens"),
     ).filter(
-        Run.created_at >= thirty_days_ago
+        Run.created_at >= start_date, Run.created_at <= end_date
     ).group_by(
         func.date(Run.created_at)
     ).order_by(
@@ -413,6 +422,7 @@ def get_usage(
             "total_cost_usd": float(totals.total_cost_usd),
             "per_provider": per_provider,
             "daily_trend_30d": daily_trend,
+            "group_by": group_by,
         }
     )
 
@@ -433,10 +443,10 @@ def get_audit_logs(
     severity: Optional[str] = Query(
         default=None, description="Filter by severity (info/warning/error/critical)"
     ),
-    start_time: Optional[datetime] = Query(
+    start_date: Optional[datetime] = Query(
         default=None, description="Lower bound on created_at"
     ),
-    end_time: Optional[datetime] = Query(
+    end_date: Optional[datetime] = Query(
         default=None, description="Upper bound on created_at"
     ),
     page: int = Query(default=1, ge=1),
@@ -448,15 +458,15 @@ def get_audit_logs(
       - action prefix filter (LIKE 'harness.%')
       - user_id exact filter
       - severity filter (against details->>'severity')
-      - start_time / end_time range filter
+      - start_date / end_date range filter
       - page / page_size pagination
     """
     q = AuditLogQuery(
         action=action,
         user_id=user_id,
         severity=severity,
-        start_time=start_time,
-        end_time=end_time,
+        start_time=start_date,
+        end_time=end_date,
         page=page,
         page_size=page_size,
     )
