@@ -10,6 +10,7 @@ networks:
 
 volumes:
   pgdata:
+  prism-backend-data:
   redis-data:
 
 services:
@@ -107,6 +108,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      # Persist marketplace_cache (cloned anthropic catalog repo) + plugin_cache
+      # (installed plugin tarballs) so container recreate doesn't wipe them.
+      # Without this, every `./start.sh rebuild` loses the marketplace clone
+      # and any skill installs that landed in plugin_cache, leaving Skills
+      # Market install fully broken until next manual sync.
+      - prism-backend-data:/app/data
     networks:
       - prism-net
     expose:

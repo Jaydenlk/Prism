@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Prism · Agent Operating System</title>
 <link rel="stylesheet" href="styles.css"/>
+<script>
+  // Hydrate theme from localStorage before the React app mounts so that
+  // refresh keeps the user's choice (otherwise data-theme="light" hardcoded
+  // in the <html> tag wins on every load).
+  try {
+    var t = localStorage.getItem("prism_theme");
+    if (t === "dark" || t === "light") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  } catch (e) { /* localStorage unavailable: ignore */ }
+</script>
 </head>
 <body>
 <div id="root"></div>
@@ -118,44 +129,6 @@ const I18N = {
     ]
   }
 };
-
-const PROVIDERS = [
-  { id: "p1", name: "Anthropic", protocol: "anthropic", model: "claude-sonnet-4-5", health: "ok", default: true, cache: true, cost: "¥0.021/1K" },
-  { id: "p2", name: "MiniMax", protocol: "anthropic", model: "minimax-m2", health: "ok", cache: true, cost: "¥0.008/1K" },
-  { id: "p3", name: "DeepSeek", protocol: "openai", model: "deepseek-v3", health: "ok", cache: false, cost: "¥0.004/1K" },
-  { id: "p4", name: "Kimi", protocol: "openai", model: "kimi-k2", health: "warn", cache: false, cost: "¥0.012/1K" },
-  { id: "p5", name: "Qwen", protocol: "openai", model: "qwen3-max", health: "ok", cache: false, cost: "¥0.006/1K" }
-];
-
-const MCP_SERVERS = [
-  { id: "m1", name: "fs-local", cmd: "npx -y @mcp/fs", enabled: true, tools: 8, source: "系统" },
-  { id: "m2", name: "github", cmd: "gh-mcp", enabled: true, tools: 14, source: "你" },
-  { id: "m3", name: "finance-data", cmd: "prism-finance-mcp", enabled: false, tools: 22, source: "你" },
-  { id: "m4", name: "postgres-ro", cmd: "mcp-postgres --readonly", enabled: true, tools: 5, source: "你" }
-];
-
-const IM_CHANNELS = [
-  { id: "feishu", name: "飞书 · Lark", status: "bound", user: "alice@example.com", lastAt: "2 分钟前" },
-  { id: "wecom", name: "企业微信", status: "unbound", user: "—", lastAt: "—" },
-  { id: "telegram", name: "Telegram", status: "pairing", user: "@alice_ops", lastAt: "pair code 872193" }
-];
-
-const SKILLS = [
-  { id: "sk1", name: "readonly-shell", desc: "Bash 白名单封装,只让 agent 读不让写。", version: "1.2.0", installed: true, author: "Prism core" },
-  { id: "sk2", name: "markdown-brief", desc: "生成克制的三栏 briefing,附溯源。", version: "0.4.1", installed: false, author: "@tan" },
-  { id: "sk3", name: "finance-compliance", desc: "投研合规护栏 —— 凡是数字必溯源。", version: "2.0.0", installed: true, author: "@prism-finance" },
-  { id: "sk4", name: "otel-diagnose", desc: "从 OTel trace 里挑出慢工具调用。", version: "0.7.3", installed: false, author: "@obs-ops" },
-  { id: "sk5", name: "cache-boundary-opt", desc: "帮你找 prompt cache 的最佳 boundary。", version: "1.0.0", installed: false, author: "Prism core" },
-  { id: "sk6", name: "poco-importer", desc: "把 Poco v1 的会话 JSON 导进来。", version: "0.2.1", installed: false, author: "@farion1231" }
-];
-
-const RECENT_RUNS = [
-  { session: "Harness 2026 简报", mode: "coordinator", status: "completed", tokens: "28,410", cache: "72%", cost: "¥0.28", turn: 11, at: "14:32" },
-  { session: "MiniMax vs DeepSeek", mode: "general", status: "completed", tokens: "9,820", cache: "54%", cost: "¥0.06", turn: 5, at: "11:05" },
-  { session: "飞书配对排查", mode: "explore", status: "completed", tokens: "4,120", cache: "31%", cost: "¥0.03", turn: 3, at: "09:47" },
-  { session: "Compaction 测试", mode: "verifier", status: "completed", tokens: "12,004", cache: "68%", cost: "¥0.11", turn: 7, at: "昨天 22:12" },
-  { session: "Coordinator 崩溃恢复", mode: "coordinator", status: "failed", tokens: "15,220", cache: "60%", cost: "¥0.14", turn: 8, at: "昨天 19:03" }
-];
 
 /* ============ UTILS ============ */
 /**
@@ -438,7 +411,7 @@ const MarkdownBody = React.memo(function MarkdownBody({ content, streaming }) {
   );
 });
 
-function Msg({ m, first }) {
+function Msg({ m, first, onCopy, onRetry, onFork }) {
   const isUser = m.role === "user";
   return (
     <div className={`msg-wrap ${isUser ? "user-wrap" : "agent-wrap"}`}>
@@ -461,9 +434,9 @@ function Msg({ m, first }) {
           {m.tools?.map((tool, i) => <ToolCard key={tool.id || i} tool={tool} initOpen={tool.initOpen}/>)}
           {!isUser && !m.streaming && (
             <div style={{ marginTop: 14, display: "flex", gap: 2, marginLeft: -6 }}>
-              <button className="icon-btn" title="复制"><Icon name="copy" size={12}/></button>
-              <button className="icon-btn" title="再试一次"><Icon name="refresh" size={12}/></button>
-              <button className="icon-btn" title="分叉"><Icon name="fork" size={12}/></button>
+              {onCopy && <button className="icon-btn" title="复制" onClick={() => onCopy(m)}><Icon name="copy" size={12}/></button>}
+              {onRetry && <button className="icon-btn" title="再试一次" onClick={() => onRetry(m)}><Icon name="refresh" size={12}/></button>}
+              {onFork && <button className="icon-btn" title="从此处分叉新会话" onClick={() => onFork(m)}><Icon name="fork" size={12}/></button>}
             </div>
           )}
         </div>
@@ -472,7 +445,7 @@ function Msg({ m, first }) {
   );
 }
 
-function Composer({ t, onSend, disabled }) {
+function Composer({ t, onSend, disabled, onAttach, onSkill, onMcp }) {
   const [v, setV] = useState("");
   const ref = useRef(null);
   useEffect(() => { if (ref.current) { ref.current.style.height = "auto"; ref.current.style.height = Math.min(180, ref.current.scrollHeight) + "px"; } }, [v]);
@@ -485,9 +458,9 @@ function Composer({ t, onSend, disabled }) {
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
           disabled={disabled}/>
         <div className="tools">
-          <button className="icon-btn" title="附件"><Icon name="attach" size={14}/></button>
-          <button className="icon-btn" title="技能"><Icon name="skills" size={14}/></button>
-          <button className="icon-btn" title="MCP"><Icon name="plugin" size={14}/></button>
+          {onAttach && <button className="icon-btn" title="附件" onClick={onAttach}><Icon name="attach" size={14}/></button>}
+          {onSkill && <button className="icon-btn" title="技能管理" onClick={onSkill}><Icon name="skills" size={14}/></button>}
+          {onMcp && <button className="icon-btn" title="我的 MCP" onClick={onMcp}><Icon name="plugin" size={14}/></button>}
           <div style={{ flex: 1 }}/>
           <button className="btn primary sm" onClick={submit} style={{ padding: "7px 14px", borderRadius: 999 }} disabled={!v.trim() || disabled}>
             <Icon name="arrowUp" size={12}/>
@@ -610,7 +583,7 @@ function PlanPanel({ t, planState }) {
 }
 
 /* ============ CHAT PAGE ============ */
-function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanState }) {
+function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanState, setPage, setCurrentSessionId, setSettingsInitialTab }) {
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -1022,6 +995,50 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
     if (pollTimerRef.current) { clearTimeout(pollTimerRef.current); pollTimerRef.current = null; }
   }
 
+  function findUserMsgBefore(agentMsg) {
+    const idx = msgs.indexOf(agentMsg);
+    for (let i = idx - 1; i >= 0; i--) {
+      if (msgs[i].role === "user" && typeof msgs[i].content === "string" && msgs[i].content.trim()) {
+        return msgs[i].content;
+      }
+    }
+    return null;
+  }
+
+  async function handleCopyMsg(m) {
+    const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+    try {
+      await navigator.clipboard.writeText(text);
+      addToast({ id: Date.now(), title: "已复制", body: text.slice(0, 40) + (text.length > 40 ? "…" : "") });
+    } catch (err) {
+      addToast({ id: Date.now(), kind: "danger", title: "复制失败", body: err.message || "浏览器拒绝写剪贴板" });
+    }
+  }
+
+  async function handleRetryMsg(m) {
+    if (runActive) {
+      addToast({ id: Date.now(), kind: "warn", title: "正在运行中", body: "等当前回复完成再重试" });
+      return;
+    }
+    const prev = findUserMsgBefore(m);
+    if (!prev) {
+      addToast({ id: Date.now(), kind: "warn", title: "找不到上一轮提问", body: "无法重试" });
+      return;
+    }
+    handleSend(prev);
+  }
+
+  async function handleForkMsg(m) {
+    try {
+      const sess = await window.PrismAPI.sessions.create({ title: "(分叉) " + (sessionId ? "会话片段" : "新对话") });
+      addToast({ id: Date.now(), title: "已创建分叉会话", body: "已切到新会话；可继续对话" });
+      if (setCurrentSessionId) setCurrentSessionId(sess.id);
+      if (setPage) setPage("chat");
+    } catch (err) {
+      addToast({ id: Date.now(), kind: "danger", title: "分叉失败", body: err.message || "无法创建新会话" });
+    }
+  }
+
   async function handleSend(prompt) {
     if (!sessionId) return;
     // Optimistic: push user message immediately
@@ -1090,7 +1107,7 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         {msgs.map((m, i) => {
           const prev = msgs[i - 1];
           const first = m.role === "agent" && (!prev || prev.role !== "agent");
-          return <Msg key={i} m={m} first={first}/>;
+          return <Msg key={i} m={m} first={first} onCopy={handleCopyMsg} onRetry={handleRetryMsg} onFork={handleForkMsg}/>;
         })}
         {/* "Agent thinking" placeholder when run is active but no streaming yet */}
         {runActive && !msgs.some(m => m.streaming) && (
@@ -1101,7 +1118,14 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         )}
         <div ref={bottomRef}/>
       </div>
-      <Composer t={t} onSend={handleSend} disabled={runActive}/>
+      <Composer
+        t={t}
+        onSend={handleSend}
+        disabled={runActive}
+        onAttach={() => addToast({ id: Date.now(), title: "附件功能开发中", body: "可粘贴文本或在 prompt 里描述代替；上传 API 计划在 DOC-11 实施" })}
+        onSkill={() => { if (setSettingsInitialTab) setSettingsInitialTab("skills"); if (setPage) setPage("settings"); }}
+        onMcp={() => { if (setSettingsInitialTab) setSettingsInitialTab("mcp"); if (setPage) setPage("settings"); }}
+      />
     </div>
   );
 }
@@ -2649,37 +2673,94 @@ function PluginsPage() {
 }
 
 function ObsPage() {
+  const [data, setData] = useState(null);  // null = loading
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await PrismAPI.harness.analytics({ days: 7 });
+        if (!cancelled) setData(resp);
+      } catch (e) {
+        if (!cancelled) setErr(e.message || String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (err) return (
+    <div className="page">
+      <div className="page-head"><div className="page-title">可观测性</div></div>
+      <div className="harness-notice danger">加载失败: {err}</div>
+    </div>
+  );
+  if (data === null) return (
+    <div className="page">
+      <div className="page-head"><div className="page-title">可观测性</div></div>
+      <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>正在加载…</div>
+    </div>
+  );
+  if (data.runs_analyzed === 0) return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">可观测性</div>
+        <div className="page-sub">7 天窗口 · Harness 运行数据。</div>
+      </div>
+      <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>暂无运行数据 — 发起一次对话后回来看。</div>
+    </div>
+  );
+
+  const { totals = {}, averages = {}, cache_stats = {}, peak_context_usage = {}, runs_analyzed = 0 } = data || {};
+  const toolErrRate = (totals.tool_calls ?? 0) > 0 ? ((totals.tool_errors ?? 0) / totals.tool_calls * 100).toFixed(1) : "0.0";
+  const compactionRate = ((totals.compaction_events ?? 0) / (runs_analyzed || 1) * 100).toFixed(1);
+  const cacheHitPct = ((cache_stats.hit_ratio ?? 0) * 100).toFixed(1);
+
   return (
     <div className="page">
       <div className="page-head">
         <div className="page-title">可观测性</div>
-        <div className="page-sub">每一次工具调用,每一次压缩,每一次护栏 —— 都是一个 OTel span。</div>
+        <div className="page-sub">7 天窗口 · {runs_analyzed} 次运行分析。</div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
-        <div className="stat-card"><div className="label">p50 工具延迟</div><div className="val">214<span style={{ fontSize: 16, color: "var(--ink-4)" }}>ms</span></div><div className="trend">-18ms</div></div>
-        <div className="stat-card"><div className="label">p95 工具延迟</div><div className="val">1.8<span style={{ fontSize: 16, color: "var(--ink-4)" }}>s</span></div><div className="trend down">+0.3s</div></div>
-        <div className="stat-card"><div className="label">重试风暴 (24h)</div><div className="val">2</div><div className="trend" style={{ color: "var(--amber)" }}>↑ kimi</div></div>
-        <div className="stat-card"><div className="label">崩溃恢复率</div><div className="val">100<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div><div className="trend">3/3</div></div>
+        <div className="stat-card feature">
+          <div className="label">平均轮次</div>
+          <div className="val">{(averages.turns_per_run ?? 0).toFixed(1)}</div>
+          <div className="trend" style={{ color: "var(--ink-3)" }}>turns / run</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">工具错误率</div>
+          <div className="val">{toolErrRate}<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div>
+          <div className="trend" style={{ color: totals.tool_errors > 0 ? "var(--red)" : "var(--ink-3)" }}>{totals.tool_errors} / {totals.tool_calls}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Compaction 率</div>
+          <div className="val">{compactionRate}<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div>
+          <div className="trend" style={{ color: "var(--ink-3)" }}>{totals.compaction_events} 次</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Cache 命中率</div>
+          <div className="val">{cacheHitPct}<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div>
+          <div className="trend" style={{ color: "var(--teal)" }}>峰值上下文 {((peak_context_usage.avg ?? 0) * 100).toFixed(0)}%</div>
+        </div>
       </div>
-      <div className="section-title">Trace · run r-5b03</div>
-      <div className="card" style={{ padding: 20, fontFamily: "var(--mono)", fontSize: 12 }}>
-        {[
-          { n: "coordinator.turn", d: "1.4s", w: 100, o: 0, c: "var(--ink)" },
-          { n: "  research.agent", d: "620ms", w: 44, o: 2, c: "var(--teal)" },
-          { n: "    fs.read", d: "412ms", w: 29, o: 4, c: "var(--teal-soft)" },
-          { n: "    fs.grep", d: "89ms", w: 6, o: 36, c: "var(--teal-soft)" },
-          { n: "  compaction.T2", d: "180ms", w: 13, o: 46, c: "var(--amber)" },
-          { n: "  planner.agent", d: "380ms", w: 27, o: 60, c: "var(--plum)" },
-          { n: "  guardrail.check", d: "12ms", w: 2, o: 88, c: "var(--amber)" }
-        ].map((s, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "220px 1fr 80px", gap: 10, alignItems: "center", padding: "6px 0" }}>
-            <span style={{ color: "var(--ink)", whiteSpace: "pre" }}>{s.n}</span>
-            <div style={{ position: "relative", height: 8, background: "var(--bg)", borderRadius: 3 }}>
-              <div style={{ position: "absolute", left: `${s.o}%`, width: `${s.w}%`, height: "100%", background: s.c, borderRadius: 3 }}/>
+      <div className="section-title">Harness 治理概览</div>
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+          {[
+            { label: "护栏触发", val: totals.guardrail_triggers, color: totals.guardrail_triggers > 0 ? "var(--amber)" : "var(--ink-3)" },
+            { label: "权限拒绝", val: totals.permission_denials, color: totals.permission_denials > 0 ? "var(--red)" : "var(--ink-3)" },
+            { label: "Hook 触发", val: totals.hook_fires, color: "var(--ink-3)" },
+            { label: "循环检测", val: totals.loop_detections, color: totals.loop_detections > 0 ? "var(--amber)" : "var(--ink-3)" },
+            { label: "Fork 数", val: totals.fork_count, color: "var(--ink-3)" },
+            { label: "峰值上下文", val: `${((peak_context_usage.avg ?? 0) * 100).toFixed(0)}%`, color: (peak_context_usage.avg ?? 0) > 0.9 ? "var(--red)" : "var(--ink-3)" },
+          ].map(({ label, val, color }) => (
+            <div key={label} style={{ background: "var(--bg)", borderRadius: 10, padding: "14px 16px" }}>
+              <div className="label" style={{ marginBottom: 6 }}>{label}</div>
+              <div style={{ fontFamily: "var(--serif)", fontSize: 22, color, fontWeight: 500 }}>{val}</div>
             </div>
-            <span style={{ color: "var(--ink-3)", textAlign: "right" }}>{s.d}</span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -2690,6 +2771,10 @@ function ObsPage() {
 function ProfileTab({ onToast }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showPwModal, setShowPwModal] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [pwErr, setPwErr] = useState("");
+  const [pwSubmitting, setPwSubmitting] = useState(false);
 
   useEffect(() => {
     PrismAPI.me().then(u => { setProfile(u); setLoading(false); }).catch(err => {
@@ -2697,6 +2782,25 @@ function ProfileTab({ onToast }) {
       setLoading(false);
     });
   }, []);
+
+  function openPwModal() { setPwForm({ current: "", next: "", confirm: "" }); setPwErr(""); setShowPwModal(true); }
+  function closePwModal() { setShowPwModal(false); }
+
+  async function handleChangePw() {
+    if (pwForm.next.length < 8) { setPwErr("新密码至少 8 位"); return; }
+    if (pwForm.next !== pwForm.confirm) { setPwErr("两次密码不一致"); return; }
+    setPwErr("");
+    setPwSubmitting(true);
+    try {
+      await PrismAPI.auth.changePassword({ current_password: pwForm.current, new_password: pwForm.next });
+      onToast({ id: Date.now(), kind: "success", title: "密码已修改" });
+      closePwModal();
+    } catch (err) {
+      setPwErr(err.message || "修改失败");
+    } finally {
+      setPwSubmitting(false);
+    }
+  }
 
   async function handleLogout() {
     await PrismAPI.logout();
@@ -2737,10 +2841,38 @@ function ProfileTab({ onToast }) {
           ))}
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn ghost" onClick={() => onToast({ id: Date.now(), title: "还没做", body: "修改密码功能尚未实现，请联系管理员重置。" })}>修改密码</button>
+          <button className="btn ghost" onClick={openPwModal}>修改密码</button>
           <button className="btn danger" style={{ marginLeft: "auto" }} onClick={handleLogout}>退出登录</button>
         </div>
       </div>
+      {showPwModal && (
+        <div className="modal-backdrop" onClick={closePwModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="head">
+              <div style={{ fontFamily: "var(--serif)", fontSize: 20, color: "var(--ink)", fontWeight: 500 }}>修改密码</div>
+            </div>
+            <div className="body">
+              <label style={{ display: "block", marginBottom: 12 }}>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>当前密码</div>
+                <input className="input" type="password" value={pwForm.current} onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))} autoFocus/>
+              </label>
+              <label style={{ display: "block", marginBottom: 12 }}>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>新密码（至少 8 位）</div>
+                <input className="input" type="password" value={pwForm.next} onChange={e => setPwForm(f => ({ ...f, next: e.target.value }))}/>
+              </label>
+              <label style={{ display: "block", marginBottom: 4 }}>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>确认新密码</div>
+                <input className="input" type="password" value={pwForm.confirm} onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} onKeyDown={e => e.key === "Enter" && handleChangePw()}/>
+              </label>
+              {pwErr && <div style={{ color: "var(--red, #d32)", fontSize: 13, marginTop: 8 }}>{pwErr}</div>}
+            </div>
+            <div className="foot">
+              <button className="btn ghost" onClick={closePwModal} disabled={pwSubmitting}>取消</button>
+              <button className="btn primary" onClick={handleChangePw} disabled={pwSubmitting}>{pwSubmitting ? "提交中…" : "确认修改"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3100,12 +3232,20 @@ function SkillsSettingsTab({ onToast }) {
     if (installingSearch[key]) return;
     setInstallingSearch(prev => ({ ...prev, [key]: true }));
     try {
-      await PrismAPI.skills.install({
+      const payload = {
         skill_name: name,
         source: sk.source,
         source_url: sk.source_url,
         version: sk.version,
-      });
+      };
+      // marketplace source requires marketplace_id + plugin_name (server-side
+      // resolves the plugin entry from the registered catalog and runs the
+      // 5-source resolver). Forward when search response includes them.
+      if (sk.source === "marketplace" && sk.marketplace_id && sk.plugin_name) {
+        payload.marketplace_id = sk.marketplace_id;
+        payload.plugin_name = sk.plugin_name;
+      }
+      await PrismAPI.skills.install(payload);
       onToast({ id: Date.now(), kind: "success", title: "安装成功", body: name });
       await loadInstalled();
     } catch (err) {
@@ -3393,8 +3533,8 @@ function PrefsTab({ onToast }) {
   );
 }
 
-function SettingsPage({ onToast }) {
-  const [sec, setSec] = useState("profile");
+function SettingsPage({ onToast, initialTab }) {
+  const [sec, setSec] = useState(initialTab || "profile");
   const tabs = [
     { id: "profile", label: "个人资料", icon: "shield" },
     { id: "providers", label: "我的 Providers", icon: "layers" },
@@ -4053,7 +4193,17 @@ function Tweaks({ tweaks, setTweaks }) {
 
 /* ============ APP ============ */
 function App() {
-  const [tweaks, setTweaks] = useState({ theme: "light", density: "comfortable", bubble: "soft", tone: "同事", layout: "split" });
+  const [tweaks, setTweaks] = useState(() => {
+    // Read persisted theme so the App-level useEffect doesn't override the
+    // boot-time hydration script. localStorage is the single source of truth;
+    // SettingsPage writes there on toggle, and so does this Tweaks panel below.
+    let savedTheme = "light";
+    try {
+      const t = localStorage.getItem("prism_theme");
+      if (t === "dark" || t === "light") savedTheme = t;
+    } catch (_) {}
+    return { theme: savedTheme, density: "comfortable", bubble: "soft", tone: "同事", layout: "split" };
+  });
   const [lang, setLang] = useState("zh");
   // screen: "loading" | "login" | "app" | "google_pending"
   const [screen, setScreen] = useState("loading");
@@ -4065,6 +4215,7 @@ function App() {
   const [toasts, setToasts] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [planState, setPlanState] = useState(null);
+  const [settingsInitialTab, setSettingsInitialTab] = useState(null);
 
   // Auto-restore login from sessionStorage token
   useEffect(() => {
@@ -4150,6 +4301,8 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", tweaks.theme);
     document.documentElement.setAttribute("data-density", tweaks.density);
+    // Persist theme so SettingsPage + boot-hydration script see the same value.
+    try { localStorage.setItem("prism_theme", tweaks.theme); } catch (_) {}
   }, [tweaks]);
 
   useEffect(() => {
@@ -4217,6 +4370,9 @@ function App() {
               setPermRequest={setPermRequest}
               setPerm={setPerm}
               setPlanState={setPlanState}
+              setPage={setPage}
+              setCurrentSessionId={setCurrentSessionId}
+              setSettingsInitialTab={setSettingsInitialTab}
             />
           )}
           {page === "sessions" && <SessionsPage setPage={setPage} setCurrentSession={setCurrentSessionId}/>}
@@ -4224,7 +4380,7 @@ function App() {
           {page === "skills" && <SkillsPage/>}
           {page === "plugins" && <PluginsPage/>}
           {page === "observability" && <ObsPage/>}
-          {page === "settings" && <SettingsPage onToast={addToast}/>}
+          {page === "settings" && <SettingsPage onToast={addToast} initialTab={settingsInitialTab}/>}
           {page !== "chat" && (
             <div className="statusbar">
               <div className="kv"><span>provider</span> <b>anthropic</b></div>

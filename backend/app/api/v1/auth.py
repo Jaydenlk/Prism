@@ -53,6 +53,7 @@ from app.models.base import generate_uuid
 from app.models.user import InviteCode, User
 from app.schemas.auth import (
     AuthProvidersResponse,
+    ChangePasswordBody,
     EmailMagicRequestBody,
     EmailMagicVerifyBody,
     EmailOtpRequestBody,
@@ -753,6 +754,32 @@ async def reset_password(
     logger.info("auth.password.reset", user_id=user_id)
 
     return ApiResponse(data={"message": "Password reset successfully"})
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/change-password
+# ---------------------------------------------------------------------------
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordBody,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict]:
+    """Change password for the authenticated user."""
+    if not current_user.password_hash or not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前密码错误",
+        )
+
+    current_user.password_hash = hash_password(body.new_password)
+    db.commit()
+
+    logger.info("auth.password.changed", user_id=str(current_user.id))
+
+    return ApiResponse(data={"message": "Password changed successfully"})
 
 
 # ---------------------------------------------------------------------------

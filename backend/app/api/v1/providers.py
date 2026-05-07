@@ -128,6 +128,25 @@ async def create_provider(
 
 
 # ---------------------------------------------------------------------------
+# GET /providers/{id} — 获取单个 Provider
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{provider_id}",
+    response_model=ApiResponse[ProviderResponse],
+    summary="获取单个 Provider",
+)
+async def get_provider(
+    provider_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[ProviderResponse]:
+    """ADR-010: 返回 scope='system' 或 owner 的 scope='user' Provider."""
+    provider = ProviderService.get_provider(db=db, provider_id=provider_id, user_id=current_user.id)
+    return ApiResponse(data=ProviderService._to_response(provider))
+
+
+# ---------------------------------------------------------------------------
 # PUT /providers/{id} — 更新 Provider
 # ---------------------------------------------------------------------------
 

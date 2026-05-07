@@ -278,11 +278,18 @@ async def get_user_mcp_servers(
     返回结构: {"servers": [{...row..., transport, headers (plaintext if http)}, ...]}
     HTTP 行的 headers_encrypted 在此处解密为 plaintext headers 字典.
     """
-    system_rows = (
-        db.query(McpServer)
-        .filter(McpServer.scope == "system", McpServer.user_id.is_(None))
+    disabled_ids = [
+        row.mcp_server_id
+        for row in db.query(UserMcpInstall.mcp_server_id)
+        .filter(UserMcpInstall.user_id == user_id, UserMcpInstall.is_enabled.is_(False))
         .all()
+    ]
+    system_q = db.query(McpServer).filter(
+        McpServer.scope == "system", McpServer.user_id.is_(None)
     )
+    if disabled_ids:
+        system_q = system_q.filter(McpServer.id.notin_(disabled_ids))
+    system_rows = system_q.all()
     user_rows = (
         db.query(McpServer)
         .join(UserMcpInstall, UserMcpInstall.mcp_server_id == McpServer.id)

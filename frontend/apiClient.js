@@ -240,6 +240,10 @@
     return request('POST', '/auth/reset-password', { json: { challenge_id, token, new_password } });
   }
 
+  async function changePassword({ current_password, new_password }) {
+    return request('POST', '/auth/change-password', { json: { current_password, new_password } });
+  }
+
   async function phoneRegister({ phone, password, invite_code }) {
     const data = await request('POST', '/auth/phone-register', { json: { phone, password, invite_code } });
     if (data && data.access_token) _storeToken(data.access_token);
@@ -602,8 +606,8 @@
     config() {
       return request('GET', '/harness/config');
     },
-    analytics({ window: w = '7d' } = {}) {
-      return request('GET', '/harness/analytics', { query: { window: w } });
+    analytics({ days = 7, offset_days = 0 } = {}) {
+      return request('GET', '/harness/analytics', { query: { days, offset_days } });
     },
     entropyCheck(body) {
       return request('POST', '/harness/entropy-check', { json: body });
@@ -684,6 +688,7 @@
       emailOtpVerify,
       forgotPassword,
       resetPassword,
+      changePassword,
       phoneRegister,
       phoneLogin,
       googleComplete,

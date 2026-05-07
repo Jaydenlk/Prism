@@ -37,6 +37,58 @@
 
 ---
 
+## 🚧 2026-05-08 PRD vs Reality 全审计 + P0/P1 修（audit/prd-vs-reality, 9 commits, 未 merge）
+
+**Branch**: `audit/prd-vs-reality` worktree at `.worktrees/audit-prd-vs-reality/`
+**Status**: 用户正在浏览器试用 http://localhost:18888/Prism.html，等反馈
+**完整交接**: `docs/audit/2026-05-08-HANDOFF-NEXT-SESSION.md` ← **下一个 session 必读第一**
+
+**用户硬要求**: PRD 设计的功能必须真接通；禁止虚的/死的/装饰；audit 不彻底就不许 merge
+
+**Audit Phase 1（5 docs）**:
+- 87 条 PRD 用户可见功能清单
+- 81 frontend 交互（72 wired / 3 dead / 6 placeholder）— audit B 漏报 6 处后被主 agent 二扫发现
+- 86 backend endpoints（81 real / 1 partial / 2 param-ignored / 1 missing）
+
+**9 commits 修复（最新在顶）**:
+- `e3f7e25` 本交接文档
+- `7396bbc` 持久化: /app/data 命名 volume + bootstrap 自动 resync 缺失 clone
+- `eb22fb8` 复活 6 死按钮（Composer 3 + 消息气泡 3）+ 主题持久化 + skill install 前端 forward
+- `c063d36` (W12 sonnet) skill install marketplace 链路: SkillPackage 加 marketplace_id+plugin_name + search 透传 + install 路由
+- `0d893e2` bootstrap 注册后 inline sync + e2e fixture BASE_URL env override
+- `6908c80` POST /auth/change-password endpoint（audit C 误判说存在）
+- `87c7811` (W11 sonnet) ProfileTab 修改密码 modal + analytics window→days
+- `b9bab6b` (W10 sonnet) 5 backend bug: MCP system toggle 尊重 user / marketplace bootstrap by name / GET /providers/{id} / admin/usage 参数 / audit-logs 参数名
+- `5d31892` 5 audit reports
+
+**测试**: 134 backend pass / 12 executor pass / 36 e2e effective pass 双端
+
+**用户报告 4 件事全修**:
+1. 对话框左下 3 按钮死 → Composer 全 wire
+2. 亮/暗切换死 → boot script + Tweaks 读 localStorage
+3. 能搜到下载不了 → marketplace_id+plugin_name 透传 + 容器持久化 volume + bootstrap auto-resync
+4. GitHub 能找到的找不到 → 35 catalog 中 12 skill-type 真能装，其余 23 报 422（follow-up：扩 install 支持 commands/MCP/agents）
+
+**主 agent 二扫发现**: 消息气泡 3 按钮（复制/再试/分叉）audit B 漏报，已 wire
+
+**还没审到（下一个 session 立刻可干）**: IM tab / Providers tab / Sessions list buttons / Plugin Builder / Topbar dev preview line 4294-4296 / ObsPage UI 真接 API / 6 admin placeholder tabs
+
+**关键操作环境**:
+- 端口 **18888**（Windows Hyper-V 锁了 8080/18080，三次切端口）
+- e2e 必带 `BASE_URL=http://localhost:18888`
+- nginx 偶发 unhealthy 但 backend 真活；以 `curl /health/ready` 为准
+- 默认账号 `admin@prism.dev / PrismAdmin!2026`（dev mode `/auth/providers` 返此）
+- 用户 `.env` 有真 EXA_API_KEY 和 SEARXNG_SECRET_KEY auto-gen
+- Backend rebuild: `docker compose -p prismv3 build backend && docker compose -p prismv3 up -d --force-recreate --no-deps backend`
+- Nginx restart (改 frontend 后): `docker compose -p prismv3 restart nginx`
+
+**决策点（待用户拍）**:
+1. merge audit 到 develop？9 commits 都 PASS（用户尚未给 OK）
+2. catalog 非 skill-type 怎么办：UI 标注 vs 扩 install 支持？
+3. 是否全扫剩余区域（约 1-2 session）
+
+---
+
 ## ✅ 2026-05-02 Plugin Bootstrap — Skills + MCP 真实运行复活（feat/plugin-bootstrap, 15 commits）
 
 **根因（systematic-debugging Phase 1）**:

@@ -33,6 +33,7 @@ from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.observability.metrics import REGISTRY
 from app.schemas.common import ApiResponse
+from app.services.marketplace_service import MarketplaceService
 from app.services.skill_install_service import SkillInstallService
 
 logger = structlog.get_logger()
@@ -97,6 +98,8 @@ class SkillPackageResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
     installed: bool = False
     installed_version: str | None = None
+    marketplace_id: str | None = None
+    plugin_name: str | None = None
 
 
 class SkillInstallRequest(BaseModel):
@@ -192,6 +195,8 @@ async def search_skills(
             tags=p.tags,
             installed=p.installed,
             installed_version=p.installed_version,
+            marketplace_id=p.marketplace_id,
+            plugin_name=p.plugin_name,
         )
         for p in truncated
     ]
@@ -317,12 +322,52 @@ async def install_skill(
             detail="source='github' 时 source_url 为必填",
         )
     elif request.source == "marketplace" and not request.content_base64:
-        # v1 accepts content_base64 uploads as the catalog-download substitute.
-        # Fetching from marketplace.json `source` field is future work.
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="source='marketplace' 时 content_base64 为必填（v1 直接上传；catalog 自动下载延后）",
+        # marketplace_id + plugin_name path: delegate to MarketplaceService.install_plugin()
+        # which runs the 5-source resolver, downloads, parses SKILL.md, and UPSERTs skill_installs.
+        try:
+            mp_svc = MarketplaceService(db=db)
+            report = await mp_svc.install_plugin(
+                marketplace_id=request.marketplace_id,
+                plugin_name=request.plugin_name,
+                user_id=str(current_user.id),
+            )
+        except HTTPException:
+            _inc_install(request.source, "error")
+            raise
+        except Exception as exc:
+            logger.error(
+                "skills_api.install_error",
+                skill_name=request.skill_name,
+                source=request.source,
+                error=str(exc),
+            )
+            _inc_install(request.source, "error")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"安装失败: {exc}",
+            )
+
+        _inc_install(request.source, "success")
+        logger.info(
+            "skills_api.install",
+            user_id=current_user.id,
+            skill_name=effective_skill_name,
+            source=request.source,
+            marketplace_id=request.marketplace_id,
+            installed_skills=report.installed_skills,
         )
+
+        # Return the first installed skill record; report all in metadata.
+        first_skill_name = report.installed_skills[0] if report.installed_skills else effective_skill_name
+        redis_client = _get_redis_client()
+        svc = SkillInstallService(db=db, redis_client=redis_client)
+        install_record = svc.get_install(user_id=current_user.id, skill_name=first_skill_name)
+        if install_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"安装完成但记录未找到: {first_skill_name}",
+            )
+        return ApiResponse(data=_skill_install_to_response(install_record))
 
     try:
         # 懒加载 Redis（DOC-07 Task 7.1 之前占位）

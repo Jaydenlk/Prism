@@ -143,3 +143,33 @@ async def test_author_object_or_string_normalized():
     assert by_name["p1"].author == "Acme"
     assert by_name["p2"].author == "PlainStr"
     assert by_name["p3"].author is None
+
+
+@pytest.mark.asyncio
+async def test_search_result_contains_marketplace_id_and_plugin_name():
+    rows = [_FakeMpRow(
+        id="mp-uuid-123", name="test-mp",
+        catalog_json={"plugins": [{"name": "git-tool", "description": "Git helper", "version": "2.0"}]},
+    )]
+    src = MarketplaceCatalogSource(db_session_factory=_make_session_factory(rows))
+    res = await src.search("git")
+    assert len(res) == 1
+    pkg = res[0]
+    assert pkg.marketplace_id == "mp-uuid-123"
+    assert pkg.plugin_name == "git-tool"
+    assert pkg.name == "git-tool"
+
+
+@pytest.mark.asyncio
+async def test_search_multiple_marketplaces_marketplace_id_matches_row():
+    rows = [
+        _FakeMpRow(id="mp-A", name="mpA", catalog_json={"plugins": [{"name": "tool-a"}]}),
+        _FakeMpRow(id="mp-B", name="mpB", catalog_json={"plugins": [{"name": "tool-b"}]}),
+    ]
+    src = MarketplaceCatalogSource(db_session_factory=_make_session_factory(rows))
+    res = await src.search("")
+    by_name = {p.name: p for p in res}
+    assert by_name["tool-a"].marketplace_id == "mp-A"
+    assert by_name["tool-a"].plugin_name == "tool-a"
+    assert by_name["tool-b"].marketplace_id == "mp-B"
+    assert by_name["tool-b"].plugin_name == "tool-b"

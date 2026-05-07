@@ -413,8 +413,25 @@ class MarketplaceService:
         Idempotent: skips if any marketplace already exists (DEC-004).
         created_by must be a valid user id (caller passes admin id from lifespan).
         """
-        if self._db.query(MarketplaceRegistry).first() is not None:
-            logger.info("marketplace.bootstrap_skipped", reason="non_empty_registry")
+        exists = (
+            self._db.query(MarketplaceRegistry)
+            .filter(MarketplaceRegistry.name == "anthropics/claude-plugins-official")
+            .first()
+        )
+        if exists is not None:
+            # Re-sync if the local git clone is gone (e.g. /app/data volume was
+            # wiped between container recreates before we added the volume
+            # mount; or admin manually purged the cache). Without this,
+            # install_plugin would 422 with "Path not found" forever.
+            local_dir = self._get_marketplace_local_dir(exists)
+            if local_dir is not None and not local_dir.exists():
+                logger.info("marketplace.bootstrap_resync", reason="local_clone_missing", marketplace_id=exists.id)
+                try:
+                    self.sync(marketplace_id=exists.id, user_id=created_by)
+                except Exception as exc:
+                    logger.warning("marketplace.bootstrap_resync_failed", error=str(exc))
+            else:
+                logger.info("marketplace.bootstrap_skipped", reason="default_already_registered")
             return
         default = MarketplaceRegistry(
             name="anthropics/claude-plugins-official",
@@ -424,7 +441,19 @@ class MarketplaceService:
         )
         self._db.add(default)
         self._db.commit()
+        self._db.refresh(default)
         logger.info("marketplace.bootstrap_default", name=default.name)
+        # Pull real catalog from GitHub so Skills Market search has data immediately.
+        # First cold boot blocks ~5-15s on the network fetch; subsequent boots
+        # take the early-return path above.
+        try:
+            self.sync(marketplace_id=default.id, user_id=created_by)
+        except Exception as exc:
+            logger.warning(
+                "marketplace.bootstrap_sync_failed",
+                marketplace_id=default.id,
+                error=str(exc),
+            )
 
     async def install_plugin(
         self, marketplace_id: str, plugin_name: str, user_id: str
