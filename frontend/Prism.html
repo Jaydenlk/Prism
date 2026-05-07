@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Prism · Agent Operating System</title>
 <link rel="stylesheet" href="styles.css"/>
+<script>
+  // Hydrate theme from localStorage before the React app mounts so that
+  // refresh keeps the user's choice (otherwise data-theme="light" hardcoded
+  // in the <html> tag wins on every load).
+  try {
+    var t = localStorage.getItem("prism_theme");
+    if (t === "dark" || t === "light") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  } catch (e) { /* localStorage unavailable: ignore */ }
+</script>
 </head>
 <body>
 <div id="root"></div>
@@ -438,7 +449,7 @@ const MarkdownBody = React.memo(function MarkdownBody({ content, streaming }) {
   );
 });
 
-function Msg({ m, first }) {
+function Msg({ m, first, onCopy, onRetry, onFork }) {
   const isUser = m.role === "user";
   return (
     <div className={`msg-wrap ${isUser ? "user-wrap" : "agent-wrap"}`}>
@@ -461,9 +472,9 @@ function Msg({ m, first }) {
           {m.tools?.map((tool, i) => <ToolCard key={tool.id || i} tool={tool} initOpen={tool.initOpen}/>)}
           {!isUser && !m.streaming && (
             <div style={{ marginTop: 14, display: "flex", gap: 2, marginLeft: -6 }}>
-              <button className="icon-btn" title="复制"><Icon name="copy" size={12}/></button>
-              <button className="icon-btn" title="再试一次"><Icon name="refresh" size={12}/></button>
-              <button className="icon-btn" title="分叉"><Icon name="fork" size={12}/></button>
+              {onCopy && <button className="icon-btn" title="复制" onClick={() => onCopy(m)}><Icon name="copy" size={12}/></button>}
+              {onRetry && <button className="icon-btn" title="再试一次" onClick={() => onRetry(m)}><Icon name="refresh" size={12}/></button>}
+              {onFork && <button className="icon-btn" title="从此处分叉新会话" onClick={() => onFork(m)}><Icon name="fork" size={12}/></button>}
             </div>
           )}
         </div>
@@ -472,7 +483,7 @@ function Msg({ m, first }) {
   );
 }
 
-function Composer({ t, onSend, disabled }) {
+function Composer({ t, onSend, disabled, onAttach, onSkill, onMcp }) {
   const [v, setV] = useState("");
   const ref = useRef(null);
   useEffect(() => { if (ref.current) { ref.current.style.height = "auto"; ref.current.style.height = Math.min(180, ref.current.scrollHeight) + "px"; } }, [v]);
@@ -485,9 +496,9 @@ function Composer({ t, onSend, disabled }) {
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
           disabled={disabled}/>
         <div className="tools">
-          <button className="icon-btn" title="附件"><Icon name="attach" size={14}/></button>
-          <button className="icon-btn" title="技能"><Icon name="skills" size={14}/></button>
-          <button className="icon-btn" title="MCP"><Icon name="plugin" size={14}/></button>
+          {onAttach && <button className="icon-btn" title="附件" onClick={onAttach}><Icon name="attach" size={14}/></button>}
+          {onSkill && <button className="icon-btn" title="技能管理" onClick={onSkill}><Icon name="skills" size={14}/></button>}
+          {onMcp && <button className="icon-btn" title="我的 MCP" onClick={onMcp}><Icon name="plugin" size={14}/></button>}
           <div style={{ flex: 1 }}/>
           <button className="btn primary sm" onClick={submit} style={{ padding: "7px 14px", borderRadius: 999 }} disabled={!v.trim() || disabled}>
             <Icon name="arrowUp" size={12}/>
@@ -610,7 +621,7 @@ function PlanPanel({ t, planState }) {
 }
 
 /* ============ CHAT PAGE ============ */
-function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanState }) {
+function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanState, setPage, setCurrentSessionId, setSettingsInitialTab }) {
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -1022,6 +1033,50 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
     if (pollTimerRef.current) { clearTimeout(pollTimerRef.current); pollTimerRef.current = null; }
   }
 
+  function findUserMsgBefore(agentMsg) {
+    const idx = msgs.indexOf(agentMsg);
+    for (let i = idx - 1; i >= 0; i--) {
+      if (msgs[i].role === "user" && typeof msgs[i].content === "string" && msgs[i].content.trim()) {
+        return msgs[i].content;
+      }
+    }
+    return null;
+  }
+
+  async function handleCopyMsg(m) {
+    const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+    try {
+      await navigator.clipboard.writeText(text);
+      addToast({ id: Date.now(), title: "已复制", body: text.slice(0, 40) + (text.length > 40 ? "…" : "") });
+    } catch (err) {
+      addToast({ id: Date.now(), kind: "danger", title: "复制失败", body: err.message || "浏览器拒绝写剪贴板" });
+    }
+  }
+
+  async function handleRetryMsg(m) {
+    if (runActive) {
+      addToast({ id: Date.now(), kind: "warn", title: "正在运行中", body: "等当前回复完成再重试" });
+      return;
+    }
+    const prev = findUserMsgBefore(m);
+    if (!prev) {
+      addToast({ id: Date.now(), kind: "warn", title: "找不到上一轮提问", body: "无法重试" });
+      return;
+    }
+    handleSend(prev);
+  }
+
+  async function handleForkMsg(m) {
+    try {
+      const sess = await window.PrismAPI.sessions.create({ title: "(分叉) " + (sessionId ? "会话片段" : "新对话") });
+      addToast({ id: Date.now(), title: "已创建分叉会话", body: "已切到新会话；可继续对话" });
+      if (setCurrentSessionId) setCurrentSessionId(sess.id);
+      if (setPage) setPage("chat");
+    } catch (err) {
+      addToast({ id: Date.now(), kind: "danger", title: "分叉失败", body: err.message || "无法创建新会话" });
+    }
+  }
+
   async function handleSend(prompt) {
     if (!sessionId) return;
     // Optimistic: push user message immediately
@@ -1090,7 +1145,7 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         {msgs.map((m, i) => {
           const prev = msgs[i - 1];
           const first = m.role === "agent" && (!prev || prev.role !== "agent");
-          return <Msg key={i} m={m} first={first}/>;
+          return <Msg key={i} m={m} first={first} onCopy={handleCopyMsg} onRetry={handleRetryMsg} onFork={handleForkMsg}/>;
         })}
         {/* "Agent thinking" placeholder when run is active but no streaming yet */}
         {runActive && !msgs.some(m => m.streaming) && (
@@ -1101,7 +1156,14 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         )}
         <div ref={bottomRef}/>
       </div>
-      <Composer t={t} onSend={handleSend} disabled={runActive}/>
+      <Composer
+        t={t}
+        onSend={handleSend}
+        disabled={runActive}
+        onAttach={() => addToast({ id: Date.now(), title: "附件功能开发中", body: "可粘贴文本或在 prompt 里描述代替；上传 API 计划在 DOC-11 实施" })}
+        onSkill={() => { if (setSettingsInitialTab) setSettingsInitialTab("skills"); if (setPage) setPage("settings"); }}
+        onMcp={() => { if (setSettingsInitialTab) setSettingsInitialTab("mcp"); if (setPage) setPage("settings"); }}
+      />
     </div>
   );
 }
@@ -3151,12 +3213,20 @@ function SkillsSettingsTab({ onToast }) {
     if (installingSearch[key]) return;
     setInstallingSearch(prev => ({ ...prev, [key]: true }));
     try {
-      await PrismAPI.skills.install({
+      const payload = {
         skill_name: name,
         source: sk.source,
         source_url: sk.source_url,
         version: sk.version,
-      });
+      };
+      // marketplace source requires marketplace_id + plugin_name (server-side
+      // resolves the plugin entry from the registered catalog and runs the
+      // 5-source resolver). Forward when search response includes them.
+      if (sk.source === "marketplace" && sk.marketplace_id && sk.plugin_name) {
+        payload.marketplace_id = sk.marketplace_id;
+        payload.plugin_name = sk.plugin_name;
+      }
+      await PrismAPI.skills.install(payload);
       onToast({ id: Date.now(), kind: "success", title: "安装成功", body: name });
       await loadInstalled();
     } catch (err) {
@@ -3444,8 +3514,8 @@ function PrefsTab({ onToast }) {
   );
 }
 
-function SettingsPage({ onToast }) {
-  const [sec, setSec] = useState("profile");
+function SettingsPage({ onToast, initialTab }) {
+  const [sec, setSec] = useState(initialTab || "profile");
   const tabs = [
     { id: "profile", label: "个人资料", icon: "shield" },
     { id: "providers", label: "我的 Providers", icon: "layers" },
@@ -4104,7 +4174,17 @@ function Tweaks({ tweaks, setTweaks }) {
 
 /* ============ APP ============ */
 function App() {
-  const [tweaks, setTweaks] = useState({ theme: "light", density: "comfortable", bubble: "soft", tone: "同事", layout: "split" });
+  const [tweaks, setTweaks] = useState(() => {
+    // Read persisted theme so the App-level useEffect doesn't override the
+    // boot-time hydration script. localStorage is the single source of truth;
+    // SettingsPage writes there on toggle, and so does this Tweaks panel below.
+    let savedTheme = "light";
+    try {
+      const t = localStorage.getItem("prism_theme");
+      if (t === "dark" || t === "light") savedTheme = t;
+    } catch (_) {}
+    return { theme: savedTheme, density: "comfortable", bubble: "soft", tone: "同事", layout: "split" };
+  });
   const [lang, setLang] = useState("zh");
   // screen: "loading" | "login" | "app" | "google_pending"
   const [screen, setScreen] = useState("loading");
@@ -4116,6 +4196,7 @@ function App() {
   const [toasts, setToasts] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [planState, setPlanState] = useState(null);
+  const [settingsInitialTab, setSettingsInitialTab] = useState(null);
 
   // Auto-restore login from sessionStorage token
   useEffect(() => {
@@ -4201,6 +4282,8 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", tweaks.theme);
     document.documentElement.setAttribute("data-density", tweaks.density);
+    // Persist theme so SettingsPage + boot-hydration script see the same value.
+    try { localStorage.setItem("prism_theme", tweaks.theme); } catch (_) {}
   }, [tweaks]);
 
   useEffect(() => {
@@ -4268,6 +4351,9 @@ function App() {
               setPermRequest={setPermRequest}
               setPerm={setPerm}
               setPlanState={setPlanState}
+              setPage={setPage}
+              setCurrentSessionId={setCurrentSessionId}
+              setSettingsInitialTab={setSettingsInitialTab}
             />
           )}
           {page === "sessions" && <SessionsPage setPage={setPage} setCurrentSession={setCurrentSessionId}/>}
@@ -4275,7 +4361,7 @@ function App() {
           {page === "skills" && <SkillsPage/>}
           {page === "plugins" && <PluginsPage/>}
           {page === "observability" && <ObsPage/>}
-          {page === "settings" && <SettingsPage onToast={addToast}/>}
+          {page === "settings" && <SettingsPage onToast={addToast} initialTab={settingsInitialTab}/>}
           {page !== "chat" && (
             <div className="statusbar">
               <div className="kv"><span>provider</span> <b>anthropic</b></div>
