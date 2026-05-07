@@ -419,7 +419,19 @@ class MarketplaceService:
             .first()
         )
         if exists is not None:
-            logger.info("marketplace.bootstrap_skipped", reason="default_already_registered")
+            # Re-sync if the local git clone is gone (e.g. /app/data volume was
+            # wiped between container recreates before we added the volume
+            # mount; or admin manually purged the cache). Without this,
+            # install_plugin would 422 with "Path not found" forever.
+            local_dir = self._get_marketplace_local_dir(exists)
+            if local_dir is not None and not local_dir.exists():
+                logger.info("marketplace.bootstrap_resync", reason="local_clone_missing", marketplace_id=exists.id)
+                try:
+                    self.sync(marketplace_id=exists.id, user_id=created_by)
+                except Exception as exc:
+                    logger.warning("marketplace.bootstrap_resync_failed", error=str(exc))
+            else:
+                logger.info("marketplace.bootstrap_skipped", reason="default_already_registered")
             return
         default = MarketplaceRegistry(
             name="anthropics/claude-plugins-official",
