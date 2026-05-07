@@ -2711,10 +2711,10 @@ function ObsPage() {
     </div>
   );
 
-  const { totals, averages, cache_stats, runs_analyzed } = data;
-  const toolErrRate = totals.tool_calls > 0 ? (totals.tool_errors / totals.tool_calls * 100).toFixed(1) : "0.0";
-  const compactionRate = (totals.compaction_events / runs_analyzed * 100).toFixed(1);
-  const cacheHitPct = (cache_stats.hit_ratio * 100).toFixed(1);
+  const { totals = {}, averages = {}, cache_stats = {}, peak_context_usage = {}, runs_analyzed = 0 } = data || {};
+  const toolErrRate = (totals.tool_calls ?? 0) > 0 ? ((totals.tool_errors ?? 0) / totals.tool_calls * 100).toFixed(1) : "0.0";
+  const compactionRate = ((totals.compaction_events ?? 0) / (runs_analyzed || 1) * 100).toFixed(1);
+  const cacheHitPct = ((cache_stats.hit_ratio ?? 0) * 100).toFixed(1);
 
   return (
     <div className="page">
@@ -2725,7 +2725,7 @@ function ObsPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
         <div className="stat-card feature">
           <div className="label">平均轮次</div>
-          <div className="val">{averages.turn_count.toFixed(1)}</div>
+          <div className="val">{(averages.turns_per_run ?? 0).toFixed(1)}</div>
           <div className="trend" style={{ color: "var(--ink-3)" }}>turns / run</div>
         </div>
         <div className="stat-card">
@@ -2741,7 +2741,7 @@ function ObsPage() {
         <div className="stat-card">
           <div className="label">Cache 命中率</div>
           <div className="val">{cacheHitPct}<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div>
-          <div className="trend" style={{ color: "var(--teal)" }}>峰值上下文 {(averages.peak_context_usage_ratio * 100).toFixed(0)}%</div>
+          <div className="trend" style={{ color: "var(--teal)" }}>峰值上下文 {((peak_context_usage.avg ?? 0) * 100).toFixed(0)}%</div>
         </div>
       </div>
       <div className="section-title">Harness 治理概览</div>
@@ -2753,7 +2753,7 @@ function ObsPage() {
             { label: "Hook 触发", val: totals.hook_fires, color: "var(--ink-3)" },
             { label: "循环检测", val: totals.loop_detections, color: totals.loop_detections > 0 ? "var(--amber)" : "var(--ink-3)" },
             { label: "Fork 数", val: totals.fork_count, color: "var(--ink-3)" },
-            { label: "峰值上下文", val: `${(averages.peak_context_usage_ratio * 100).toFixed(0)}%`, color: averages.peak_context_usage_ratio > 0.9 ? "var(--red)" : "var(--ink-3)" },
+            { label: "峰值上下文", val: `${((peak_context_usage.avg ?? 0) * 100).toFixed(0)}%`, color: (peak_context_usage.avg ?? 0) > 0.9 ? "var(--red)" : "var(--ink-3)" },
           ].map(({ label, val, color }) => (
             <div key={label} style={{ background: "var(--bg)", borderRadius: 10, padding: "14px 16px" }}>
               <div className="label" style={{ marginBottom: 6 }}>{label}</div>

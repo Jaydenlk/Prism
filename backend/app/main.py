@@ -270,30 +270,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from app.services.entropy_detector import EntropyDetector
         from app.services.harness_analytics import HarnessAnalytics
 
-        while True:
-            await asyncio.sleep(3600)
+        def _run_detection() -> list:
             db = SessionLocal()
             try:
                 analytics = HarnessAnalytics(db)
                 detector = EntropyDetector(db, analytics)
-                alerts = detector.detect(user_id=None)
-                if alerts:
-                    logger.warning(
-                        "entropy.alerts_detected",
-                        count=len(alerts),
-                        message="Entropy detector found anomalies in global scan.",
-                    )
-            except Exception as exc:
-                logger.warning("entropy.scheduler_error", error=str(exc))
+                return detector.detect(user_id=None)
             finally:
                 db.close()
 
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                alerts = await asyncio.to_thread(_run_detection)
+                if alerts:
+                    logger.warning("entropy.alerts_detected", count=len(alerts))
+            except Exception as exc:
+                logger.warning("entropy.scheduler_error", error=str(exc))
+
     entropy_task: asyncio.Task | None = None
-    try:
-        entropy_task = asyncio.create_task(_entropy_scheduler())
-        logger.info("prism.entropy_scheduler_started", message="Entropy scheduler started (ADR-112, 3600s interval).")
-    except Exception as exc:
-        logger.warning("prism.entropy_scheduler_failed", error=str(exc))
+    entropy_task = asyncio.create_task(_entropy_scheduler())
+    logger.info("prism.entropy_scheduler_started", message="Entropy scheduler started (ADR-112, 3600s interval).")
 
     yield  # application serves requests here
 

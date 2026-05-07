@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Prism · Control Room</title>
 <link rel="stylesheet" href="styles.css"/>
+<script>
+  try {
+    var t = localStorage.getItem("prism_theme");
+    if (t === "dark" || t === "light") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  } catch (e) {}
+</script>
 <style>
 /* Admin-specific overrides — desk-tool feel, same palette */
 :root {
@@ -202,7 +210,7 @@ html, body { background: var(--admin-bg); }
   background: var(--paper); border: 1px solid var(--line);
   color: var(--ink-3);
 }
-.audit-row.deny .glyph { color: var(--rust); border-color: var(--rust); background: #F3E1DA; }
+.audit-row.deny .glyph { color: var(--rust); border-color: var(--rust); background: var(--rust-soft); }
 .audit-row.permission .glyph { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); }
 .audit-row.config .glyph { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
 .audit-row .txt { color: var(--ink); line-height: 1.5; }
@@ -1621,28 +1629,73 @@ function McpServers() {
 }
 
 /* ================== GUARDRAILS PAGE ================== */
+function EntropyAlertPanel({ alerts, onRun, running }) {
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <Icon name="alert" size={14}/>
+        <h3>熵值告警</h3>
+        <div className="spacer"/>
+        {alerts === null
+          ? null
+          : alerts.length === 0
+            ? <span className="st ok">所有信号正常 ✓</span>
+            : <span className="st err">{alerts.length} 个告警</span>
+        }
+        <button className="btn sm ghost" onClick={onRun} disabled={running} style={{ marginLeft: 8 }}>
+          {running ? '检测中…' : '运行检测'}
+        </button>
+      </div>
+      <div className="panel-body">
+        {alerts === null
+          ? <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>点击"运行检测"查看熵值告警</div>
+          : alerts.length === 0
+            ? <div style={{ color: "var(--teal)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>所有信号正常 ✓</div>
+            : alerts.map((a, i) => (
+              <div key={i} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--rust)", marginBottom: 8, background: "var(--rust-soft)" }}>
+                <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, color: "var(--ink)", marginBottom: 4 }}>{a.signal}</div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
+                  当前: {a.current_value} / 阈值: {a.threshold}
+                </div>
+              </div>
+            ))
+        }
+      </div>
+    </div>
+  );
+}
+
 function GuardrailsPage() {
   const [config, setConfig] = useState(null);
   const [entropy, setEntropy] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      PrismAPI.harness.config(),
-      PrismAPI.harness.entropyCheck({}),
-    ]).then(([cfg, ent]) => {
-      setConfig(cfg);
-      setEntropy(ent);
-    }).catch(e => toast('加载护栏数据失败: ' + e.message, 'err'))
+    PrismAPI.harness.config()
+      .then(cfg => setConfig(cfg))
+      .catch(e => toast('加载护栏数据失败: ' + e.message, 'err'))
       .finally(() => setLoading(false));
   }, []);
+
+  async function runEntropy() {
+    setRunning(true);
+    try {
+      const ent = await PrismAPI.harness.entropyCheck({});
+      setEntropy(ent);
+    } catch (e) {
+      toast('熵值检测失败: ' + e.message, 'err');
+    } finally {
+      setRunning(false);
+    }
+  }
 
   if (loading) return <Spinner/>;
 
   const eff = (config?.effective) || {};
   const rules = eff.custom_guardrail_rules || [];
   const policies = eff.permission_policies || [];
-  const alerts = (entropy?.alerts) || [];
+  const alerts = entropy ? (entropy.alerts || []) : null;
 
   return (
     <div>
@@ -1687,30 +1740,7 @@ function GuardrailsPage() {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-head">
-          <Icon name="alert" size={14}/>
-          <h3>熵值告警</h3>
-          <div className="spacer"/>
-          {alerts.length === 0
-            ? <span className="st ok">所有信号正常 ✓</span>
-            : <span className="st err">{alerts.length} 个告警</span>
-          }
-        </div>
-        <div className="panel-body">
-          {alerts.length === 0
-            ? <div style={{ color: "var(--teal)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>所有信号正常 ✓</div>
-            : alerts.map((a, i) => (
-              <div key={i} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--rust)", marginBottom: 8, background: "#F3E1DA" }}>
-                <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, color: "var(--ink)", marginBottom: 4 }}>{a.signal}</div>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
-                  当前: {a.current_value} / 阈值: {a.threshold}
-                </div>
-              </div>
-            ))
-          }
-        </div>
-      </div>
+      <EntropyAlertPanel alerts={alerts} onRun={runEntropy} running={running}/>
     </div>
   );
 }
@@ -1906,12 +1936,13 @@ function BillingPage() {
 }
 
 /* ================== INFRA PAGE ================== */
-function InfraPage() {
-  const [health, setHealth] = useState(null);
-  const [dash, setDash] = useState(null);
-  const [loading, setLoading] = useState(true);
+function InfraPage({ dashData, healthData }) {
+  const [health, setHealth] = useState(healthData);
+  const [dash, setDash] = useState(dashData);
+  const [loading, setLoading] = useState(!dashData || !healthData);
 
   useEffect(() => {
+    if (dashData && healthData) return;
     Promise.all([
       PrismAPI.healthDetailed(),
       PrismAPI.admin.getDashboard(),
@@ -2019,16 +2050,13 @@ function ObservabilityAdminPage() {
   const [entropy, setEntropy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [calibrating, setCalibrating] = useState(false);
+  const [running, setRunning] = useState(false);
 
   function load() {
     setLoading(true);
-    Promise.all([
-      PrismAPI.harness.analytics({ days: 7 }),
-      PrismAPI.harness.entropyCheck({}),
-    ]).then(([a, e]) => {
-      setAnalytics(a);
-      setEntropy(e);
-    }).catch(e => toast('加载可观测数据失败: ' + e.message, 'err'))
+    PrismAPI.harness.analytics({ days: 7 })
+      .then(a => setAnalytics(a))
+      .catch(e => toast('加载可观测数据失败: ' + e.message, 'err'))
       .finally(() => setLoading(false));
   }
 
@@ -2046,13 +2074,24 @@ function ObservabilityAdminPage() {
     }
   }
 
+  async function runEntropy() {
+    setRunning(true);
+    try {
+      const ent = await PrismAPI.harness.entropyCheck({});
+      setEntropy(ent);
+    } catch (e) {
+      toast('熵值检测失败: ' + e.message, 'err');
+    } finally {
+      setRunning(false);
+    }
+  }
+
   if (loading) return <Spinner/>;
 
   const a = analytics || {};
   const totals = a.totals || {};
-  const averages = a.averages || {};
   const cacheStats = a.cache_stats || {};
-  const alerts = (entropy?.alerts) || [];
+  const alerts = entropy ? (entropy.alerts || []) : null;
   const cacheHitRatio = cacheStats.hit_ratio ?? 0;
 
   return (
@@ -2099,30 +2138,7 @@ function ObservabilityAdminPage() {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-head">
-          <Icon name="alert" size={14}/>
-          <h3>熵值告警</h3>
-          <div className="spacer"/>
-          {alerts.length === 0
-            ? <span className="st ok">所有信号正常 ✓</span>
-            : <span className="st err">{alerts.length} 个告警</span>
-          }
-        </div>
-        <div className="panel-body">
-          {alerts.length === 0
-            ? <div style={{ color: "var(--teal)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>所有信号正常 ✓</div>
-            : alerts.map((a, i) => (
-              <div key={i} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--rust)", marginBottom: 8, background: "#F3E1DA" }}>
-                <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, color: "var(--ink)", marginBottom: 4 }}>{a.signal}</div>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
-                  当前: {a.current_value} / 阈值: {a.threshold}
-                </div>
-              </div>
-            ))
-          }
-        </div>
-      </div>
+      <EntropyAlertPanel alerts={alerts} onRun={runEntropy} running={running}/>
     </div>
   );
 }
@@ -2155,7 +2171,7 @@ const PAGES = {
   mcpServers: { r: () => <McpServers/>, title: "MCP Servers" },
   billing: { r: () => <BillingPage/>, title: "账务" },
   audit: { r: (props) => <Audit {...props}/>, title: "审计" },
-  infra: { r: () => <InfraPage/>, title: "基础设施" },
+  infra: { r: (props) => <InfraPage {...props}/>, title: "基础设施" },
   observability: { r: () => <ObservabilityAdminPage/>, title: "可观测" },
   security: { r: () => <Placeholder title="安全" sub="API Key 轮换、IP 白名单 — 需要后端扩展。"/>, title: "安全" },
 };
