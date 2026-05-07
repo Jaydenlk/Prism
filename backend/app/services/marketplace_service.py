@@ -429,7 +429,19 @@ class MarketplaceService:
         )
         self._db.add(default)
         self._db.commit()
+        self._db.refresh(default)
         logger.info("marketplace.bootstrap_default", name=default.name)
+        # Pull real catalog from GitHub so Skills Market search has data immediately.
+        # First cold boot blocks ~5-15s on the network fetch; subsequent boots
+        # take the early-return path above.
+        try:
+            self.sync(marketplace_id=default.id, user_id=created_by)
+        except Exception as exc:
+            logger.warning(
+                "marketplace.bootstrap_sync_failed",
+                marketplace_id=default.id,
+                error=str(exc),
+            )
 
     async def install_plugin(
         self, marketplace_id: str, plugin_name: str, user_id: str

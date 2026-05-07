@@ -3,7 +3,9 @@ import { Page, request as playwrightRequest } from '@playwright/test';
 // Playwright's baseURL treats leading-slash paths as absolute (drops any
 // path component of baseURL). We therefore keep baseURL to the origin and
 // carry the /api/v1 prefix on each request path explicitly.
-const BASE = 'http://localhost:8080';
+// BASE_URL env var override lets dev/CI run against a non-default port
+// (Windows Hyper-V port reservation has forced shifts to 18080/18888 here).
+const BASE = process.env.BASE_URL || 'http://localhost:8080';
 const API_V1 = '/api/v1';
 const ADMIN_EMAIL = 'admin@prism.dev';
 const ADMIN_PASSWORD = 'PrismAdmin!2026';
