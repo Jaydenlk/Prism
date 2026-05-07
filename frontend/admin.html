@@ -1694,7 +1694,8 @@ function GuardrailsPage() {
 
   const eff = (config?.effective) || {};
   const rules = eff.custom_guardrail_rules || [];
-  const policies = eff.permission_policies || [];
+  const policiesRaw = eff.permission_policies || {};
+  const policies = Array.isArray(policiesRaw) ? policiesRaw : Object.entries(policiesRaw).map(([tool, decision]) => ({ tool, decision }));
   const alerts = entropy ? (entropy.alerts || []) : null;
 
   return (
@@ -1731,8 +1732,9 @@ function GuardrailsPage() {
             {policies.length === 0
               ? <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>无自定义权限策略</div>
               : policies.map((p, i) => (
-                <div key={i} style={{ padding: "8px 0", borderBottom: i < policies.length - 1 ? "1px dashed var(--line)" : "", fontSize: 12.5, color: "var(--ink)", fontFamily: "var(--mono)" }}>
-                  {typeof p === 'string' ? p : JSON.stringify(p)}
+                <div key={i} style={{ padding: "8px 0", borderBottom: i < policies.length - 1 ? "1px dashed var(--line)" : "", fontSize: 12.5, color: "var(--ink)", fontFamily: "var(--mono)", display: "flex", justifyContent: "space-between" }}>
+                  <span>{p.tool || p.tool_pattern || '—'}</span>
+                  <span style={{ color: p.decision === 'deny' ? "var(--rust)" : p.decision === 'ask' ? "var(--amber)" : "var(--teal)" }}>{p.decision || '—'}</span>
                 </div>
               ))
             }
