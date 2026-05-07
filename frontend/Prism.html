@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Prism · Agent Operating System</title>
-<link rel="stylesheet" href="styles.css"/>
+<link rel="stylesheet" href="styles.css?v=20260509"/>
 <script>
   // Hydrate theme from localStorage before the React app mounts so that
   // refresh keeps the user's choice (otherwise data-theme="light" hardcoded
@@ -71,6 +71,7 @@ const Icon = ({ name, size = 16, stroke = 1.5, style = {} }) => {
     flask: <><path d="M6 2h4M7 2v4l-4 7a1 1 0 001 1.5h8A1 1 0 0013 13L9 6V2"/></>,
     flow: <><rect x="2" y="2" width="5" height="4" rx="1.5"/><rect x="9" y="10" width="5" height="4" rx="1.5"/><path d="M4 6v4M4 10h9"/></>,
     link: <><path d="M9 7a3 3 0 00-4 0L3 9a3 3 0 004 4l1-1M7 9a3 3 0 004 0l2-2a3 3 0 00-4-4L8 4"/></>,
+    menu: <><path d="M2 4h12M2 8h12M2 12h12"/></>,
     sparkle: <><path d="M8 2v4M8 10v4M2 8h4M10 8h4M4 4l2 2M10 10l2 2M4 12l2-2M10 6l2-2"/></>,
   };
   return <svg viewBox="0 0 16 16" style={{ ...s, ...style }}>{paths[name] || null}</svg>;
@@ -214,7 +215,9 @@ const NAV = [
 ];
 
 /* ============ SIDEBAR ============ */
-function Sidebar({ page, setPage, t, currentSessionId, setCurrentSessionId, addToast }) {
+function Sidebar({ page, setPage: rawSetPage, t, currentSessionId, setCurrentSessionId: rawSetCurrentSessionId, addToast, mobileOpen, onMobileClose }) {
+  const setPage = (p) => { rawSetPage(p); onMobileClose && onMobileClose(); };
+  const setCurrentSessionId = (id) => { rawSetCurrentSessionId(id); onMobileClose && onMobileClose(); };
   const [q, setQ] = useState("");
   const [sessions, setSessions] = useState([]);
   const [loadError, setLoadError] = useState(false);
@@ -259,7 +262,7 @@ function Sidebar({ page, setPage, t, currentSessionId, setCurrentSessionId, addT
   const initials = user?.username ? user.username[0].toUpperCase() : "U";
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${mobileOpen ? " mobile-open" : ""}`}>
       <div style={{ padding: "16px 16px 12px" }}>
         <div className="logo"><PrismMark size={22}/><span>{t.brand}</span><span className="badge" style={{ marginLeft: "auto" }}>v0.4</span></div>
       </div>
@@ -335,7 +338,7 @@ function Sidebar({ page, setPage, t, currentSessionId, setCurrentSessionId, addT
   );
 }
 
-function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm, sessionTitle }) {
+function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm, sessionTitle, onMenuToggle }) {
   const titles = {
     chat: sessionTitle || "对话",
     sessions: t.nav.sessions, usage: t.nav.usage, skills: t.nav.skills,
@@ -343,6 +346,7 @@ function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm, session
   };
   return (
     <div className="topbar">
+      {onMenuToggle && <button className="icon-btn mobile-menu-btn" onClick={onMenuToggle}><Icon name="menu" size={16}/></button>}
       {page === "chat" && <span className="crumb">会话 /</span>}
       <div className="title">{titles[page]}</div>
       <div style={{ flex: 1 }}/>
@@ -4217,6 +4221,8 @@ function App() {
   const [planState, setPlanState] = useState(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState(null);
   const [isDevEnv, setIsDevEnv] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(true);
+  const isMobile = typeof window !== "undefined" && window.innerWidth <= 640;
 
   // Auto-restore login from sessionStorage token
   useEffect(() => {
@@ -4351,6 +4357,8 @@ function App() {
           currentSessionId={currentSessionId}
           setCurrentSessionId={(id) => { setCurrentSessionId(id); setPlanState(null); }}
           addToast={addToast}
+          mobileOpen={mobileMenuOpen}
+          onMobileClose={() => setMobileMenuOpen(false)}
         />
         <main className="main">
           <Topbar
@@ -4362,6 +4370,7 @@ function App() {
             setLang={setLang}
             onPerm={() => setPerm(true)}
             sessionTitle={null}
+            onMenuToggle={() => setMobileMenuOpen(o => !o)}
           />
           {page === "chat" && (
             <ChatPage
