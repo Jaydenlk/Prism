@@ -130,44 +130,6 @@ const I18N = {
   }
 };
 
-const PROVIDERS = [
-  { id: "p1", name: "Anthropic", protocol: "anthropic", model: "claude-sonnet-4-5", health: "ok", default: true, cache: true, cost: "¥0.021/1K" },
-  { id: "p2", name: "MiniMax", protocol: "anthropic", model: "minimax-m2", health: "ok", cache: true, cost: "¥0.008/1K" },
-  { id: "p3", name: "DeepSeek", protocol: "openai", model: "deepseek-v3", health: "ok", cache: false, cost: "¥0.004/1K" },
-  { id: "p4", name: "Kimi", protocol: "openai", model: "kimi-k2", health: "warn", cache: false, cost: "¥0.012/1K" },
-  { id: "p5", name: "Qwen", protocol: "openai", model: "qwen3-max", health: "ok", cache: false, cost: "¥0.006/1K" }
-];
-
-const MCP_SERVERS = [
-  { id: "m1", name: "fs-local", cmd: "npx -y @mcp/fs", enabled: true, tools: 8, source: "系统" },
-  { id: "m2", name: "github", cmd: "gh-mcp", enabled: true, tools: 14, source: "你" },
-  { id: "m3", name: "finance-data", cmd: "prism-finance-mcp", enabled: false, tools: 22, source: "你" },
-  { id: "m4", name: "postgres-ro", cmd: "mcp-postgres --readonly", enabled: true, tools: 5, source: "你" }
-];
-
-const IM_CHANNELS = [
-  { id: "feishu", name: "飞书 · Lark", status: "bound", user: "alice@example.com", lastAt: "2 分钟前" },
-  { id: "wecom", name: "企业微信", status: "unbound", user: "—", lastAt: "—" },
-  { id: "telegram", name: "Telegram", status: "pairing", user: "@alice_ops", lastAt: "pair code 872193" }
-];
-
-const SKILLS = [
-  { id: "sk1", name: "readonly-shell", desc: "Bash 白名单封装,只让 agent 读不让写。", version: "1.2.0", installed: true, author: "Prism core" },
-  { id: "sk2", name: "markdown-brief", desc: "生成克制的三栏 briefing,附溯源。", version: "0.4.1", installed: false, author: "@tan" },
-  { id: "sk3", name: "finance-compliance", desc: "投研合规护栏 —— 凡是数字必溯源。", version: "2.0.0", installed: true, author: "@prism-finance" },
-  { id: "sk4", name: "otel-diagnose", desc: "从 OTel trace 里挑出慢工具调用。", version: "0.7.3", installed: false, author: "@obs-ops" },
-  { id: "sk5", name: "cache-boundary-opt", desc: "帮你找 prompt cache 的最佳 boundary。", version: "1.0.0", installed: false, author: "Prism core" },
-  { id: "sk6", name: "poco-importer", desc: "把 Poco v1 的会话 JSON 导进来。", version: "0.2.1", installed: false, author: "@farion1231" }
-];
-
-const RECENT_RUNS = [
-  { session: "Harness 2026 简报", mode: "coordinator", status: "completed", tokens: "28,410", cache: "72%", cost: "¥0.28", turn: 11, at: "14:32" },
-  { session: "MiniMax vs DeepSeek", mode: "general", status: "completed", tokens: "9,820", cache: "54%", cost: "¥0.06", turn: 5, at: "11:05" },
-  { session: "飞书配对排查", mode: "explore", status: "completed", tokens: "4,120", cache: "31%", cost: "¥0.03", turn: 3, at: "09:47" },
-  { session: "Compaction 测试", mode: "verifier", status: "completed", tokens: "12,004", cache: "68%", cost: "¥0.11", turn: 7, at: "昨天 22:12" },
-  { session: "Coordinator 崩溃恢复", mode: "coordinator", status: "failed", tokens: "15,220", cache: "60%", cost: "¥0.14", turn: 8, at: "昨天 19:03" }
-];
-
 /* ============ UTILS ============ */
 /**
  * Group sessions by time bucket relative to now.
