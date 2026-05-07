@@ -1620,6 +1620,513 @@ function McpServers() {
   );
 }
 
+/* ================== GUARDRAILS PAGE ================== */
+function GuardrailsPage() {
+  const [config, setConfig] = useState(null);
+  const [entropy, setEntropy] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      PrismAPI.harness.config(),
+      PrismAPI.harness.entropyCheck({}),
+    ]).then(([cfg, ent]) => {
+      setConfig(cfg);
+      setEntropy(ent);
+    }).catch(e => toast('加载护栏数据失败: ' + e.message, 'err'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Spinner/>;
+
+  const eff = (config?.effective) || {};
+  const rules = eff.custom_guardrail_rules || [];
+  const policies = eff.permission_policies || [];
+  const alerts = (entropy?.alerts) || [];
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="page-title">护栏</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>Harness 护栏规则与权限策略。</div>
+      </div>
+
+      <div className="two-col" style={{ marginBottom: 16 }}>
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="shield" size={14}/>
+            <h3>护栏规则</h3>
+          </div>
+          <div className="panel-body">
+            {rules.length === 0
+              ? <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>使用默认护栏规则</div>
+              : rules.map((r, i) => (
+                <div key={i} style={{ padding: "8px 0", borderBottom: i < rules.length - 1 ? "1px dashed var(--line)" : "", fontSize: 12.5, color: "var(--ink)", fontFamily: "var(--mono)" }}>
+                  {typeof r === 'string' ? r : JSON.stringify(r)}
+                </div>
+              ))
+            }
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="key" size={14}/>
+            <h3>权限策略</h3>
+          </div>
+          <div className="panel-body">
+            {policies.length === 0
+              ? <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>无自定义权限策略</div>
+              : policies.map((p, i) => (
+                <div key={i} style={{ padding: "8px 0", borderBottom: i < policies.length - 1 ? "1px dashed var(--line)" : "", fontSize: 12.5, color: "var(--ink)", fontFamily: "var(--mono)" }}>
+                  {typeof p === 'string' ? p : JSON.stringify(p)}
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <Icon name="alert" size={14}/>
+          <h3>熵值告警</h3>
+          <div className="spacer"/>
+          {alerts.length === 0
+            ? <span className="st ok">所有信号正常 ✓</span>
+            : <span className="st err">{alerts.length} 个告警</span>
+          }
+        </div>
+        <div className="panel-body">
+          {alerts.length === 0
+            ? <div style={{ color: "var(--teal)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>所有信号正常 ✓</div>
+            : alerts.map((a, i) => (
+              <div key={i} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--rust)", marginBottom: 8, background: "#F3E1DA" }}>
+                <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, color: "var(--ink)", marginBottom: 4 }}>{a.signal}</div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
+                  当前: {a.current_value} / 阈值: {a.threshold}
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================== SKILLS ADMIN PAGE ================== */
+function SkillsAdminPage() {
+  const [skills, setSkills] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  function load() {
+    setLoading(true);
+    PrismAPI.skills.listInstalled()
+      .then(data => setSkills(Array.isArray(data) ? data : []))
+      .catch(e => toast('加载 Skills 失败: ' + e.message, 'err'))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function toggle(name, enabled) {
+    try {
+      await PrismAPI.skills.patch(name, { enabled });
+      toast(enabled ? `${name} 已启用` : `${name} 已禁用`, 'ok');
+      load();
+    } catch (e) {
+      toast('操作失败: ' + e.message, 'err');
+    }
+  }
+
+  async function uninstall(name) {
+    if (!window.confirm(`确认卸载 Skill "${name}"？此操作不可恢复。`)) return;
+    try {
+      await PrismAPI.skills.uninstall(name);
+      toast(`${name} 已卸载`, 'ok');
+      load();
+    } catch (e) {
+      toast('卸载失败: ' + e.message, 'err');
+    }
+  }
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="page-title">Skills</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>已安装的 Skill 列表，启用/禁用与卸载。</div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <Icon name="plugin" size={14}/>
+          <h3>已安装 Skills</h3>
+          <div className="spacer"/>
+          <span style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>{skills.length} 个</span>
+        </div>
+        <div className="panel-body tight">
+          {loading ? <Spinner/> : skills.length === 0 ? <EmptyState msg="尚未安装任何 Skill"/> : skills.map((sk, i) => (
+            <div key={sk.name} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 14, alignItems: "center", padding: "12px 18px", borderBottom: i < skills.length - 1 ? "1px solid var(--line)" : "" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                  <span style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 14, color: "var(--ink)" }}>{sk.name}</span>
+                  {sk.version && <span style={{ fontSize: 10, color: "var(--ink-4)", fontFamily: "var(--mono)", padding: "1px 6px", background: "var(--bg)", borderRadius: 4, border: "1px solid var(--line)" }}>v{sk.version}</span>}
+                  {sk.source && <span style={{ fontSize: 10, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>{sk.source}</span>}
+                </div>
+                {sk.description && <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>{sk.description}</div>}
+              </div>
+              <button
+                className={`btn sm ${sk.enabled ? 'ghost' : 'primary'}`}
+                onClick={() => toggle(sk.name, !sk.enabled)}
+                style={{ color: sk.enabled ? "var(--ink-3)" : undefined, minWidth: 56 }}>
+                {sk.enabled ? '禁用' : '启用'}
+              </button>
+              <button className="btn sm ghost" style={{ color: "var(--rust)" }} onClick={() => uninstall(sk.name)}>
+                <Icon name="trash" size={11}/> 卸载
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================== BILLING PAGE ================== */
+function BillingPage() {
+  const [usage, setUsage] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    PrismAPI.admin.getUsage()
+      .then(setUsage)
+      .catch(e => toast('加载账务数据失败: ' + e.message, 'err'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Spinner/>;
+
+  const u = usage || {};
+  const providers = u.per_provider || [];
+  const trend = u.daily_trend_30d || [];
+  const totalCost = u.total_cost_usd ?? 0;
+  const maxBar = providers.reduce((m, p) => Math.max(m, p.cost_usd ?? 0), 0.001);
+  const maxTrend = trend.reduce((m, d) => Math.max(m, d.cost_usd ?? 0), 0.001);
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="page-title">账务</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>Provider 用量与花费统计。</div>
+      </div>
+
+      <div className="strip" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 18 }}>
+        <div className="cell">
+          <div className="lbl">总花费</div>
+          <div className="val">${totalCost.toFixed(4)}</div>
+          <div className="delta">USD</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">缓存节省</div>
+          <div className="val" style={{ color: "var(--teal)" }}>${(u.total_cache_savings_usd ?? 0).toFixed(4)}</div>
+          <div className="delta">USD</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">总 Token</div>
+          <div className="val">{((u.total_input_tokens ?? 0) + (u.total_output_tokens ?? 0)).toLocaleString()}</div>
+          <div className="delta">输入+输出</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">总 Runs</div>
+          <div className="val">{(u.total_runs ?? 0).toLocaleString()}</div>
+          <div className="delta">历史累计</div>
+        </div>
+      </div>
+
+      <div className="two-col">
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="layers" size={14}/>
+            <h3>Provider 分布</h3>
+          </div>
+          <div className="panel-body">
+            {providers.length === 0
+              ? <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>暂无数据</div>
+              : providers.map((p, i) => {
+                const pct = totalCost > 0 ? ((p.cost_usd ?? 0) / totalCost * 100) : 0;
+                return (
+                  <div key={i} style={{ marginBottom: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12.5 }}>
+                      <span style={{ fontFamily: "var(--serif)", fontStyle: "italic", color: "var(--ink)" }}>{p.provider_name}</span>
+                      <span style={{ fontFamily: "var(--mono)", color: "var(--ink-3)", fontSize: 11 }}>${(p.cost_usd ?? 0).toFixed(4)} ({pct.toFixed(1)}%)</span>
+                    </div>
+                    <div className="p-pill">
+                      <div className="fill" style={{ width: `${(p.cost_usd ?? 0) / maxBar * 100}%` }}/>
+                    </div>
+                  </div>
+                );
+              })
+            }
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="activity" size={14}/>
+            <h3>30 日花费趋势</h3>
+          </div>
+          <div className="panel-body">
+            {trend.length === 0
+              ? <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>暂无趋势数据</div>
+              : <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 80, paddingBottom: 4 }}>
+                  {trend.map((d, i) => {
+                    const h = Math.max(2, ((d.cost_usd ?? 0) / maxTrend) * 72);
+                    return (
+                      <div key={i} title={`${d.date}: $${(d.cost_usd ?? 0).toFixed(4)}`}
+                        style={{ flex: 1, height: h, background: "var(--ink-3)", borderRadius: "2px 2px 0 0", minWidth: 2, cursor: "pointer", transition: "background 0.1s" }}
+                        onMouseEnter={e => e.target.style.background = "var(--ink)"}
+                        onMouseLeave={e => e.target.style.background = "var(--ink-3)"}
+                      />
+                    );
+                  })}
+                </div>
+            }
+            {trend.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--ink-4)", fontFamily: "var(--mono)", marginTop: 4 }}>
+                <span>{trend[0]?.date}</span>
+                <span>{trend[trend.length - 1]?.date}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================== INFRA PAGE ================== */
+function InfraPage() {
+  const [health, setHealth] = useState(null);
+  const [dash, setDash] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      PrismAPI.healthDetailed(),
+      PrismAPI.admin.getDashboard(),
+    ]).then(([h, d]) => {
+      setHealth(h);
+      setDash(d);
+    }).catch(e => toast('加载基础设施数据失败: ' + e.message, 'err'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Spinner/>;
+
+  const h = health || {};
+  const d = dash || {};
+  const checks = h.checks || {};
+  const res = h.resources || {};
+  const agents = h.agents || {};
+
+  const components = Object.entries(checks).map(([name, status]) => ({ name, status }));
+
+  return (
+    <div>
+      <div className="page-head">
+        <div className="page-title">基础设施</div>
+        <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>组件健康状态与运行统计。</div>
+      </div>
+
+      <div className="strip" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 18 }}>
+        <div className="cell">
+          <div className="lbl">24h Runs</div>
+          <div className="val">{d.runs_24h ?? 0}</div>
+          <div className="delta">过去 24 小时</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">7d Runs</div>
+          <div className="val">{d.runs_7d ?? 0}</div>
+          <div className="delta">过去 7 天</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">活跃会话</div>
+          <div className="val">{d.active_sessions ?? 0}</div>
+          <div className="delta">当前</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">24h 活跃用户</div>
+          <div className="val">{d.active_users_24h ?? 0}</div>
+          <div className="delta">独立用户</div>
+        </div>
+      </div>
+
+      <div className="two-col">
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="server" size={14}/>
+            <h3>组件健康</h3>
+          </div>
+          <div className="panel-body">
+            {components.length === 0
+              ? <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>无健康检查数据</div>
+              : components.map((c, i) => {
+                const ok = c.status === 'ok' || c.status === 'healthy';
+                return (
+                  <div key={c.name} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "center", padding: "9px 0", borderBottom: i < components.length - 1 ? "1px dashed var(--line)" : "" }}>
+                    <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, color: "var(--ink)" }}>{c.name}</div>
+                    <span className={`st ${ok ? 'ok' : 'err'}`}>{c.status}</span>
+                  </div>
+                );
+              })
+            }
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">
+            <Icon name="activity" size={14}/>
+            <h3>资源状态</h3>
+          </div>
+          <div className="panel-body">
+            <div className="kv-grid">
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>内存使用</div>
+              <div className="v" style={{ color: (res.memory_percent ?? 0) > 85 ? "var(--rust)" : "var(--ink)" }}>{(res.memory_percent ?? 0).toFixed(1)}%</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>CPU</div>
+              <div className="v" style={{ color: (res.cpu_percent ?? 0) > 90 ? "var(--rust)" : "var(--ink)" }}>{(res.cpu_percent ?? 0).toFixed(1)}%</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>Agent 进程</div>
+              <div className="v">{agents.running ?? 0} / {agents.max ?? 0}</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>队列深度</div>
+              <div className="v" style={{ color: (res.queue_depth ?? 0) > 0 ? "var(--amber)" : "var(--ink)" }}>{res.queue_depth ?? 0}</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>内存 MB</div>
+              <div className="v">{res.backend_memory_mb ? res.backend_memory_mb.toFixed(0) : '—'}</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>版本</div>
+              <div className="v">{h.version || '—'}</div>
+              <div className="k" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>运行时长</div>
+              <div className="v">{h.uptime_seconds ? `${Math.floor(h.uptime_seconds / 60)} 分钟` : '—'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================== OBSERVABILITY ADMIN PAGE ================== */
+function ObservabilityAdminPage() {
+  const [analytics, setAnalytics] = useState(null);
+  const [entropy, setEntropy] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [calibrating, setCalibrating] = useState(false);
+
+  function load() {
+    setLoading(true);
+    Promise.all([
+      PrismAPI.harness.analytics({ days: 7 }),
+      PrismAPI.harness.entropyCheck({}),
+    ]).then(([a, e]) => {
+      setAnalytics(a);
+      setEntropy(e);
+    }).catch(e => toast('加载可观测数据失败: ' + e.message, 'err'))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function calibrate() {
+    setCalibrating(true);
+    try {
+      const result = await PrismAPI.harness.thresholdCalibrate({});
+      toast(`阈值校准完成，扫描 ${result.scan_days ?? '?'} 天`, 'ok');
+    } catch (e) {
+      toast('校准失败: ' + e.message, 'err');
+    } finally {
+      setCalibrating(false);
+    }
+  }
+
+  if (loading) return <Spinner/>;
+
+  const a = analytics || {};
+  const totals = a.totals || {};
+  const averages = a.averages || {};
+  const cacheStats = a.cache_stats || {};
+  const alerts = (entropy?.alerts) || [];
+  const cacheHitRatio = cacheStats.hit_ratio ?? 0;
+
+  return (
+    <div>
+      <div className="page-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+        <div>
+          <div className="page-title">可观测</div>
+          <div className="page-sub" style={{ fontFamily: "var(--serif)", fontStyle: "italic" }}>Harness 运行指标与熵值监控。</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn sm ghost" onClick={load}><Icon name="refresh" size={12}/> 刷新</button>
+          <button className="btn sm ghost" onClick={calibrate} disabled={calibrating}>
+            <Icon name="filter" size={12}/> {calibrating ? '校准中…' : '阈值校准'}
+          </button>
+        </div>
+      </div>
+
+      <div className="strip" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 18 }}>
+        <div className="cell">
+          <div className="lbl">工具调用</div>
+          <div className="val">{(totals.tool_calls ?? 0).toLocaleString()}</div>
+          <div className="delta">7d 总计</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">工具错误</div>
+          <div className="val" style={{ color: (totals.tool_errors ?? 0) > 0 ? "var(--rust)" : "var(--ink)" }}>
+            {(totals.tool_errors ?? 0).toLocaleString()}
+          </div>
+          <div className="delta">7d 总计</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">护栏触发</div>
+          <div className="val" style={{ color: (totals.guardrail_triggers ?? 0) > 0 ? "var(--amber)" : "var(--ink)" }}>
+            {(totals.guardrail_triggers ?? 0).toLocaleString()}
+          </div>
+          <div className="delta">7d 总计</div>
+        </div>
+        <div className="cell">
+          <div className="lbl">缓存命中率</div>
+          <div className="val" style={{ color: cacheHitRatio > 0.5 ? "var(--teal)" : "var(--ink)" }}>
+            {(cacheHitRatio * 100).toFixed(1)}%
+          </div>
+          <div className="delta">{a.runs_analyzed ?? 0} 次运行</div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
+          <Icon name="alert" size={14}/>
+          <h3>熵值告警</h3>
+          <div className="spacer"/>
+          {alerts.length === 0
+            ? <span className="st ok">所有信号正常 ✓</span>
+            : <span className="st err">{alerts.length} 个告警</span>
+          }
+        </div>
+        <div className="panel-body">
+          {alerts.length === 0
+            ? <div style={{ color: "var(--teal)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>所有信号正常 ✓</div>
+            : alerts.map((a, i) => (
+              <div key={i} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--rust)", marginBottom: 8, background: "#F3E1DA" }}>
+                <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13, color: "var(--ink)", marginBottom: 4 }}>{a.signal}</div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
+                  当前: {a.current_value} / 阈值: {a.threshold}
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Placeholder({ title, sub }) {
   return (
     <div>
@@ -1643,14 +2150,14 @@ const PAGES = {
   users: { r: (props) => <Users {...props}/>, title: "用户" },
   providers: { r: (props) => <Providers {...props}/>, title: "Providers" },
   runs: { r: (props) => <Runs {...props}/>, title: "Runs" },
-  guardrails: { r: () => <Placeholder title="护栏编辑器" sub="写规则、绑 Skill、按租户分发。"/>, title: "护栏" },
-  plugins: { r: () => <Placeholder title="Skills 与插件审核" sub="私有 registry、待审核队列、签名密钥管理。"/>, title: "Skills" },
+  guardrails: { r: () => <GuardrailsPage/>, title: "护栏" },
+  plugins: { r: () => <SkillsAdminPage/>, title: "Skills" },
   mcpServers: { r: () => <McpServers/>, title: "MCP Servers" },
-  billing: { r: () => <Placeholder title="账务" sub="Provider 用量、月度花费、导出。"/>, title: "账务" },
+  billing: { r: () => <BillingPage/>, title: "账务" },
   audit: { r: (props) => <Audit {...props}/>, title: "审计" },
-  infra: { r: () => <Placeholder title="基础设施" sub="Postgres、Redis、OTel、备份、子进程池。"/>, title: "基础设施" },
-  observability: { r: () => <Placeholder title="可观测性" sub="Trace 瓀布图在用户端的 Observability 页。"/>, title: "可观测" },
-  security: { r: () => <Placeholder title="安全" sub="API Key、IP 白名单、SSO、密钥轮换。"/>, title: "安全" },
+  infra: { r: () => <InfraPage/>, title: "基础设施" },
+  observability: { r: () => <ObservabilityAdminPage/>, title: "可观测" },
+  security: { r: () => <Placeholder title="安全" sub="API Key 轮换、IP 白名单 — 需要后端扩展。"/>, title: "安全" },
 };
 
 /* ================== AUTH GATE ================== */
