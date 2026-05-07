@@ -57,6 +57,8 @@ class SkillPackage:
     tags: list[str] = field(default_factory=list)
     installed: bool = False             # 是否已安装
     installed_version: str | None = None
+    marketplace_id: str | None = None   # source='marketplace' 时关联的 marketplace_registry.id
+    plugin_name: str | None = None      # source='marketplace' 时 catalog 中的 plugin entry name
 
 
 @dataclass
@@ -367,6 +369,8 @@ class MarketplaceCatalogSource(SkillSource):
                     source_url=f"marketplace://{mp.name}/{name}",
                     author=author,
                     tags=tags,
+                    marketplace_id=mp.id,
+                    plugin_name=name,
                 ))
 
         logger.info(
