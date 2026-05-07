@@ -32,6 +32,7 @@ from executor.adapters.base import (
     ToolUseBlock,
 )
 from executor.adapters.stream_parser import parse_sse_lines
+from executor.engine.prompt_assembler import CACHE_BOUNDARY_MARKER
 
 logger = logging.getLogger(__name__)
 
@@ -164,8 +165,6 @@ class AnthropicDriver(ModelAdapter):
         静态前缀每轮字节级一致，Anthropic Prompt Cache 可命中。
         动态后缀每轮可能变化，不加 cache_control。
         """
-        from executor.engine.prompt_assembler import CACHE_BOUNDARY_MARKER
-
         if CACHE_BOUNDARY_MARKER in system_prompt:
             static, dynamic = system_prompt.split(CACHE_BOUNDARY_MARKER, 1)
             blocks = [{"type": "text", "text": static}]
