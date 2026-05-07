@@ -64,6 +64,7 @@ def _compile_jsonb_sqlite(type_, compiler, **kw):
 def db():
     """In-memory SQLite session with all tables needed for plugin bootstrap tests."""
     from app.models.base import Base
+    from app.models.audit import AuditLog
     from app.models.marketplace import MarketplaceRegistry
     from app.models.mcp_server import McpServer, UserMcpInstall
     from app.models.skill_install import SkillInstall
@@ -85,6 +86,7 @@ def db():
         UserMcpInstall.__table__,
         SkillInstall.__table__,
         User.__table__,
+        AuditLog.__table__,
     ]
     Base.metadata.create_all(engine, tables=tables)
 

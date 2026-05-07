@@ -152,6 +152,20 @@ class PhoneLoginBody(BaseModel):
         return v
 
 
+class ChangePasswordBody(BaseModel):
+    """POST /auth/change-password — change password while authenticated."""
+
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("new_password must be at least 8 characters")
+        return v
+
+
 # ---------------------------------------------------------------------------
 # Existing response schemas
 # ---------------------------------------------------------------------------
