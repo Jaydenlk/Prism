@@ -1303,6 +1303,27 @@ function UsagePage() {
   );
 }
 
+function simpleMarkdown(md) {
+  if (!md) return "";
+  let html = md
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/```([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/\n\n/g, "<br/><br/>");
+  return html;
+}
+
+function SourceBadge({ source }) {
+  const labels = { github: "GitHub", marketplace: "Marketplace", local: "Local", manus: "Manus" };
+  return <span className={`skill-source-badge ${source}`}>{labels[source] || source}</span>;
+}
+
 function SkillsPage() {
   const { PrismAPI } = window;
 
@@ -1313,6 +1334,10 @@ function SkillsPage() {
   const [source, setSource] = useState("all");
   const [searching, setSearching] = useState(false);
   const [searchErr, setSearchErr] = useState("");
+
+  const [detailSkill, setDetailSkill] = useState(null);
+  const [readmeContent, setReadmeContent] = useState("");
+  const [readmeLoading, setReadmeLoading] = useState(false);
 
   // Install channel: "local_file" | "github" | "custom_md" | "marketplace"
   const [installTab, setInstallTab] = useState("local_file");
@@ -1366,6 +1391,20 @@ function SkillsPage() {
     // PrismAPI returns { data: [...] } or plain array
     if (resp && resp.data !== undefined) return resp.data;
     return resp;
+  }
+
+  async function openDetail(skill) {
+    setDetailSkill(skill);
+    setReadmeLoading(true);
+    setReadmeContent("");
+    try {
+      const data = await PrismAPI.skills.getReadme(skill.name, skill.source_url);
+      setReadmeContent(data.content || "README 暂不可用");
+    } catch {
+      setReadmeContent("README 暂不可用");
+    } finally {
+      setReadmeLoading(false);
+    }
   }
 
   // ── Data loaders ───────────────────────────────────────────────────────────
@@ -1782,10 +1821,11 @@ function SkillsPage() {
                 const name = sk.skill_name || sk.name;
                 const isInst = installed.some(s => (s.skill_name || s.name) === name);
                 return (
-                  <div key={name || idx} className="card" style={{ padding: 16, display: "flex", alignItems: "flex-start", gap: 12 }}>
+                  <div key={name || idx} className="card" style={{ padding: 16, display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => openDetail(sk)}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                         <span className="mono" style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{name}</span>
+                        {sk.source && <SourceBadge source={sk.source}/>}
                         {isInst && <span className="badge teal" style={{ fontSize: 10 }}>已安装</span>}
                       </div>
                       <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6, fontFamily: "var(--mono)" }}>
@@ -2067,6 +2107,30 @@ function SkillsPage() {
           </div>
         </div>
       </div>
+
+      {detailSkill && <div className="skill-detail-panel open">
+        <div className="skill-detail-header">
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0, fontSize: 18 }}>{detailSkill.name}</h3>
+              <SourceBadge source={detailSkill.source}/>
+              {detailSkill.version && <span className="badge">{detailSkill.version}</span>}
+            </div>
+            {detailSkill.author && <div style={{ color: "var(--ink-4)", marginTop: 4, fontSize: 13 }}>by {detailSkill.author}</div>}
+            <p style={{ marginTop: 8, color: "var(--ink-3)", fontSize: 14 }}>{detailSkill.description}</p>
+          </div>
+          <button className="btn ghost sm" onClick={() => setDetailSkill(null)}>✕</button>
+        </div>
+        <div className="skill-detail-body" dangerouslySetInnerHTML={{ __html: readmeLoading ? "<p>加载中…</p>" : simpleMarkdown(readmeContent) }}/>
+        <div className="skill-detail-actions">
+          {detailSkill.installed
+            ? <button className="btn sm" disabled>已安装 ✓</button>
+            : <button className="btn sm primary" onClick={() => setDetailSkill(null)}>安装</button>
+          }
+          {detailSkill.source_url && <a href={detailSkill.source_url} target="_blank" rel="noopener noreferrer" className="btn sm">查看源码 →</a>}
+        </div>
+      </div>}
+      {detailSkill && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 55 }} onClick={() => setDetailSkill(null)}/>}
     </div>
   );
 }
