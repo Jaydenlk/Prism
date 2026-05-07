@@ -3544,14 +3544,33 @@ function LoginScreen({ onSignIn, onToast, t }) {
   const [googleEnabled, setGoogleEnabled] = useState(false);
   const [phoneEnabled, setPhoneEnabled] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+  const [devAdmin, setDevAdmin] = useState(null);
 
   useEffect(() => {
-    // Probe which login methods are available
+    // Probe which login methods are available; in dev, also capture the default
+    // admin creds for the one-click fill button.
     window.PrismAPI.auth.providers().then(p => {
       setGoogleEnabled(!!p.google);
       setPhoneEnabled(!!p.phone_password);
+      setDevAdmin(p.dev_default_admin || null);
     }).catch(() => {});
   }, []);
+
+  async function handleDevAdminLogin() {
+    if (!devAdmin) return;
+    clearMessages();
+    setEmail(devAdmin.email);
+    setPassword(devAdmin.password);
+    setLoading(true);
+    try {
+      await window.PrismAPI.login(devAdmin.email, devAdmin.password);
+      onSignIn();
+    } catch (err) {
+      if (err.status === 401) setErrMsg("默认管理员账号在 backend 那边已经被改过了，需手动输");
+      else setErrMsg(err.message || "登录失败");
+    }
+    setLoading(false);
+  }
 
   function clearMessages() { setErrMsg(""); setOkMsg(""); }
 
@@ -3746,6 +3765,24 @@ function LoginScreen({ onSignIn, onToast, t }) {
                         <button className="btn primary" style={{ justifyContent: "center", padding: "11px" }} onClick={handleEmailPwLogin} disabled={loading}>
                           {loading ? "请稍等…" : <><Icon name="arrowRight" size={12}/> {t.signIn}</>}
                         </button>
+                        {devAdmin && screen === "login" && (
+                          <button
+                            className="btn"
+                            data-testid="dev-default-admin-login"
+                            style={{
+                              justifyContent: "center",
+                              padding: "9px",
+                              fontSize: 12,
+                              opacity: 0.85,
+                              borderStyle: "dashed",
+                            }}
+                            onClick={handleDevAdminLogin}
+                            disabled={loading}
+                            title={`Email: ${devAdmin.email}`}
+                          >
+                            🔓 dev: 用默认管理员账号登录（{devAdmin.email}）
+                          </button>
+                        )}
                       </>
                     )}
 

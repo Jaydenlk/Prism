@@ -98,7 +98,10 @@ services:
     env_file:
       - .env
     environment:
-      PRISM_ENV: production
+      # Defaults to development so dev features (e.g. /auth/providers exposes
+      # default admin creds for one-click LoginScreen fill) work out of box.
+      # Production deployments must set PRISM_ENV=production in .env.
+      PRISM_ENV: ${PRISM_ENV:-development}
     depends_on:
       postgres:
         condition: service_healthy

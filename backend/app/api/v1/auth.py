@@ -392,6 +392,14 @@ def get_providers(
     # Google OAuth availability: both client_id AND client_secret must be set
     google_svc = GoogleOAuthService(settings, redis_client=None)
     google_enabled = google_svc.is_configured()
+    # Dev-only: surface default admin creds to enable one-click fill on LoginScreen.
+    # PRISM_ENV defaults to "development"; production deployments must set "production".
+    dev_admin = None
+    if settings.PRISM_ENV != "production":
+        from app.schemas.auth import DevDefaultAdmin
+        dev_admin = DevDefaultAdmin(
+            email=settings.ADMIN_EMAIL, password=settings.ADMIN_PASSWORD
+        )
     return ApiResponse(
         data=AuthProvidersResponse(
             email_password=True,
@@ -399,6 +407,7 @@ def get_providers(
             email_otp=True,
             phone_password=phone_enabled,
             google=google_enabled,
+            dev_default_admin=dev_admin,
         )
     )
 
