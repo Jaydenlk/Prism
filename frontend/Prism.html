@@ -4216,6 +4216,7 @@ function App() {
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [planState, setPlanState] = useState(null);
   const [settingsInitialTab, setSettingsInitialTab] = useState(null);
+  const [isDevEnv, setIsDevEnv] = useState(false);
 
   // Auto-restore login from sessionStorage token
   useEffect(() => {
@@ -4291,6 +4292,7 @@ function App() {
       }
     }
     bootstrap();
+    window.PrismAPI.auth.providers().then(p => setIsDevEnv(!!p.dev_default_admin)).catch(() => {});
 
     // Redirect to login on unauthorized events from apiClient
     const handler = () => setScreen("login");
@@ -4394,12 +4396,11 @@ function App() {
         {sidebarMode === "split" && <PlanPanel t={t} planState={planState}/>}
       </div>
 
-      {/* Demo switcher */}
-      <div style={{ position: "fixed", top: 14, right: 20, zIndex: 70, display: "flex", gap: 4, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 999, padding: 4, boxShadow: "var(--shadow-2)" }}>
+      {isDevEnv && <div style={{ position: "fixed", top: 14, right: 20, zIndex: 70, display: "flex", gap: 4, background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 999, padding: 4, boxShadow: "var(--shadow-2)" }}>
         <button className="icon-btn" onClick={() => setScreen("login")} title="登录页"><Icon name="arrowRight" size={11} style={{ transform: "rotate(180deg)" }}/></button>
         <button className="icon-btn" onClick={() => { setCurrentSessionId(null); setPage("chat"); }} title="空状态"><Icon name="sparkle" size={11}/></button>
         <button className="icon-btn" onClick={() => setScreen("app")} title="应用"><Icon name="chat" size={11}/></button>
-      </div>
+      </div>}
 
       {perm && (
         <PermissionModal
