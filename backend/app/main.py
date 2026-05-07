@@ -264,6 +264,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             message="HeartbeatMonitor failed to start. Zombie Run detection disabled.",
         )
 
+    # 8. Start Entropy Detector background scheduler (ADR-112: hourly global scan)
+    async def _entropy_scheduler() -> None:
+        from app.core.database import SessionLocal
+        from app.services.entropy_detector import EntropyDetector
+        from app.services.harness_analytics import HarnessAnalytics
+
+        while True:
+            await asyncio.sleep(3600)
+            db = SessionLocal()
+            try:
+                analytics = HarnessAnalytics(db)
+                detector = EntropyDetector(db, analytics)
+                alerts = detector.detect(user_id=None)
+                if alerts:
+                    logger.warning(
+                        "entropy.alerts_detected",
+                        count=len(alerts),
+                        message="Entropy detector found anomalies in global scan.",
+                    )
+            except Exception as exc:
+                logger.warning("entropy.scheduler_error", error=str(exc))
+            finally:
+                db.close()
+
+    entropy_task: asyncio.Task | None = None
+    try:
+        entropy_task = asyncio.create_task(_entropy_scheduler())
+        logger.info("prism.entropy_scheduler_started", message="Entropy scheduler started (ADR-112, 3600s interval).")
+    except Exception as exc:
+        logger.warning("prism.entropy_scheduler_failed", error=str(exc))
+
     yield  # application serves requests here
 
     # Shutdown: stop IMGateway adapters
@@ -300,6 +331,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _db_for_hb.close()
     except Exception:
         pass
+
+    # Shutdown: stop Entropy Detector scheduler
+    if entropy_task is not None:
+        try:
+            entropy_task.cancel()
+            await asyncio.wait_for(entropy_task, timeout=5.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        except Exception:
+            pass
 
     logger.info("prism.shutdown", message="Prism v2 shutting down.")
 
