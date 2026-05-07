@@ -606,8 +606,8 @@
     config() {
       return request('GET', '/harness/config');
     },
-    analytics({ days = 7 } = {}) {
-      return request('GET', '/harness/analytics', { query: { days } });
+    analytics({ days = 7, offset_days = 0 } = {}) {
+      return request('GET', '/harness/analytics', { query: { days, offset_days } });
     },
     entropyCheck(body) {
       return request('POST', '/harness/entropy-check', { json: body });
