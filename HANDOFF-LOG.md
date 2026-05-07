@@ -65,7 +65,14 @@
 
 **用户反馈（已存 memory）**: Plugin Builder 应支持模板复用/对话持久化/增量编辑
 
-**下一个 session**: 用户 Plugin Builder UX 改进需求 + 侧栏 rename/delete
+**Skills Market GUI Phase 1a（同 session 追加）**:
+- GitHub Repository Search 适配器（无需 token，按 stars 排序）
+- README 预览端点 GET /skills/{name}/readme（本地 → GitHub → 兜底）
+- 前端：搜索结果 SourceBadge（GitHub/Marketplace/Local 彩色标签）
+- 前端：详情面板（右侧滑入，README 渲染 + 安装按钮 + 查看源码链接）
+- E2E 验证：搜索 "weather" → 15 个 GitHub 结果 → 点击详情面板正常显示
+
+**下一个 session**: Skills Market CLI 命令 + Playground 试用 + Agent 被动/主动双层调用
 
 ---
 
