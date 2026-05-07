@@ -32,6 +32,7 @@ from executor.adapters.base import (
     ToolUseBlock,
 )
 from executor.adapters.stream_parser import parse_sse_lines
+from executor.engine.prompt_assembler import CACHE_BOUNDARY_MARKER
 
 logger = logging.getLogger(__name__)
 
@@ -158,26 +159,37 @@ class AnthropicDriver(ModelAdapter):
             for t in tools
         ]
 
+    def _build_system_blocks(self, system_prompt: str) -> list[dict]:
+        """按 CACHE_BOUNDARY_MARKER 拆分 system_prompt 为静态/动态两个 text block。
+
+        静态前缀每轮字节级一致，Anthropic Prompt Cache 可命中。
+        动态后缀每轮可能变化，不加 cache_control。
+        """
+        if CACHE_BOUNDARY_MARKER in system_prompt:
+            static, dynamic = system_prompt.split(CACHE_BOUNDARY_MARKER, 1)
+            blocks = [{"type": "text", "text": static}]
+            if dynamic.strip():
+                blocks.append({"type": "text", "text": dynamic})
+            return blocks
+        return [{"type": "text", "text": system_prompt}]
+
     def _inject_cache_control(
         self,
         system_blocks: list[dict],
         messages: list[dict],
     ) -> tuple[list[dict], list[dict]]:
-        """
-        注入 cache_control(ADR-008,仅 capabilities.prompt_cache=True 时调用)。
+        """注入 cache_control（ADR-008）。
 
-        策略(CC 源码 cache boundary 实践):
-        1. system 最后一个 text block 加 cache_control
+        策略：
+        1. system 第一个 text block 加 cache_control（静态前缀，字节级一致）
         2. 最后一条 user message 的最后一个 text block 加 cache_control
         """
-        # 注入 system 最后 text block
         if system_blocks:
-            for block in reversed(system_blocks):
+            for block in system_blocks:
                 if block.get("type") == "text":
                     block["cache_control"] = {"type": "ephemeral"}
                     break
 
-        # 注入最后一条 user message 的最后 text block
         for msg in reversed(messages):
             if msg["role"] == "user":
                 for block in reversed(msg["content"]):
@@ -213,8 +225,8 @@ class AnthropicDriver(ModelAdapter):
         # 转换消息格式
         anthropic_messages = self._convert_messages_to_anthropic(messages)
 
-        # 构建 system blocks
-        system_blocks: list[dict] = [{"type": "text", "text": system_prompt}]
+        # 构建 system blocks（按 CACHE_BOUNDARY_MARKER 拆分静态/动态）
+        system_blocks = self._build_system_blocks(system_prompt)
 
         # Cache control 注入(ADR-008)
         if self.capabilities.prompt_cache:
@@ -435,7 +447,7 @@ class AnthropicDriver(ModelAdapter):
         """非流式调用 Anthropic Messages API。"""
         sorted_tools = self._sort_tools(tools)
         anthropic_messages = self._convert_messages_to_anthropic(messages)
-        system_blocks: list[dict] = [{"type": "text", "text": system_prompt}]
+        system_blocks = self._build_system_blocks(system_prompt)
 
         if self.capabilities.prompt_cache:
             system_blocks, anthropic_messages = self._inject_cache_control(
