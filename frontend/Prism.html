@@ -2673,37 +2673,94 @@ function PluginsPage() {
 }
 
 function ObsPage() {
+  const [data, setData] = useState(null);  // null = loading
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await PrismAPI.harness.analytics({ days: 7 });
+        if (!cancelled) setData(resp);
+      } catch (e) {
+        if (!cancelled) setErr(e.message || String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (err) return (
+    <div className="page">
+      <div className="page-head"><div className="page-title">可观测性</div></div>
+      <div className="harness-notice danger">加载失败: {err}</div>
+    </div>
+  );
+  if (data === null) return (
+    <div className="page">
+      <div className="page-head"><div className="page-title">可观测性</div></div>
+      <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>正在加载…</div>
+    </div>
+  );
+  if (data.runs_analyzed === 0) return (
+    <div className="page">
+      <div className="page-head">
+        <div className="page-title">可观测性</div>
+        <div className="page-sub">7 天窗口 · Harness 运行数据。</div>
+      </div>
+      <div style={{ color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>暂无运行数据 — 发起一次对话后回来看。</div>
+    </div>
+  );
+
+  const { totals, averages, cache_stats, runs_analyzed } = data;
+  const toolErrRate = totals.tool_calls > 0 ? (totals.tool_errors / totals.tool_calls * 100).toFixed(1) : "0.0";
+  const compactionRate = (totals.compaction_events / runs_analyzed * 100).toFixed(1);
+  const cacheHitPct = (cache_stats.hit_ratio * 100).toFixed(1);
+
   return (
     <div className="page">
       <div className="page-head">
         <div className="page-title">可观测性</div>
-        <div className="page-sub">每一次工具调用,每一次压缩,每一次护栏 —— 都是一个 OTel span。</div>
+        <div className="page-sub">7 天窗口 · {runs_analyzed} 次运行分析。</div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 28 }}>
-        <div className="stat-card"><div className="label">p50 工具延迟</div><div className="val">214<span style={{ fontSize: 16, color: "var(--ink-4)" }}>ms</span></div><div className="trend">-18ms</div></div>
-        <div className="stat-card"><div className="label">p95 工具延迟</div><div className="val">1.8<span style={{ fontSize: 16, color: "var(--ink-4)" }}>s</span></div><div className="trend down">+0.3s</div></div>
-        <div className="stat-card"><div className="label">重试风暴 (24h)</div><div className="val">2</div><div className="trend" style={{ color: "var(--amber)" }}>↑ kimi</div></div>
-        <div className="stat-card"><div className="label">崩溃恢复率</div><div className="val">100<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div><div className="trend">3/3</div></div>
+        <div className="stat-card feature">
+          <div className="label">平均轮次</div>
+          <div className="val">{averages.turn_count.toFixed(1)}</div>
+          <div className="trend" style={{ color: "var(--ink-3)" }}>turns / run</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">工具错误率</div>
+          <div className="val">{toolErrRate}<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div>
+          <div className="trend" style={{ color: totals.tool_errors > 0 ? "var(--red)" : "var(--ink-3)" }}>{totals.tool_errors} / {totals.tool_calls}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Compaction 率</div>
+          <div className="val">{compactionRate}<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div>
+          <div className="trend" style={{ color: "var(--ink-3)" }}>{totals.compaction_events} 次</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Cache 命中率</div>
+          <div className="val">{cacheHitPct}<span style={{ fontSize: 16, color: "var(--ink-4)" }}>%</span></div>
+          <div className="trend" style={{ color: "var(--teal)" }}>峰值上下文 {(averages.peak_context_usage_ratio * 100).toFixed(0)}%</div>
+        </div>
       </div>
-      <div className="section-title">Trace · run r-5b03</div>
-      <div className="card" style={{ padding: 20, fontFamily: "var(--mono)", fontSize: 12 }}>
-        {[
-          { n: "coordinator.turn", d: "1.4s", w: 100, o: 0, c: "var(--ink)" },
-          { n: "  research.agent", d: "620ms", w: 44, o: 2, c: "var(--teal)" },
-          { n: "    fs.read", d: "412ms", w: 29, o: 4, c: "var(--teal-soft)" },
-          { n: "    fs.grep", d: "89ms", w: 6, o: 36, c: "var(--teal-soft)" },
-          { n: "  compaction.T2", d: "180ms", w: 13, o: 46, c: "var(--amber)" },
-          { n: "  planner.agent", d: "380ms", w: 27, o: 60, c: "var(--plum)" },
-          { n: "  guardrail.check", d: "12ms", w: 2, o: 88, c: "var(--amber)" }
-        ].map((s, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "220px 1fr 80px", gap: 10, alignItems: "center", padding: "6px 0" }}>
-            <span style={{ color: "var(--ink)", whiteSpace: "pre" }}>{s.n}</span>
-            <div style={{ position: "relative", height: 8, background: "var(--bg)", borderRadius: 3 }}>
-              <div style={{ position: "absolute", left: `${s.o}%`, width: `${s.w}%`, height: "100%", background: s.c, borderRadius: 3 }}/>
+      <div className="section-title">Harness 治理概览</div>
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+          {[
+            { label: "护栏触发", val: totals.guardrail_triggers, color: totals.guardrail_triggers > 0 ? "var(--amber)" : "var(--ink-3)" },
+            { label: "权限拒绝", val: totals.permission_denials, color: totals.permission_denials > 0 ? "var(--red)" : "var(--ink-3)" },
+            { label: "Hook 触发", val: totals.hook_fires, color: "var(--ink-3)" },
+            { label: "循环检测", val: totals.loop_detections, color: totals.loop_detections > 0 ? "var(--amber)" : "var(--ink-3)" },
+            { label: "Fork 数", val: totals.fork_count, color: "var(--ink-3)" },
+            { label: "峰值上下文", val: `${(averages.peak_context_usage_ratio * 100).toFixed(0)}%`, color: averages.peak_context_usage_ratio > 0.9 ? "var(--red)" : "var(--ink-3)" },
+          ].map(({ label, val, color }) => (
+            <div key={label} style={{ background: "var(--bg)", borderRadius: 10, padding: "14px 16px" }}>
+              <div className="label" style={{ marginBottom: 6 }}>{label}</div>
+              <div style={{ fontFamily: "var(--serif)", fontSize: 22, color, fontWeight: 500 }}>{val}</div>
             </div>
-            <span style={{ color: "var(--ink-3)", textAlign: "right" }}>{s.d}</span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
