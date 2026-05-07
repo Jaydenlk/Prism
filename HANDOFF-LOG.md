@@ -37,6 +37,31 @@
 
 ---
 
+## ✅ 2026-05-09 P0 Prompt Caching 真集成（已 merge develop）
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop（已合并 feat/prompt-cache-real-split，worktree 已清理）
+
+**问题**: `prompt_assembler.build()` 返回 `静态前缀 + CACHE_BOUNDARY_MARKER + 动态后缀` 单个字符串。AnthropicDriver 把整个字符串包成一个 text block 加 cache_control → 动态部分每轮变 → 缓存永远命不中。
+
+**修复（2 commits）**:
+1. `_build_system_blocks()` — 按 CACHE_BOUNDARY_MARKER 拆分为两个 system content block（静态前缀 + 动态后缀）
+2. `_inject_cache_control()` — 改为在第一个 text block（静态前缀）注入 cache_control，而非最后一个
+3. `stream()` 和 `complete()` 调用替换
+
+**文档置信度**: WebFetch Anthropic 官方 prompt caching 文档确认格式、breakpoint 限制（最多 4 个）、最低 token 阈值
+
+**审查**: Simplify 3-agent（reuse/quality/efficiency）+ PJR（py_compile + 62 executor pass + 132 backend pass）
+
+**E2E 验证**: Playwright 桌面 1280×800 + 移动 390×844
+- 新对话 → 发送 → AI 回复正常（两轮多轮对话）
+- 可观测性页面底栏"缓存 72%"数据流通
+- 后端日志 `POST /v1/messages` → 200 OK
+
+**下一个 session**: 继续 `docs/superpowers/plans/2026-05-08-remaining-convergence.md`，从 P1 Plugin Builder 清理开始
+
+---
+
 ## ✅ 2026-05-08 Opus 4.6 PRD-Reality Convergence（Phase 1 + Skills 根因 + 飞书 IM，已 merge develop）
 
 **模型**: Opus 4.6 (1M context)
