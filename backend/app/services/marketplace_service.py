@@ -538,13 +538,21 @@ class MarketplaceService:
                     skill_name, _desc, skill_version = _parse_skill_frontmatter(
                         skill_md
                     )
+                    workspace = os.environ.get("PRISM_WORKSPACE", os.getcwd())
+                    permanent_dir = (
+                        Path(workspace) / ".prism" / "skills" / "@marketplace" / skill_name
+                    )
+                    if permanent_dir.exists():
+                        shutil.rmtree(permanent_dir)
+                    permanent_dir.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(skill_subdir, permanent_dir)
                     install_svc.install(
                         user_id=user_id,
                         skill_name=skill_name,
                         source="marketplace",
-                        source_url=mp.url,
+                        source_url=str(permanent_dir / "SKILL.md"),
                         version=skill_version or version,
-                        install_path=str(skill_subdir),
+                        install_path=str(permanent_dir),
                         has_hooks=(target_dir / "hooks").exists()
                         or (target_dir / "hooks.json").exists(),
                         has_mcp=(target_dir / ".mcp.json").exists(),
