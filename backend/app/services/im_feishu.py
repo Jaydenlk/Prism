@@ -44,6 +44,13 @@ from typing import Any
 import httpx
 import structlog
 
+try:
+    import lark_oapi as lark
+    from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
+    _HAS_LARK_SDK = True
+except ImportError:
+    _HAS_LARK_SDK = False
+
 from app.services.im_adapter import (
     IMAdapter,
     IMIncomingMessage,
@@ -118,6 +125,8 @@ class FeishuAdapter(IMAdapter):
         self._token_lock = asyncio.Lock()
 
         self._running: bool = False
+        self._mode: str = getattr(settings, "FEISHU_MODE", "webhook") if settings else "webhook"
+        self._ws_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # IMAdapter interface
@@ -148,15 +157,27 @@ class FeishuAdapter(IMAdapter):
         self._running = True
         try:
             await self._ensure_token()
-            logger.info("feishu.adapter.started", app_id=self._app_id)
         except Exception as exc:  # noqa: BLE001
             logger.error("feishu.adapter.token_preheat_failed", error=str(exc))
+
+        if self._mode == "websocket" and _HAS_LARK_SDK:
+            self._ws_task = asyncio.create_task(self._start_ws_listener())
+            logger.info("feishu.adapter.started", mode="websocket", app_id=self._app_id)
+        else:
+            logger.info("feishu.adapter.started", mode="webhook", app_id=self._app_id)
 
     async def stop(self) -> None:
         """停止适配器（清理标志位，幂等）。"""
         self._running = False
         self._access_token = ""
         self._token_expires_at = 0.0
+        if self._ws_task is not None:
+            self._ws_task.cancel()
+            try:
+                await asyncio.wait_for(self._ws_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._ws_task = None
         logger.info("feishu.adapter.stopped")
 
     async def send(self, message: IMOutgoingMessage) -> bool:
@@ -540,6 +561,73 @@ class FeishuAdapter(IMAdapter):
                     msg_id=msg_id,
                     error=str(exc),
                 )
+
+    # ------------------------------------------------------------------
+    # WebSocket long connection (lark_oapi SDK)
+    # ------------------------------------------------------------------
+
+    async def _start_ws_listener(self) -> None:
+        """Start lark_oapi WebSocket client in a thread (it blocks)."""
+        if not _HAS_LARK_SDK:
+            logger.error("feishu.ws.sdk_missing", message="lark-oapi not installed, falling back to webhook mode")
+            return
+
+        def _on_message(data: "P2ImMessageReceiveV1") -> None:
+            event = data.event
+            if event is None:
+                return
+            sender = event.sender
+            message = event.message
+            if sender is None or message is None:
+                return
+            if sender.sender_type == "bot":
+                return
+
+            open_id = sender.sender_id.open_id if sender.sender_id else ""
+            chat_id = message.chat_id or ""
+            msg_id = message.message_id or ""
+
+            text = ""
+            if message.message_type == "text" and message.content:
+                import json as _json
+                try:
+                    text = _json.loads(message.content).get("text", "")
+                except Exception:
+                    text = message.content
+
+            incoming = IMIncomingMessage(
+                channel="feishu",
+                platform_user_id=open_id,
+                platform_chat_id=chat_id,
+                text=text,
+                msg_id=msg_id,
+                raw={"event": str(data)},
+            )
+
+            if self._message_handler:
+                import asyncio as _aio
+                loop = _aio.get_event_loop()
+                if loop.is_running():
+                    _aio.ensure_future(self._message_handler(incoming))
+                else:
+                    loop.run_until_complete(self._message_handler(incoming))
+
+        event_handler = lark.EventDispatcherHandler.builder("", "") \
+            .register_p2_im_message_receive_v1(_on_message) \
+            .build()
+
+        cli = lark.ws.Client(
+            self._app_id,
+            self._app_secret,
+            event_handler=event_handler,
+            log_level=lark.LogLevel.INFO,
+        )
+
+        logger.info("feishu.ws.connecting", app_id=self._app_id)
+        try:
+            await asyncio.to_thread(cli.start)
+        except Exception as exc:
+            logger.error("feishu.ws.connection_failed", error=str(exc))
 
     # ------------------------------------------------------------------
     # Token management (Redis-backed with in-memory fallback)
