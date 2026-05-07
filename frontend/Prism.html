@@ -2690,6 +2690,10 @@ function ObsPage() {
 function ProfileTab({ onToast }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showPwModal, setShowPwModal] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [pwErr, setPwErr] = useState("");
+  const [pwSubmitting, setPwSubmitting] = useState(false);
 
   useEffect(() => {
     PrismAPI.me().then(u => { setProfile(u); setLoading(false); }).catch(err => {
@@ -2697,6 +2701,25 @@ function ProfileTab({ onToast }) {
       setLoading(false);
     });
   }, []);
+
+  function openPwModal() { setPwForm({ current: "", next: "", confirm: "" }); setPwErr(""); setShowPwModal(true); }
+  function closePwModal() { setShowPwModal(false); }
+
+  async function handleChangePw() {
+    if (pwForm.next.length < 8) { setPwErr("新密码至少 8 位"); return; }
+    if (pwForm.next !== pwForm.confirm) { setPwErr("两次密码不一致"); return; }
+    setPwErr("");
+    setPwSubmitting(true);
+    try {
+      await PrismAPI.auth.changePassword({ current_password: pwForm.current, new_password: pwForm.next });
+      onToast({ id: Date.now(), kind: "success", title: "密码已修改" });
+      closePwModal();
+    } catch (err) {
+      setPwErr(err.message || "修改失败");
+    } finally {
+      setPwSubmitting(false);
+    }
+  }
 
   async function handleLogout() {
     await PrismAPI.logout();
@@ -2737,10 +2760,38 @@ function ProfileTab({ onToast }) {
           ))}
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <button className="btn ghost" onClick={() => onToast({ id: Date.now(), title: "还没做", body: "修改密码功能尚未实现，请联系管理员重置。" })}>修改密码</button>
+          <button className="btn ghost" onClick={openPwModal}>修改密码</button>
           <button className="btn danger" style={{ marginLeft: "auto" }} onClick={handleLogout}>退出登录</button>
         </div>
       </div>
+      {showPwModal && (
+        <div className="modal-backdrop" onClick={closePwModal}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="head">
+              <div style={{ fontFamily: "var(--serif)", fontSize: 20, color: "var(--ink)", fontWeight: 500 }}>修改密码</div>
+            </div>
+            <div className="body">
+              <label style={{ display: "block", marginBottom: 12 }}>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>当前密码</div>
+                <input className="input" type="password" value={pwForm.current} onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))} autoFocus/>
+              </label>
+              <label style={{ display: "block", marginBottom: 12 }}>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>新密码（至少 8 位）</div>
+                <input className="input" type="password" value={pwForm.next} onChange={e => setPwForm(f => ({ ...f, next: e.target.value }))}/>
+              </label>
+              <label style={{ display: "block", marginBottom: 4 }}>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>确认新密码</div>
+                <input className="input" type="password" value={pwForm.confirm} onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} onKeyDown={e => e.key === "Enter" && handleChangePw()}/>
+              </label>
+              {pwErr && <div style={{ color: "var(--red, #d32)", fontSize: 13, marginTop: 8 }}>{pwErr}</div>}
+            </div>
+            <div className="foot">
+              <button className="btn ghost" onClick={closePwModal} disabled={pwSubmitting}>取消</button>
+              <button className="btn primary" onClick={handleChangePw} disabled={pwSubmitting}>{pwSubmitting ? "提交中…" : "确认修改"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
