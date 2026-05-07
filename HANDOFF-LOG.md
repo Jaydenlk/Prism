@@ -37,7 +37,35 @@
 
 ---
 
-## 🚧 2026-05-08 PRD vs Reality 全审计 + P0/P1 修（audit/prd-vs-reality, 9 commits, 未 merge）
+## ✅ 2026-05-08 Opus 4.6 PRD-Reality Convergence（Phase 1 + Skills 根因 + 飞书 IM，已 merge develop）
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop (已合并 phase1/prd-convergence + fix/skill-install-materialize + feat/feishu-websocket + audit/prd-vs-reality)
+
+**交付（~25 commits on develop）**:
+1. **合并 audit 分支** — 4.7 的 10 个 P0/P1 修复（密码/死按钮/主题/持久化等）
+2. **Phase 1 清零** — ObsPage 真实 `/harness/analytics` 数据、Admin 5 placeholder tabs 全部替换为真实 API 驱动页面（护栏/Skills/账务/基础设施/可观测）、Entropy Detector 每小时定时调度、apiClient 参数修复、5 组 mock 常量删除
+3. **Simplify 审查** — 3-agent 并行审查修复所有 CRITICAL/HIGH（asyncio.to_thread、字段名修正、shared component 提取、theme hydration）
+4. **Skills 安装根因修复** — marketplace install_plugin() 从未把 SKILL.md 复制到永久目录（`.prism/skills/@marketplace/`），executor SkillLoader 找不到文件。修复: shutil.copytree 到永久路径
+5. **飞书 IM WebSocket** — 集成 lark_oapi SDK、WebSocket 长连接模式、消息收发全链路跑通（用户验证 OK）
+
+**测试**: 132 backend + 54 executor pass，E2E Playwright 桌面+移动端验证
+
+**性能诊断**: 用户体验慢的根因是 TLS 到 api.tutorial.clouddreamai.com 耗时 5 秒（深圳→香港→美国洛杉矶三跳）。部署到国内服务器可解决。
+
+**下一个 session 必读**:
+- `docs/superpowers/plans/2026-05-08-remaining-convergence.md` — P0-P4 优先级排序
+- P0: Prompt Caching 真集成（AnthropicDriver cache_control）
+- P1: Plugin Builder 垃圾清理 + 流程验证
+- P2: Sessions 侧栏 + Topbar 审计
+- P3: 企业微信适配器（等用户凭证）
+- P4: 前端 UX 细节（移动端响应式、toast 反馈）
+
+**环境**: 端口 8080（.env HTTP_PORT=8080），默认账号 admin@prism.dev / PrismAdmin!2026，飞书 bot 已连通（FEISHU_MODE=websocket）
+
+---
+
+## 🚧 2026-05-08 PRD vs Reality 全审计 + P0/P1 修（audit/prd-vs-reality, 9 commits, 已合并 develop）
 
 **Branch**: `audit/prd-vs-reality` worktree at `.worktrees/audit-prd-vs-reality/`
 **Status**: 用户正在浏览器试用 http://localhost:18888/Prism.html，等反馈
