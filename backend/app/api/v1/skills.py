@@ -22,7 +22,10 @@ from __future__ import annotations
 
 import base64
 import os
+from pathlib import Path
 from typing import Annotated, Literal
+
+import httpx
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -100,6 +103,10 @@ class SkillPackageResponse(BaseModel):
     installed_version: str | None = None
     marketplace_id: str | None = None
     plugin_name: str | None = None
+    homepage: str | None = None
+    repository: str | None = None
+    license: str | None = None
+    readme_available: bool = False
 
 
 class SkillInstallRequest(BaseModel):
@@ -539,6 +546,75 @@ async def get_skill_content(
 
 
 # ---------------------------------------------------------------------------
+# GET /skills/{skill_name}/readme — 安装前预览 README/SKILL.md 内容
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{skill_name}/readme",
+    response_model=ApiResponse[dict],
+    summary="预览 Skill 的 README/SKILL.md 内容（已安装读本地，否则从 GitHub 拉取）",
+)
+async def get_skill_readme(
+    skill_name: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    source_url: str | None = Query(default=None, description="可选 GitHub URL；含 github.com 时从远程拉取"),
+) -> ApiResponse[dict]:
+    """返回 Skill 的 SKILL.md 内容，供安装前预览。
+
+    优先级:
+    a. 已安装 → 从 install_path/SKILL.md 读本地文件 (source=local)
+    b. source_url 含 github.com → 从 raw.githubusercontent.com 拉取 (source=github)
+    c. 都没有 → 404
+    """
+    svc = SkillInstallService(db=db)
+    install = svc.get_install(user_id=current_user.id, skill_name=skill_name)
+
+    # (a) 已安装 → 读本地 SKILL.md
+    if install is not None:
+        meta = install.metadata_ or {}
+        install_path = meta.get("install_path") or ""
+        skill_md_path = Path(install_path) / "SKILL.md" if install_path else None
+        if skill_md_path and skill_md_path.is_file():
+            content = skill_md_path.read_text(encoding="utf-8")
+            return ApiResponse(data={"skill_name": skill_name, "content": content, "source": "local"})
+
+    # (b) source_url 含 github.com → 拉取 raw
+    effective_url = source_url or (install.source_url if install else None)
+    if effective_url and "github.com" in effective_url:
+        # 转换: github.com/owner/repo → raw.githubusercontent.com/owner/repo/main/SKILL.md
+        raw_url = effective_url.replace("github.com", "raw.githubusercontent.com")
+        if not raw_url.endswith("/SKILL.md"):
+            raw_url = raw_url.rstrip("/") + "/main/SKILL.md"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(raw_url)
+            if resp.status_code == 200:
+                return ApiResponse(data={"skill_name": skill_name, "content": resp.text, "source": "github"})
+            # 尝试 master 分支
+            raw_master = raw_url.replace("/main/SKILL.md", "/master/SKILL.md")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(raw_master)
+            if resp.status_code == 200:
+                return ApiResponse(data={"skill_name": skill_name, "content": resp.text, "source": "github"})
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"GitHub 请求失败: {exc}",
+            )
+
+    # (c) 已安装但本地无文件且无可用 GitHub URL → 返回空内容
+    if install is not None:
+        return ApiResponse(data={"skill_name": skill_name, "content": "", "source": "installed"})
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Skill '{skill_name}' 未安装且未提供有效的 source_url。",
+    )
+
+
+# ---------------------------------------------------------------------------
 # POST /skills/{skill_name}/update — 更新
 # ---------------------------------------------------------------------------
 
@@ -660,6 +736,7 @@ def _get_registry():
     search 从已注册 catalogs 浏览。无 GITHUB_TOKEN 依赖。
     """
     from app.core.database import SessionLocal
+    from executor.plugins.github_source import GitHubSource
     from executor.plugins.skills_registry import (
         LocalSource,
         MarketplaceCatalogSource,
@@ -672,6 +749,7 @@ def _get_registry():
         sources=[
             LocalSource(workspace=workspace),
             MarketplaceCatalogSource(db_session_factory=SessionLocal),
+            GitHubSource(),
         ],
         install_dir=install_dir,
     )

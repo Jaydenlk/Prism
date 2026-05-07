@@ -537,6 +537,10 @@
     getContent(name) {
       return request('GET', `/skills/${name}/content`);
     },
+    getReadme(name, sourceUrl) {
+      const params = sourceUrl ? `?source_url=${encodeURIComponent(sourceUrl)}` : "";
+      return request('GET', `/skills/${encodeURIComponent(name)}/readme${params}`);
+    },
     update(name) {
       return request('POST', `/skills/${name}/update`);
     },
