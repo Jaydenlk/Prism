@@ -37,6 +37,57 @@
 
 ---
 
+## ✅ 2026-05-09 P0-P4 Convergence 完成（Opus 4.6 session, develop）
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop
+
+**P0 Prompt Caching 真集成**:
+- `_build_system_blocks()` 按 CACHE_BOUNDARY_MARKER 拆分 system_prompt
+- `_inject_cache_control()` 改为注入第一个 block（静态前缀）
+- 8 单元测试 + 62 executor pass + Simplify 3-agent + E2E 桌面+移动端
+
+**P1 Plugin Builder 清理**:
+- 清除 26 条 `untyped-plugin-*` + 2 条 test 垃圾记录
+- E2E 完整流程验证：描述→Agent生成→授权→保存 ✓
+
+**P2 Sessions/Topbar 审计**:
+- Sessions 表格行跳转正常
+- Demo switcher 改为 `isDevEnv` 条件渲染（production 隐藏）
+- 侧栏 rename/delete 记录为后续需求（API 存在，前端未实现）
+
+**P3 企业微信**: 跳过（需用户凭证）
+
+**P4 移动端响应式**:
+- 侧栏改为全屏 overlay + hamburger 按钮切换
+- 导航自动关闭侧栏显示主内容
+- CSS cache-bust via version query param
+
+**用户反馈（已存 memory）**: Plugin Builder 应支持模板复用/对话持久化/增量编辑
+
+**下一个 session**: 用户 Plugin Builder UX 改进需求 + 侧栏 rename/delete
+
+---
+
+## ✅ 2026-05-09 P1 Plugin Builder 清理 + P2 Sessions/Topbar 审计
+
+**P1 Plugin Builder**:
+- 清除 DB 26 条 `untyped-plugin-*` + 2 条 `test-plugin`/`verify-plugin` 垃圾记录
+- E2E 验证完整流程：描述 → Agent 生成 manifest（7 维评分 5/5）→ 授权审查 → 保存到插件库
+- 插件库 (0) → (1) `my-plugin` v1.0.0 正常显示
+
+**P2 Sessions/Topbar**:
+- Sessions 表格行点击跳转正常
+- 侧栏对话列表无 rename/delete UI（API 存在但前端未实现 — 记录为后续需求）
+- Topbar 4 按钮审计：权限请求/计划面板/语言切换/更多 — 均为功能按钮
+- Demo switcher（登录页/空状态/应用）改为 `isDevEnv` 条件渲染，production 下隐藏
+
+**P3 企业微信**: 跳过（需用户提供 CorpID + Secret 凭证）
+
+**用户反馈（已存 memory）**: Plugin Builder 应支持模板复用/对话持久化/增量编辑
+
+---
+
 ## ✅ 2026-05-09 P0 Prompt Caching 真集成（已 merge develop）
 
 **模型**: Opus 4.6 (1M context)
