@@ -580,24 +580,22 @@ async def get_skill_readme(
             content = skill_md_path.read_text(encoding="utf-8")
             return ApiResponse(data={"skill_name": skill_name, "content": content, "source": "local"})
 
-    # (b) source_url 含 github.com → 拉取 raw
+    # (b) source_url 含 github.com → 拉取 raw（优先 SKILL.md，fallback README.md）
     effective_url = source_url or (install.source_url if install else None)
     if effective_url and "github.com" in effective_url:
-        # 转换: github.com/owner/repo → raw.githubusercontent.com/owner/repo/main/SKILL.md
-        raw_url = effective_url.replace("github.com", "raw.githubusercontent.com")
-        if not raw_url.endswith("/SKILL.md"):
-            raw_url = raw_url.rstrip("/") + "/main/SKILL.md"
+        raw_base = effective_url.replace("github.com", "raw.githubusercontent.com").rstrip("/")
+        candidates = [
+            f"{raw_base}/main/SKILL.md",
+            f"{raw_base}/master/SKILL.md",
+            f"{raw_base}/main/README.md",
+            f"{raw_base}/master/README.md",
+        ]
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(raw_url)
-            if resp.status_code == 200:
-                return ApiResponse(data={"skill_name": skill_name, "content": resp.text, "source": "github"})
-            # 尝试 master 分支
-            raw_master = raw_url.replace("/main/SKILL.md", "/master/SKILL.md")
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(raw_master)
-            if resp.status_code == 200:
-                return ApiResponse(data={"skill_name": skill_name, "content": resp.text, "source": "github"})
+                for url in candidates:
+                    resp = await client.get(url)
+                    if resp.status_code == 200:
+                        return ApiResponse(data={"skill_name": skill_name, "content": resp.text, "source": "github"})
         except httpx.RequestError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
