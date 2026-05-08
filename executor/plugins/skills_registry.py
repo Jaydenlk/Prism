@@ -31,6 +31,7 @@ import httpx
 import structlog
 import yaml
 
+from executor.plugins.search_scoring import score_match
 from executor.plugins.skill_types import SkillMetadata
 
 logger = structlog.get_logger()
@@ -59,6 +60,8 @@ class SkillPackage:
     installed_version: str | None = None
     marketplace_id: str | None = None   # source='marketplace' 时关联的 marketplace_registry.id
     plugin_name: str | None = None      # source='marketplace' 时 catalog 中的 plugin entry name
+    score: float = 0.0              # 搜索相关度评分（0-100）
+    stars: int = 0                  # GitHub star 数（仅 github 源）
 
 
 @dataclass
@@ -179,7 +182,8 @@ class LocalSource(SkillSource):
                     continue  # 去重（.prism/skills/ 优先，先出现的保留）
                 seen.add(pkg.name)
 
-                if self._matches(pkg, query):
+                pkg.score = self._score(pkg, query)
+                if pkg.score > 0:
                     results.append(pkg)
 
         logger.debug(
@@ -264,19 +268,10 @@ class LocalSource(SkillSource):
             tags=list(fm.get("tags", [])),
         )
 
-    def _matches(self, pkg: SkillPackage, query: str) -> bool:
-        """检查 SkillPackage 是否匹配搜索关键词（大小写不敏感）。
-
-        query 为空时匹配全部。
-        """
+    def _score(self, pkg: SkillPackage, query: str) -> float:
         if not query:
-            return True
-        q = query.lower()
-        return (
-            q in pkg.name.lower()
-            or q in pkg.description.lower()
-            or any(q in tag.lower() for tag in pkg.tags)
-        )
+            return 100.0
+        return score_match(query, pkg.name, pkg.description, pkg.tags)
 
     def _read_skill_files(self, skill_dir: str) -> dict[str, bytes]:
         """读取 Skill 目录内所有文件，返回 {相对路径 → 字节内容} dict。"""
@@ -349,7 +344,8 @@ class MarketplaceCatalogSource(SkillSource):
                 name = entry.get("name")
                 if not isinstance(name, str) or not name:
                     continue
-                if q and not _marketplace_entry_matches(entry, q):
+                entry_score = _score_marketplace_entry(entry, q)
+                if entry_score == 0:
                     continue
 
                 author_obj = entry.get("author")
@@ -371,6 +367,7 @@ class MarketplaceCatalogSource(SkillSource):
                     tags=tags,
                     marketplace_id=mp.id,
                     plugin_name=name,
+                    score=entry_score,
                 ))
 
         logger.info(
@@ -397,16 +394,14 @@ class MarketplaceCatalogSource(SkillSource):
         return []
 
 
-def _marketplace_entry_matches(entry: dict, q: str) -> bool:
-    """Substring match (case-insensitive) on name + description + tags/keywords."""
-    if q in str(entry.get("name", "")).lower():
-        return True
-    if q in str(entry.get("description") or "").lower():
-        return True
-    for t in (entry.get("keywords") or entry.get("tags") or []):
-        if q in str(t).lower():
-            return True
-    return False
+def _score_marketplace_entry(entry: dict, q: str) -> float:
+    if not q:
+        return 100.0
+    name = str(entry.get("name", ""))
+    desc = str(entry.get("description") or "")
+    tags_raw = entry.get("keywords") or entry.get("tags") or []
+    tags = [str(t) for t in tags_raw if isinstance(t, (str, int))]
+    return score_match(q, name, desc, tags)
 
 
 
@@ -505,10 +500,16 @@ class SkillsRegistry:
                     if pkg.installed and not existing.installed:
                         merged[pkg.name] = pkg
 
-        # 已安装的排前面，其余按 name 字母序
+        # 已安装优先 → local/marketplace 优先于 github → 评分高优先 → star 多优先 → 字母序
         result = sorted(
             merged.values(),
-            key=lambda p: (0 if p.installed else 1, p.name),
+            key=lambda p: (
+                0 if p.installed else 1,
+                0 if p.source != "github" else 1,
+                -p.score,
+                -p.stars,
+                p.name,
+            ),
         )
 
         logger.info(
