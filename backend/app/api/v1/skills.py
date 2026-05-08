@@ -162,7 +162,7 @@ async def search_skills(
         default=None,
         description="限定源（local | github，默认全部）",
     ),
-    limit: int = Query(default=20, ge=1, le=100, description="最大结果数（1-100）"),
+    limit: int = Query(default=10, ge=1, le=100, description="最大结果数（1-100）"),
     current_user: Annotated[User, Depends(get_current_user)] = None,
 ) -> ApiResponse[list[SkillPackageResponse]]:
     """跨源并行搜索 Skill 市场（ADR-052）。
