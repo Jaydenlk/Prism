@@ -26,7 +26,7 @@ class GitHubSource(SkillSource):
     async def search(self, query: str) -> list[SkillPackage]:
         if not query.strip():
             return []
-        github_query = f"{query} topic:skill OR topic:mcp-server in:name,description,readme"
+        github_query = f"{query} in:name,description,readme topic:skill"
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 resp = await client.get(

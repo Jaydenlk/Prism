@@ -31,6 +31,7 @@ import httpx
 import structlog
 import yaml
 
+from executor.plugins.search_scoring import score_match
 from executor.plugins.skill_types import SkillMetadata
 
 logger = structlog.get_logger()
@@ -270,7 +271,6 @@ class LocalSource(SkillSource):
     def _score(self, pkg: SkillPackage, query: str) -> float:
         if not query:
             return 100.0
-        from executor.plugins.search_scoring import score_match
         return score_match(query, pkg.name, pkg.description, pkg.tags)
 
     def _read_skill_files(self, skill_dir: str) -> dict[str, bytes]:
@@ -345,7 +345,7 @@ class MarketplaceCatalogSource(SkillSource):
                 if not isinstance(name, str) or not name:
                     continue
                 entry_score = _score_marketplace_entry(entry, q)
-                if q and entry_score == 0:
+                if entry_score == 0:
                     continue
 
                 author_obj = entry.get("author")
@@ -397,7 +397,6 @@ class MarketplaceCatalogSource(SkillSource):
 def _score_marketplace_entry(entry: dict, q: str) -> float:
     if not q:
         return 100.0
-    from executor.plugins.search_scoring import score_match
     name = str(entry.get("name", ""))
     desc = str(entry.get("description") or "")
     tags_raw = entry.get("keywords") or entry.get("tags") or []
