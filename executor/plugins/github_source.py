@@ -1,10 +1,11 @@
 """GitHub SkillSource — 搜索 GitHub 仓库中与 Skills 相关的项目。
 
-使用 GitHub Repository Search API（无需认证），搜索描述或 README 中
-包含 skill/SKILL.md 关键词的仓库。
+使用 GitHub Repository Search API（无需认证），搜索仓库后验证
+SKILL.md 存在性，确保结果是真正的 skill 而非普通项目。
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -14,7 +15,19 @@ from executor.plugins.skills_registry import SkillPackage, SkillSource
 logger = logging.getLogger(__name__)
 
 _GITHUB_REPOS_URL = "https://api.github.com/search/repositories"
+_GITHUB_CONTENTS_URL = "https://api.github.com/repos/{owner}/{repo}/contents/SKILL.md"
 _TIMEOUT = httpx.Timeout(connect=10.0, read=15.0, write=5.0, pool=5.0)
+
+
+async def _has_skill_md(client: httpx.AsyncClient, owner: str, repo: str) -> bool:
+    try:
+        resp = await client.head(
+            _GITHUB_CONTENTS_URL.format(owner=owner, repo=repo),
+            headers={"Accept": "application/vnd.github.v3+json"},
+        )
+        return resp.status_code == 200
+    except httpx.HTTPError:
+        return False
 
 
 class GitHubSource(SkillSource):
@@ -38,12 +51,26 @@ class GitHubSource(SkillSource):
                     logger.warning("GitHub search returned %d", resp.status_code)
                     return []
                 data = resp.json()
+
+                candidates = data.get("items", [])
+                checks = [
+                    _has_skill_md(
+                        client,
+                        repo.get("owner", {}).get("login", ""),
+                        repo.get("name", ""),
+                    )
+                    for repo in candidates
+                ]
+                has_skill = await asyncio.gather(*checks)
+
         except httpx.HTTPError as exc:
             logger.warning("GitHub search failed: %s", exc)
             return []
 
         results: list[SkillPackage] = []
-        for repo in data.get("items", []):
+        for repo, is_skill in zip(candidates, has_skill):
+            if not is_skill:
+                continue
             results.append(SkillPackage(
                 name=repo.get("name", ""),
                 description=repo.get("description") or "",
