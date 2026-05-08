@@ -26,12 +26,12 @@ class GitHubSource(SkillSource):
     async def search(self, query: str) -> list[SkillPackage]:
         if not query.strip():
             return []
-        github_query = f"{query} skill in:name,description,readme"
+        github_query = f"{query} topic:skill OR topic:mcp-server in:name,description,readme"
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 resp = await client.get(
                     _GITHUB_REPOS_URL,
-                    params={"q": github_query, "per_page": 15, "sort": "stars"},
+                    params={"q": github_query, "per_page": 10, "sort": "stars"},
                     headers={"Accept": "application/vnd.github.v3+json"},
                 )
                 if resp.status_code != 200:
@@ -52,6 +52,7 @@ class GitHubSource(SkillSource):
                 source_url=repo.get("html_url", ""),
                 author=repo.get("owner", {}).get("login"),
                 tags=repo.get("topics") or [],
+                stars=repo.get("stargazers_count", 0),
             ))
         return results
 
