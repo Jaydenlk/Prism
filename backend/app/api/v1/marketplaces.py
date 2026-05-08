@@ -39,12 +39,7 @@ PRESET_MARKETPLACES = [
     {
         "name": "Anthropic Official",
         "url": "anthropics/claude-plugins-official",
-        "description": "Anthropic 官方 Claude Code 插件市场",
-    },
-    {
-        "name": "gstake",
-        "url": "gstake/claude-plugins",
-        "description": "gstake 社区插件市场",
+        "description": "Anthropic 官方 Claude Code 插件市场，180+ 插件",
     },
 ]
 
