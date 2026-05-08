@@ -149,7 +149,7 @@ class HarnessRuntime:
         # 8b. PluginBuilderGate — 仅对 agent_type=plugin_builder 生效
         # 中间件本身会先检查 ctx.agent_type 跳过非 plugin_builder；无副作用
         # ADR-042: post_turn 打完整度分 + 达阈值自动 emit plugin_manifest_ready
-        self.plugin_builder_gate = PluginBuilderGate(adapter=adapter, callback=callback)
+        self.plugin_builder_gate = PluginBuilderGate(callback=callback)
         self.middleware.register(self.plugin_builder_gate)
 
         # Task 4.1: 若 agent_def.read_only=True，追加只读护栏规则（AGENT-READONLY）
