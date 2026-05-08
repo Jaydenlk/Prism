@@ -37,6 +37,90 @@
 
 ---
 
+## 🔴 2026-05-09 用户反馈：Skills Market + Plugin Builder 体验不达标
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop（16 commits 已提交）
+
+### 本 session 已交付
+
+| 领域 | 交付 |
+|---|---|
+| P0 Prompt Caching | 静态/动态 system block 拆分，cache_control 注入静态前缀，8 测试 |
+| P1 Plugin Builder | 26 条垃圾清除 + 端到端构建流程验证通过 |
+| P2 Topbar | Demo switcher 改 dev-only |
+| P4 移动端 | 侧栏 overlay + hamburger 切换 |
+| Skills Market Phase 1a | GitHub 搜索源 + 来源 Badge + README 详情面板 |
+
+### 用户反馈（未解决，下个 session 最高优先）
+
+**1. 搜索体验差（最核心）**
+- 精确子串匹配 → 需要模糊搜索 / 语义搜索
+- 搜 "design" 只匹配名称含 design 的，搜不到描述中相关的
+- GitHub 搜索有时超时或结果不精准（搜 weather 返回 awesome-go）
+- 用户期望：输关键词能找到所有相关 skill，类似 npm search 体验
+
+**2. Plugin Builder 对话逻辑问题**
+- 错误应该用弹窗，不要在对话中报
+- 用户不应该填技术参数（端口、API key 格式等），系统自动推断
+- 用户只提需求（如"做一个读金融 KYC 的 agent"），系统应该：
+  - 先搜 GitHub 有没有现成的（如 Anthropic 5/5 发布的 10 个预制 agent）
+  - 能用的直接拿来用，不从零做
+  - 评估自建 vs 复用 vs 组合的 ROI
+
+**3. Marketplace 注册入口不直观**
+- 用户不知道怎么注册新 marketplace（如 gstake）
+- gstake 等第三方 marketplace 需要 CLI 命令安装，前端没有引导
+- 用户期望：一键注册 marketplace URL → 自动同步 → 可浏览安装
+
+**4. 安装流程问题**
+- GitHub 搜到的结果不能直接安装（缺少安装流程）
+- 部分 marketplace skill 安装无反馈
+
+### 技术现状
+
+- **后端 GitHub 搜索 API 可用**：`GET /skills/search?q=design` 返回 marketplace + github 混合结果
+- **前端来源 Badge + 详情面板已实现**：点击搜索结果可看 README
+- **README fallback 已实现**：SKILL.md → README.md → "暂不可用"
+- **缓存问题**：前端 JS/CSS 需要版本化缓存破除，nginx 缓存激进
+
+### 下个 session 执行计划
+
+**优先级 1：搜索体验改善**
+- 后端：搜索扩展到 description + tags 匹配（不只是 name）
+- 后端：GitHub 搜索优化查询词（更精准的 query 构建）
+- 前端：搜索结果排序优化（已安装 > marketplace > github）
+- 前端：无结果时给出有用建议（而不是"检查拼写"）
+
+**优先级 2：Marketplace 注册 UX**
+- 前端：Marketplace tab 注册入口更显眼
+- 预置常用 marketplace（如 anthropic 官方、gstake 等）
+- 注册后自动同步 + 显示目录数量
+
+**优先级 3：Plugin Builder v2 智能构建**
+- 需求阶段完成后，先搜 GitHub 现有方案
+- 评估自建 vs 复用，给用户选择
+- 错误用弹窗而非对话
+- 参数自动推断
+
+### 环境信息
+
+- 端口：8080（nginx → backend:8000）
+- 账号：admin@prism.dev / PrismAdmin!2026
+- Docker 服务全部 healthy
+- 前端缓存破除：styles.css?v=20260509, apiClient.js?v=20260509
+
+### 关键文件
+
+- `docs/superpowers/specs/2026-05-09-skills-ecosystem-plugin-orchestration-design.md` — 整体架构设计
+- `docs/superpowers/plans/2026-05-09-skills-market-gui-phase1a.md` — Phase 1a 实施计划
+- `executor/plugins/github_source.py` — GitHub 搜索适配器
+- `backend/app/api/v1/skills.py:553-614` — README 端点
+- `.claude/memory/project_skills_plugins_vision.md` — 用户产品愿景
+- `.claude/memory/project_plugin_builder_ux.md` — Plugin Builder UX 方向
+
+---
+
 ## ✅ 2026-05-09 P0-P4 Convergence 完成（Opus 4.6 session, develop）
 
 **模型**: Opus 4.6 (1M context)
