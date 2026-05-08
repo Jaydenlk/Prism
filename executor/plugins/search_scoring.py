@@ -6,7 +6,8 @@ from rapidfuzz import fuzz
 WEIGHT_NAME = 5
 WEIGHT_TAGS = 3
 WEIGHT_DESC = 1
-FUZZY_THRESHOLD = 60
+FUZZY_THRESHOLD = 70
+DESC_FUZZY_THRESHOLD = 80
 
 
 def score_match(query: str, name: str, description: str, tags: list[str]) -> float:
@@ -24,13 +25,13 @@ def score_match(query: str, name: str, description: str, tags: list[str]) -> flo
     for token in tokens:
         name_score = fuzz.partial_ratio(token, name_lower)
         best_tag_score = max((fuzz.partial_ratio(token, t) for t in tags_lower), default=0)
-        desc_score = fuzz.partial_ratio(token, desc_lower)
+        desc_score = fuzz.token_set_ratio(token, desc_lower)
 
         if name_score >= FUZZY_THRESHOLD:
             total += name_score * WEIGHT_NAME
         if best_tag_score >= FUZZY_THRESHOLD:
             total += best_tag_score * WEIGHT_TAGS
-        if desc_score >= FUZZY_THRESHOLD:
+        if desc_score >= DESC_FUZZY_THRESHOLD:
             total += desc_score * WEIGHT_DESC
 
     return round((total / max_possible) * 100, 1)
