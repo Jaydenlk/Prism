@@ -61,11 +61,18 @@ async def list_preset_marketplaces(
     registered_urls = {
         m.url for m in db.query(MarketplaceRegistry.url).all()
     }
+
+    def _is_registered(preset_url: str) -> bool:
+        if preset_url in registered_urls:
+            return True
+        expanded = f"https://github.com/{preset_url}"
+        return expanded in registered_urls
+
     result = []
     for preset in PRESET_MARKETPLACES:
         result.append({
             **preset,
-            "registered": preset["url"] in registered_urls,
+            "registered": _is_registered(preset["url"]),
         })
     return ApiResponse(data=result)
 
