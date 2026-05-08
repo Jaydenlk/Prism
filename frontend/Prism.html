@@ -1514,7 +1514,7 @@ function SkillsPage() {
       const resp = await PrismAPI.skills.search({
         q: searchQ || undefined,
         source: searchSource !== "all" ? searchSource : undefined,
-        limit: 50,
+        limit: 10,
       });
       setSearchResults(Array.isArray(unwrap(resp)) ? unwrap(resp) : []);
     } catch (err) {
@@ -1806,13 +1806,12 @@ function SkillsPage() {
           ) : searchResults.length === 0 ? (
             <div data-testid="skillspage-search-empty" style={{ padding: "16px 0" }}>
               <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 4 }}>
-                {q ? `无匹配 "${q}"` : "暂无可搜索内容"}
+                {q ? `未找到 "${q}" 相关的 skill` : "暂无可搜索内容"}
               </div>
               <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-                {q ? "检查拼写,或尝试其他关键词。" : "在右侧 Marketplace tab 注册一个 catalog,或上传本地 skill。"}
-                {marketplaces.length === 0 && q && (
-                  <>{" 还没注册 marketplace? 在右侧 Marketplace tab 添加。"}</>
-                )}
+                {q ? (
+                  <>试试更短的关键词，或 <a href="#" onClick={e => { e.preventDefault(); setQ(""); }} style={{ color: "var(--amber)", textDecoration: "underline" }}>浏览全部</a></>
+                ) : "在右侧 Marketplace tab 注册一个 catalog,或上传本地 skill。"}
               </div>
             </div>
           ) : (
@@ -3402,9 +3401,9 @@ function SkillsSettingsTab({ onToast }) {
       )}
       {q && !searching && searchResults.length === 0 && (
         <div data-testid="skills-search-empty" style={{ display: "block", width: "100%", padding: "16px 12px", marginBottom: 20, background: "var(--bg)", borderRadius: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 4 }}>无匹配 "{q}"</div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 4 }}>未找到 "{q}" 相关的 skill</div>
           <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-            检查拼写,或尝试其他关键词。
+            试试更短的关键词，或换一个相近的词。
             {marketplacesCount === 0 && (
               <>
                 {" 还没注册 marketplace? "}
