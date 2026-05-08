@@ -6,6 +6,41 @@
 
 ---
 
+## 🔴 2026-05-10 搜索 + Marketplace + Plugin Builder v2 三连交付
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop（22 commits）
+
+### 本 session 已交付
+
+| 领域 | 交付 |
+|---|---|
+| P1 搜索体验 | rapidfuzz 模糊匹配 + 多词拆分 + 加权评分(name×5/tags×3/desc×1) + GitHub SKILL.md 验证 + 结果限 10 条 + 无结果 UX 改善 |
+| P2 Marketplace UX | 推荐来源一键添加（仅已验证的 Anthropic Official）+ URL placeholder 改善 + 格式提示 |
+| P3 Plugin Builder v2 | 删 4 型选择器 + 删 7 维打分循环(-450 行) + CC-style 直接输入 + 搜索优先 prompt + 简化保存(无 YAML 编辑) |
+
+### 已知问题（下个 session 处理）
+
+1. **Plugin Builder prompt 需继续调优**：AI 仍可能暴露内部思考过程，已加硬性禁止规则但需更多 E2E 验证
+2. **GitHub 搜索 topic:skill 限制太强**：大多数 repo 没有 skill topic，加上 SKILL.md 验证后 GitHub 结果可能很少
+3. **Dead-content audit 7 项待做**：ProfileTab 改密码、ObsPage 死数据、admin 6 个 placeholder 面板
+
+### 环境信息
+
+- 端口：8080（nginx → backend:8000）
+- 账号：admin@prism.dev / PrismAdmin!2026
+- Docker 服务全部 healthy
+- 前端缓存破除：apiClient.js?v=20260510
+
+### 用户明确指示
+
+- PRD_V4 是唯一愿景源
+- 产品级标准：好用、高质、可信度高、易维护
+- 不要问方向，按优先级自行推进
+- 不要做表面功夫，确保端到端链路真的通
+
+---
+
 ## 🔴🔴🔴 新 session 开工必读(/clear 后第一眼看这里)🔴🔴🔴
 
 **完整交接册**:`NEXT-SESSIONS-PLAYBOOK.md`
