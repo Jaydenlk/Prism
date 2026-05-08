@@ -567,6 +567,9 @@
 
   /* ── Marketplaces (DOC-SK R1, ADR-086) ──────────────────────── */
   const marketplaces = {
+    presets() {
+      return request('GET', '/marketplaces/presets');
+    },
     list() {
       return request('GET', '/marketplaces');
     },
