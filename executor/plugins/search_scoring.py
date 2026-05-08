@@ -10,9 +10,6 @@ FUZZY_THRESHOLD = 60
 
 
 def score_match(query: str, name: str, description: str, tags: list[str]) -> float:
-    if not query or not query.strip():
-        return 100.0
-
     tokens = query.lower().split()
     if not tokens:
         return 100.0
@@ -36,4 +33,4 @@ def score_match(query: str, name: str, description: str, tags: list[str]) -> flo
         if desc_score >= FUZZY_THRESHOLD:
             total += desc_score * WEIGHT_DESC
 
-    return round((total / max_possible) * 100, 1) if max_possible > 0 else 0.0
+    return round((total / max_possible) * 100, 1)
