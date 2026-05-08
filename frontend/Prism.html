@@ -2193,12 +2193,6 @@ function PluginsPage() {
   const [builderRunning, setBuilderRunning] = useState(false);
   const [builderProgress, setBuilderProgress] = useState(0); // 0-100
   const [pendingManifest, setPendingManifest] = useState(null); // { yaml, json, name, version, description } — triggers save modal
-  // Plugin builder pre-chat step (DOC-SK R2, ADR-087):
-  //   "start"    — intro + "new plugin" button
-  //   "typepick" — 4-chip type picker; selecting a chip auto-sends first user message
-  //   "chat"     — normal conversational builder
-  const [builderStep, setBuilderStep] = useState("start");
-  const [pluginType, setPluginType] = useState(null);
 
   // Install consent dialog (ADR-087 Session 4a) — shown before saveModal to
   // get explicit user authorization on the plugin's declared permissions.
@@ -2216,7 +2210,6 @@ function PluginsPage() {
   const [saveDesc, setSaveDesc] = useState("");
   const [saveYaml, setSaveYaml] = useState("");
   const [saving, setSaving] = useState(false);
-  const yamlManuallyEdited = useRef(false); // true when user edited YAML in modal (desync guard)
 
   // ── Toasts ─────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState([]);
@@ -2322,10 +2315,9 @@ function PluginsPage() {
           setSaveName(data.name || "my-plugin");
           setSaveDesc(data.description || "");
           setSaveYaml(data.manifest_yaml || "");
-          yamlManuallyEdited.current = false;
           setConsentModal({
             name: data.name || "my-plugin",
-            type: (data.manifest_json && data.manifest_json.type) || pluginType || "tool",
+            type: (data.manifest_json && data.manifest_json.type) || "tool",
             permissions: (data.manifest_json && data.manifest_json.permissions) || data.permissions || {},
             yaml: data.manifest_yaml || "",
             description: data.description || "",
@@ -2432,19 +2424,16 @@ function PluginsPage() {
     if (!saveName.trim()) { addToast("warn", "请填写插件名", ""); return; }
     setSaving(true);
     try {
-      // If user manually edited YAML, manifest_json is stale — send {} so backend re-parses from YAML
-      const manifestJson = yamlManuallyEdited.current ? {} : (pendingManifest?.json || {});
       await PrismAPI.plugins.save({
         name: saveName.trim(),
         version: pendingManifest?.version || "1.0.0",
         description: saveDesc.trim(),
         manifest_yaml: saveYaml,
-        manifest_json: manifestJson,
+        manifest_json: pendingManifest?.json || {},
       });
       addToast("success", "已保存到插件库", saveName.trim());
       setSaveModal(false);
       setPendingManifest(null);
-      yamlManuallyEdited.current = false;
       await loadLibrary();
     } catch (err) {
       addToast("danger", "保存失败", err.message || String(err));
@@ -2452,17 +2441,14 @@ function PluginsPage() {
     setSaving(false);
   }
 
-  // ── Open consent (then save) pre-filled from last agent message or from
-  // the chip-selected type alone (skip-builder fast path, ADR-087).
+  // ── Open consent (then save) pre-filled from last agent message (ADR-087).
   function openConsentFromLastMsg() {
     const lastAgent = [...builderMsgs].reverse().find(m => m.role === "agent" && !m.streaming);
     const rawText = lastAgent?.content || "";
     const yamlMatch = rawText.match(/```ya?ml\s*([\s\S]*?)```/i);
     const extracted = yamlMatch ? yamlMatch[1].trim() : rawText.trim();
 
-    // Try to parse type + permissions out of extracted YAML (best-effort;
-    // falls back to currently-selected pluginType + empty permissions).
-    let parsedType = pluginType || "tool";
+    let parsedType = "tool";
     let parsedPermissions = {};
     const typeMatch = extracted.match(/^\s*type:\s*([a-z_]+)/mi);
     if (typeMatch) parsedType = typeMatch[1];
@@ -2473,7 +2459,6 @@ function PluginsPage() {
         const m = block.match(new RegExp("^\\s{2,}" + key + ":\\s*(.*)$", "mi"));
         return m ? m[1].trim() : null;
       };
-      // Convert simple scalar fields; arrays/bool stay as raw text for consent preview
       const at = g("allowed_tools");
       const am = g("allowed_models");
       const ss = g("storage_scope");
@@ -2488,7 +2473,6 @@ function PluginsPage() {
     setSaveDesc("");
     setSaveYaml(extracted);
     setPendingManifest(null);
-    yamlManuallyEdited.current = false;
     setConsentModal({
       name: "",
       type: parsedType,
@@ -2601,7 +2585,7 @@ function PluginsPage() {
       {/* Save manifest modal */}
       {saveModal && (
         <div data-testid="plugin-save-modal" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSaveModal(false)}>
-          <div style={{ background: "var(--paper)", borderRadius: 12, padding: 28, maxWidth: 560, width: "90%", display: "flex", flexDirection: "column", gap: 14 }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: "var(--paper)", borderRadius: 12, padding: 28, maxWidth: 480, width: "90%", display: "flex", flexDirection: "column", gap: 14 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 600, fontSize: 15 }}>保存到插件库</div>
             <label>
               <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>插件名（唯一标识）</div>
@@ -2610,10 +2594,6 @@ function PluginsPage() {
             <label>
               <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>描述</div>
               <input className="input" value={saveDesc} onChange={e => setSaveDesc(e.target.value)}/>
-            </label>
-            <label>
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>Manifest YAML（可编辑）</div>
-              <textarea className="input" rows={10} style={{ fontFamily: "var(--mono)", fontSize: 12, resize: "vertical" }} value={saveYaml} onChange={e => { yamlManuallyEdited.current = true; setSaveYaml(e.target.value); }}/>
             </label>
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <button className="btn primary" style={{ flex: 1, justifyContent: "center" }} onClick={handleSaveToLibrary} disabled={saving}>
@@ -2673,60 +2653,45 @@ function PluginsPage() {
           </div>
 
           {/* Messages */}
-          <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 0 }}>
-            {builderMsgs.length === 0 && builderStep === "start" && (
-              <div style={{ margin: "auto", textAlign: "center", color: "var(--ink-4)", padding: 32, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-                <div style={{ fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 14 }}>
-                  与 Plugin Builder 协作构建一个类型化 plugin manifest。
+          <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
+            {builderMsgs.length === 0 && !builderRunning ? (
+              <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--ink-3)" }}>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>Plugin Builder</div>
+                <div style={{ fontSize: 14, maxWidth: 400, margin: "0 auto", lineHeight: 1.6 }}>
+                  描述你想要的插件，我来搜索现有方案或为你构建。
                 </div>
-                <button data-testid="plugin-builder-start" className="btn primary" onClick={() => setBuilderStep("typepick")}>
-                  新建 Plugin
-                </button>
-              </div>
-            )}
-            {builderMsgs.length === 0 && builderStep === "typepick" && (
-              <div style={{ margin: "auto", textAlign: "center", padding: 32, display: "flex", flexDirection: "column", alignItems: "center", gap: 14, maxWidth: 480 }}>
-                <div style={{ fontFamily: "var(--serif)", fontSize: 14, color: "var(--ink)" }}>
-                  你想建什么类型的 plugin？
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--ink-4)", fontFamily: "var(--mono)", marginTop: -6 }}>
-                  DOC-SK R2 — plugin.yaml 的 <code>type</code> 字段决定 manifest 结构。
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
-                  {[
-                    { t: "tool", label: "Tool", desc: "工具（OpenAPI-like）" },
-                    { t: "agent_strategy", label: "Agent Strategy", desc: "推理策略" },
-                    { t: "extension", label: "Extension", desc: "Hook/中间件" },
-                    { t: "trigger", label: "Trigger", desc: "事件触发器" },
-                  ].map(({ t, label, desc }) => (
-                    <button
-                      key={t}
-                      data-testid={`plugin-type-chip-${t}`}
-                      className="btn ghost"
-                      onClick={() => {
-                        setPluginType(t);
-                        setBuilderStep("chat");
-                        handleBuilderSend(`我想构建一个 type=${t} 的 plugin。`);
-                      }}
-                      style={{ flex: "0 0 auto", flexDirection: "column", alignItems: "flex-start", padding: "10px 14px", minWidth: 160 }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{label}</div>
-                      <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>{desc}</div>
-                    </button>
-                  ))}
+                <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 16 }}>
+                  例如：「做一个能分析 PDF 文档的工具」
                 </div>
               </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {builderMsgs.map((msg, i) => (
+                  <div key={i} style={{
+                    alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+                    maxWidth: "80%",
+                    padding: "10px 14px",
+                    borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+                    background: msg.role === "user" ? "var(--amber-light, #f5e6c8)" : "var(--bg)",
+                    border: msg.role === "user" ? "none" : "1px solid var(--line)",
+                    fontSize: 13.5,
+                    lineHeight: 1.55,
+                    color: "var(--ink)",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }}>
+                    <div dangerouslySetInnerHTML={{ __html: window.DOMPurify.sanitize(window.marked.parse(msg.content || "")) }} />
+                    {msg.streaming && <span style={{ display: "inline-block", width: 6, height: 14, background: "var(--amber)", borderRadius: 2, marginLeft: 2, animation: "blink 1s infinite" }} />}
+                  </div>
+                ))}
+                <div ref={bottomRef} />
+              </div>
             )}
-            {builderMsgs.map((m, i) => (
-              <Msg key={i} m={m} first={i === 0 || builderMsgs[i - 1]?.role !== m.role}/>
-            ))}
-            <div ref={bottomRef}/>
           </div>
 
-          {/* Open consent → save — appears after chip pick (skip-builder fast
-              path) OR after agent 生成 manifest (manual fallback).
+          {/* Open consent → save — manual fallback when agent does not auto-emit plugin_manifest_ready.
               ADR-087 Session 4a: consent dialog before persistence. */}
-          {(pluginType || builderMsgs.length > 0) && !builderRunning && (
+          {builderMsgs.length > 0 && !builderRunning && (
             <div style={{ padding: "8px 16px", borderTop: "1px solid var(--line)", display: "flex", justifyContent: "flex-end" }}>
               <button data-testid="plugin-open-consent" className="btn ghost sm" style={{ color: "var(--amber, var(--teal))", borderColor: "var(--amber, var(--teal))" }} onClick={openConsentFromLastMsg}>
                 <Icon name="pin" size={13}/> 查看授权 &amp; 保存
@@ -2735,8 +2700,32 @@ function PluginsPage() {
           )}
 
           {/* Composer */}
-          <div style={{ borderTop: "1px solid var(--line)" }}>
-            <Composer t={{ composer_placeholder: "描述你想构建的 Plugin，例如：金融研究助手，含合规 Skill 和 MCP…" }} onSend={handleBuilderSend} disabled={builderRunning}/>
+          <div style={{ padding: "12px 20px", borderTop: "1px solid var(--line)", display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              data-testid="plugin-builder-input"
+              className="input"
+              style={{ flex: 1 }}
+              placeholder="描述你想要的插件…"
+              onKeyDown={e => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleBuilderSend(e.target.value);
+                  e.target.value = "";
+                }
+              }}
+              disabled={builderRunning}
+            />
+            <button
+              className="btn primary"
+              disabled={builderRunning}
+              onClick={e => {
+                const input = e.target.closest("div").querySelector("input");
+                if (input.value.trim()) {
+                  handleBuilderSend(input.value);
+                  input.value = "";
+                }
+              }}
+            >{builderRunning ? "构建中…" : "发送"}</button>
           </div>
         </div>
 
