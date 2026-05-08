@@ -35,6 +35,40 @@ from app.services.marketplace_service import MarketplaceService
 logger = structlog.get_logger()
 router = APIRouter(prefix="/marketplaces", tags=["marketplaces"])
 
+PRESET_MARKETPLACES = [
+    {
+        "name": "Anthropic Official",
+        "url": "anthropics/claude-plugins-official",
+        "description": "Anthropic 官方 Claude Code 插件市场",
+    },
+    {
+        "name": "gstake",
+        "url": "gstake/claude-plugins",
+        "description": "gstake 社区插件市场",
+    },
+]
+
+
+@router.get(
+    "/presets",
+    response_model=ApiResponse[list[dict]],
+    summary="List preset marketplace sources with registration status",
+)
+async def list_preset_marketplaces(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[list[dict]]:
+    registered_urls = {
+        m.url for m in db.query(MarketplaceRegistry.url).all()
+    }
+    result = []
+    for preset in PRESET_MARKETPLACES:
+        result.append({
+            **preset,
+            "registered": preset["url"] in registered_urls,
+        })
+    return ApiResponse(data=result)
+
 
 def _to_response(entry: MarketplaceRegistry) -> MarketplaceResponse:
     catalog = entry.catalog_json or None

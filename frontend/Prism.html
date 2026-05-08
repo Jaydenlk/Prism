@@ -1345,6 +1345,7 @@ function SkillsPage() {
 
   // Marketplace channel (DOC-SK R1, ADR-086; Session 4c ADR-090 catalog browser)
   const [marketplaces, setMarketplaces] = useState([]);
+  const [presets, setPresets] = React.useState([]);
   const [mktUrl, setMktUrl] = useState("");
   const [mktName, setMktName] = useState("");
   const [mktAdding, setMktAdding] = useState(false);
@@ -1420,6 +1421,27 @@ function SkillsPage() {
       const resp = await PrismAPI.marketplaces.list();
       setMarketplaces(Array.isArray(unwrap(resp)) ? unwrap(resp) : []);
     } catch { /* non-fatal */ }
+  }
+
+  async function loadPresets() {
+    try {
+      const resp = await PrismAPI.marketplaces.presets();
+      setPresets(Array.isArray(unwrap(resp)) ? unwrap(resp) : []);
+    } catch (_) {}
+  }
+
+  async function handleAddPreset(preset) {
+    setMktAdding(true);
+    try {
+      await PrismAPI.marketplaces.create({ url: preset.url, name: preset.name });
+      addToast("success", "已添加", `${preset.name} marketplace 已注册，正在同步目录…`);
+      await loadMarketplaces();
+      await loadPresets();
+      await doSearch(q, source);
+    } catch (err) {
+      addToast("danger", "添加失败", err.message || String(err));
+    }
+    setMktAdding(false);
   }
 
   async function handleAddMarketplace() {
@@ -1527,6 +1549,7 @@ function SkillsPage() {
   useEffect(() => {
     loadInstalled();
     loadMarketplaces();
+    loadPresets();
     doSearch("", "all");
   }, []);
 
@@ -1916,13 +1939,40 @@ function SkillsPage() {
             {/* Marketplace (DOC-SK R1, ADR-086) */}
             {installTab === "marketplace" && (
               <div data-testid="skill-install-panel-marketplace" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {/* 推荐来源 */}
+                {presets.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 8 }}>推荐来源</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {presets.map(p => (
+                        <div key={p.url} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--paper)" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--ink)" }}>{p.name}</div>
+                            <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{p.description}</div>
+                          </div>
+                          <button
+                            className={`btn sm ${p.registered ? "ghost" : "primary"}`}
+                            disabled={p.registered || mktAdding}
+                            onClick={() => handleAddPreset(p)}
+                            style={{ whiteSpace: "nowrap", fontSize: 11 }}
+                          >{p.registered ? "已添加" : "添加"}</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 自定义注册 */}
                 <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                  注册 Claude Code-format marketplace（<code style={{ fontFamily: "var(--mono)" }}>.claude-plugin/marketplace.json</code>），从 catalog 安装 plugin。
+                  自定义注册
                 </div>
                 <label>
                   <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>Marketplace URL</div>
-                  <input data-testid="marketplace-url-input" className="input" value={mktUrl} onChange={e => setMktUrl(e.target.value)} placeholder="https://example.com/.claude-plugin/marketplace.json"/>
+                  <input data-testid="marketplace-url-input" className="input" value={mktUrl} onChange={e => setMktUrl(e.target.value)} placeholder="owner/repo 或 marketplace.json 链接"/>
                 </label>
+                <div style={{ fontSize: 10.5, color: "var(--ink-4)", marginTop: -6 }}>
+                  支持 GitHub owner/repo、.git 链接、或 .json 直链
+                </div>
                 <label>
                   <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginBottom: 5 }}>显示名称</div>
                   <input data-testid="marketplace-name-input" className="input" value={mktName} onChange={e => setMktName(e.target.value)} placeholder="my-marketplace"/>
