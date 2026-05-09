@@ -58,7 +58,8 @@ export function ChatPage() {
         ]);
         if (cancelled) return;
 
-        setMessages(historyRes.items);
+        const msgs = Array.isArray(historyRes) ? historyRes : historyRes.items ?? [];
+        setMessages(msgs);
 
         // If session is already running, show running state
         if (meta.status === 'running' && meta.blocking_run_id) {
