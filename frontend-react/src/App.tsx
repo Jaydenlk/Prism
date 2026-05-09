@@ -10,6 +10,12 @@ import { Placeholder } from '@/pages/Placeholder';
 import { LoginPage } from '@/pages/Auth/LoginPage';
 import { RegisterPage } from '@/pages/Auth/RegisterPage';
 import { ChatPage } from '@/pages/Chat/ChatPage';
+import { SessionsPage } from '@/pages/Sessions/SessionsPage';
+import { UsagePage } from '@/pages/Usage/UsagePage';
+import { ObsPage } from '@/pages/Observability/ObsPage';
+import { SettingsPage } from '@/pages/Settings/SettingsPage';
+import { SkillsPage } from '@/pages/Skills/SkillsPage';
+import { PluginBuilderPage } from '@/pages/Plugins/PluginBuilderPage';
 import type { ReactNode } from 'react';
 
 function AuthGuard({ children }: { children: ReactNode }) {
@@ -30,13 +36,13 @@ function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route element={<AuthGuard><AppLayout /></AuthGuard>}>
         <Route index element={<ChatPage />} />
-        <Route path="sessions" element={<Placeholder name="会话" />} />
-        <Route path="settings" element={<Placeholder name="设置" />} />
-        <Route path="usage" element={<Placeholder name="用量" />} />
-        <Route path="skills" element={<Placeholder name="技能市场" />} />
-        <Route path="plugins" element={<Placeholder name="插件构建" />} />
+        <Route path="sessions" element={<SessionsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="usage" element={<UsagePage />} />
+        <Route path="skills" element={<SkillsPage />} />
+        <Route path="plugins" element={<PluginBuilderPage />} />
         <Route path="admin/*" element={<Placeholder name="管理" />} />
-        <Route path="observability" element={<Placeholder name="可观测性" />} />
+        <Route path="observability" element={<ObsPage />} />
       </Route>
     </Routes>
   );

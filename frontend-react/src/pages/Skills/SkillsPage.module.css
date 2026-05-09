@@ -1,0 +1,262 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Page header ─────────────────────────────────────────────────── */
+.pageHead {
+  padding: 20px 24px 0;
+  flex-shrink: 0;
+}
+
+.pageTitle {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.pageSub {
+  font-size: 13px;
+  color: var(--ink-4);
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+/* ── Search row ──────────────────────────────────────────────────── */
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px 16px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.searchWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 200px;
+  height: 44px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.searchWrap:focus-within {
+  border-color: var(--ink-3);
+  box-shadow: 0 0 0 3px rgba(28,27,24,0.06);
+}
+
+.searchInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--ink-4);
+}
+
+/* ── Filter pills ────────────────────────────────────────────────── */
+.filterPills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.pill:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+
+.pillActive {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+/* ── Search error ────────────────────────────────────────────────── */
+.searchErr {
+  margin: 0 24px 12px;
+  font-size: 13px;
+  color: var(--rust);
+  flex-shrink: 0;
+}
+
+/* ── Scrollable content ──────────────────────────────────────────── */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ── States ──────────────────────────────────────────────────────── */
+.loadingState {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 0;
+  color: var(--ink-4);
+  font-size: 13px;
+}
+
+.emptyState {
+  padding: 24px 0;
+}
+
+.emptyTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.emptySub {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Results grid ────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Installed section ───────────────────────────────────────────── */
+.installedSection {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+
+.sectionTitle {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-2);
+  margin: 0 0 12px;
+}
+
+.installedList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.installedItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.installedInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.installedName {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.installedSource {
+  font-size: 11px;
+  color: var(--ink-4);
+}
+
+.installedActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.toggleBtn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toggleOn {
+  background: var(--teal-soft);
+  border-color: transparent;
+  color: var(--teal);
+}
+
+.toggleOff {
+  background: var(--bg);
+  color: var(--ink-4);
+}
+
+.uninstallBtn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--rust);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.uninstallBtn:hover {
+  background: var(--rust-soft);
+}
+
+.uninstallBtn:disabled,
+.toggleBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
