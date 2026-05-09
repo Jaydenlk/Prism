@@ -146,6 +146,13 @@ class SkillUpdateRequest(BaseModel):
     source: Literal["local", "github"] = Field(description="来源")
 
 
+class DirectInstallRequest(BaseModel):
+    """直接通过 GitHub URL 或 owner/repo 安装 Skill 请求体"""
+
+    url: str = Field(description="GitHub URL (https://github.com/owner/repo) 或 owner/repo 简写")
+    name: str | None = Field(default=None, description="覆盖 marketplace 名称（省略时自动从 owner/repo 推导）")
+
+
 # ---------------------------------------------------------------------------
 # GET /skills/search — 跨源搜索（ADR-052）
 # ---------------------------------------------------------------------------
@@ -163,6 +170,7 @@ async def search_skills(
         description="限定源（local | github，默认全部）",
     ),
     limit: int = Query(default=10, ge=1, le=100, description="最大结果数（1-100）"),
+    db: Annotated[Session, Depends(get_db)] = None,
     current_user: Annotated[User, Depends(get_current_user)] = None,
 ) -> ApiResponse[list[SkillPackageResponse]]:
     """跨源并行搜索 Skill 市场（ADR-052）。
@@ -189,6 +197,16 @@ async def search_skills(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"搜索失败: {exc}",
         )
+
+    # FIX 3: empty results + non-empty query → trigger marketplace re-sync and retry
+    if not packages and q and db is not None and current_user is not None:
+        try:
+            mp_svc = MarketplaceService(db=db)
+            mp_svc.sync_all(user_id=str(current_user.id))
+            packages = await registry.search(q, sources=sources_filter)
+            logger.info("skills_api.search.resync_triggered", q=q, found=len(packages))
+        except Exception as exc:
+            logger.warning("skills_api.search.resync_failed", q=q, error=str(exc))
 
     truncated = packages[:limit]
     results = [
@@ -415,6 +433,99 @@ async def install_skill(
     )
 
     return ApiResponse(data=_skill_install_to_response(install_record))
+
+
+# ---------------------------------------------------------------------------
+# POST /skills/install-url — 直接通过 GitHub URL 安装（注册为 marketplace）
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/install-url",
+    response_model=ApiResponse[dict],
+    status_code=status.HTTP_201_CREATED,
+    summary="直接通过 GitHub URL 或 owner/repo 安装 Skill（注册为 marketplace 并同步）",
+)
+async def install_skill_by_url(
+    request: DirectInstallRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[dict]:
+    """将 GitHub 仓库注册为 marketplace 并触发 catalog 同步。
+
+    接受格式:
+    - "owner/repo"（简写，如 "obra/superpowers"）
+    - "https://github.com/owner/repo"（完整 URL）
+
+    Flow:
+    1. 规范化 URL → owner/repo 或 https://github.com/owner/repo
+    2. 调用 MarketplaceService.create() — git clone + 读取 .claude-plugin/marketplace.json
+    3. 返回注册结果（marketplace_id + catalog 摘要）
+    """
+    raw = request.url.strip().rstrip("/")
+
+    # 规范化：提取 owner/repo 短名
+    if raw.startswith("https://github.com/"):
+        shorthand = raw[len("https://github.com/"):]
+    elif raw.startswith("http://github.com/"):
+        shorthand = raw[len("http://github.com/"):]
+    else:
+        shorthand = raw  # 已是 owner/repo 或其他 HTTPS URL
+
+    # 去掉尾部 .git
+    if shorthand.endswith(".git"):
+        shorthand = shorthand[:-4]
+
+    # 验证 owner/repo 格式（若不含 / 或含多余路径则拒绝）
+    parts = shorthand.split("/")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"无效的 GitHub 仓库格式: '{request.url}'。期望 'owner/repo' 或 'https://github.com/owner/repo'",
+        )
+
+    # 使用 owner/repo 简写作为 MarketplaceService URL（_fetch_git 会自动补全为 HTTPS）
+    normalized_url = f"{parts[0]}/{parts[1]}"
+    mp_name = request.name or normalized_url
+
+    try:
+        mp_svc = MarketplaceService(db=db)
+        mp = mp_svc.create(
+            user_id=str(current_user.id),
+            url=normalized_url,
+            name=mp_name,
+        )
+    except Exception as exc:
+        logger.error(
+            "skills_api.install_url_error",
+            url=request.url,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"注册 marketplace 失败: {exc}",
+        )
+
+    catalog = mp.catalog_json or {}
+    plugin_count = len(catalog.get("plugins", []))
+    plugin_names = [p.get("name") for p in catalog.get("plugins", []) if isinstance(p, dict) and p.get("name")]
+
+    logger.info(
+        "skills_api.install_url",
+        user_id=str(current_user.id),
+        url=request.url,
+        marketplace_id=mp.id,
+        plugin_count=plugin_count,
+    )
+
+    return ApiResponse(data={
+        "marketplace_id": mp.id,
+        "name": mp.name,
+        "url": mp.url,
+        "plugin_count": plugin_count,
+        "plugins": plugin_names,
+        "catalog_fetched": mp.catalog_json is not None,
+    })
 
 
 # ---------------------------------------------------------------------------

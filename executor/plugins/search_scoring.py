@@ -6,8 +6,8 @@ from rapidfuzz import fuzz
 WEIGHT_NAME = 5
 WEIGHT_TAGS = 3
 WEIGHT_DESC = 1
-FUZZY_THRESHOLD = 70
-DESC_FUZZY_THRESHOLD = 80
+FUZZY_THRESHOLD = 50
+DESC_FUZZY_THRESHOLD = 60
 
 
 def score_match(query: str, name: str, description: str, tags: list[str]) -> float:

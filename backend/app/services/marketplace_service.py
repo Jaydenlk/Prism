@@ -364,6 +364,22 @@ class MarketplaceService:
             )
         return entry
 
+    def sync_all(self, user_id: str) -> None:
+        """Re-sync all marketplaces for a user (best-effort; failures logged).
+
+        Used by search endpoint when results are empty to refresh stale catalogs.
+        """
+        rows = self.list_all(user_id)
+        for mp in rows:
+            try:
+                self.sync(marketplace_id=mp.id, user_id=user_id)
+            except Exception as exc:
+                logger.warning(
+                    "marketplace.sync_all.entry_failed",
+                    marketplace_id=mp.id,
+                    error=str(exc),
+                )
+
     def get_by_id(
         self, marketplace_id: str, user_id: str
     ) -> MarketplaceRegistry | None:

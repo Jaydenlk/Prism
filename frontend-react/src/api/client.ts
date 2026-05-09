@@ -802,6 +802,9 @@ export const skills = {
   uninstall(name: string): Promise<null> {
     return request<null>('DELETE', `/skills/${name}`);
   },
+  installByUrl(url: string, name?: string): Promise<SkillInstall> {
+    return request<SkillInstall>('POST', '/skills/install-url', { json: { url, name } });
+  },
 };
 
 // ---------------------------------------------------------------------------

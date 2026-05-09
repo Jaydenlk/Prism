@@ -29,6 +29,9 @@ export function SkillsPage() {
   const [installed, setInstalled]             = useState<SkillInstall[]>([]);
   const [actionLoading, setActionLoading]     = useState<string | null>(null);
   const [detailSkill, setDetailSkill]         = useState<SkillPackage | null>(null);
+  const [showDirectInstall, setShowDirectInstall] = useState(false);
+  const [directUrl, setDirectUrl]             = useState('');
+  const [directInstalling, setDirectInstalling] = useState(false);
 
   const debouncedQ = useDebounce(q, 300);
 
@@ -123,6 +126,23 @@ export function SkillsPage() {
     setActionLoading(null);
   }
 
+  async function handleDirectInstall() {
+    const url = directUrl.trim();
+    if (!url) return;
+    setDirectInstalling(true);
+    try {
+      await api.skills.installByUrl(url);
+      addToast(`已安装 ${url}`, 'success');
+      setDirectUrl('');
+      setShowDirectInstall(false);
+      await loadInstalled();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '安装失败';
+      addToast(msg, 'error');
+    }
+    setDirectInstalling(false);
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className={styles.page}>
@@ -159,6 +179,49 @@ export function SkillsPage() {
         </div>
       </div>
 
+      {/* Direct install */}
+      <div className={styles.directInstall}>
+        <button
+          className={styles.directInstallToggle}
+          onClick={() => setShowDirectInstall(v => !v)}
+        >
+          <Icon
+            name="chevron"
+            size={12}
+            style={{
+              color: 'var(--ink-4)',
+              transform: showDirectInstall ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.15s ease',
+            }}
+          />
+          知道地址？直接安装
+        </button>
+        {showDirectInstall && (
+          <div className={styles.directInstallBody}>
+            <div className={styles.directInstallRow}>
+              <input
+                className={styles.directInstallInput}
+                type="text"
+                placeholder="GitHub URL 或 owner/repo"
+                value={directUrl}
+                onChange={e => setDirectUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !directInstalling && handleDirectInstall()}
+              />
+              <button
+                className={styles.directInstallBtn}
+                onClick={handleDirectInstall}
+                disabled={directInstalling || !directUrl.trim()}
+              >
+                {directInstalling ? <Spinner size={12} /> : '安装'}
+              </button>
+            </div>
+            <p className={styles.directInstallHint}>
+              示例: anthropics/superpowers 或 https://github.com/user/skill
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Search error */}
       {searchErr && (
         <div className={styles.searchErr}>{searchErr}</div>
@@ -175,13 +238,23 @@ export function SkillsPage() {
           ) : searchResults.length === 0 ? (
             <div className={styles.emptyState}>
               <p className={styles.emptyTitle}>
-                {q ? `未找到 "${q}" 相关的技能` : '暂无可搜索内容'}
+                {q ? `没有找到 "${q}" 相关的技能` : '暂无可搜索内容'}
               </p>
-              <p className={styles.emptySub}>
-                {q
-                  ? '试试更短的关键词，或清除筛选'
-                  : '可在 Marketplace tab 注册目录，或从本地上传 SKILL.md'}
-              </p>
+              {q ? (
+                <>
+                  <p className={styles.emptySub}>试试用不同的关键词，或者直接安装：</p>
+                  <button
+                    className={styles.emptyDirectInstallLink}
+                    onClick={() => setShowDirectInstall(true)}
+                  >
+                    展开直接安装 ↗
+                  </button>
+                </>
+              ) : (
+                <p className={styles.emptySub}>
+                  可在 Marketplace tab 注册目录，或从本地上传 SKILL.md
+                </p>
+              )}
             </div>
           ) : (
             <div className={styles.grid}>
