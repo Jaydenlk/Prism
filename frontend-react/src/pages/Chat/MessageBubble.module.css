@@ -88,3 +88,34 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+.actionBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.assistantWrap:hover .actionBar {
+  opacity: 1;
+}
+
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--ink-3);
+  padding: 4px 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.actionBtn:hover {
+  background: var(--bg);
+  color: var(--ink);
+}

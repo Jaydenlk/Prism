@@ -8,6 +8,10 @@ import { PrismMark } from '@/components/Icon/Icon';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
 import type { ToolState } from './MessageBubble';
+import { PermissionModal } from './PermissionModal';
+import type { PermissionRequest } from './PermissionModal';
+import { PlanPanel } from './PlanPanel';
+import type { PlanStep } from './PlanPanel';
 import styles from './ChatPage.module.css';
 
 export function ChatPage() {
@@ -20,6 +24,10 @@ export function ChatPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null);
+  const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
+  const [planCurrentStep, setPlanCurrentStep] = useState(0);
+  const [showPlan, setShowPlan] = useState(false);
 
   // Load messages when session changes
   useEffect(() => {
@@ -161,6 +169,33 @@ export function ChatPage() {
         break;
       }
 
+      case 'permission_ask': {
+        const reqId = evt.request_id as string | undefined;
+        const toolName = evt.tool_name as string | undefined;
+        const description = evt.description as string | undefined;
+        const inputPreview = evt.input_preview as string | undefined;
+        if (reqId && toolName && description) {
+          setPermissionRequest({
+            request_id: reqId,
+            tool_name: toolName,
+            description,
+            input_preview: inputPreview,
+          });
+        }
+        break;
+      }
+
+      case 'coordinator_plan_update': {
+        const steps = evt.steps as PlanStep[] | undefined;
+        const currentStep = evt.current_step as number | undefined;
+        if (steps) {
+          setPlanSteps(steps);
+          setPlanCurrentStep(currentStep ?? 0);
+          setShowPlan(true);
+        }
+        break;
+      }
+
       case 'session_title': {
         refreshSessions();
         break;
@@ -288,6 +323,20 @@ export function ChatPage() {
         onStop={handleStop}
         isRunning={isRunning}
       />
+      {showPlan && planSteps.length > 0 && (
+        <PlanPanel
+          steps={planSteps}
+          currentStep={planCurrentStep}
+          onClose={() => setShowPlan(false)}
+        />
+      )}
+      {permissionRequest && currentSessionId && (
+        <PermissionModal
+          request={permissionRequest}
+          sessionId={currentSessionId}
+          onResolved={() => setPermissionRequest(null)}
+        />
+      )}
     </div>
   );
 }
