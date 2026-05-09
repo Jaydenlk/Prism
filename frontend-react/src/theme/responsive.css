@@ -1,0 +1,57 @@
+/* ── Global responsive fixes (mobile-first) ───────────────── */
+
+/* Tables: horizontal scroll on small screens */
+table {
+  width: 100%;
+}
+
+.table-wrapper,
+table {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Images: never overflow container */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Code blocks: horizontal scroll */
+pre, code {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tab bars: horizontal scroll */
+[role="tablist"] {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+[role="tablist"]::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  /* Form inputs: full width on mobile */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select {
+    width: 100%;
+  }
+
+  /* Stat card grids: 1 column on mobile */
+  .stat-grid,
+  [class*="statGrid"],
+  [class*="statsGrid"] {
+    grid-template-columns: 1fr !important;
+  }
+}

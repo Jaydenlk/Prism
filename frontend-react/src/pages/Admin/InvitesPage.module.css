@@ -1,0 +1,150 @@
+.page {
+  max-width: 760px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.title {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.code {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.03em;
+  flex: 1;
+}
+
+.copyBtn {
+  font-size: 11px;
+  color: var(--ink-3);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.copyBtn:hover {
+  color: var(--ink);
+}
+
+.cardMeta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+}
+
+.loadingState,
+.errorState,
+.emptyState {
+  padding: 48px;
+  text-align: center;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-4);
+}
+
+.errorState {
+  color: var(--rust);
+}
+
+/* Create form */
+.createForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.formLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.formInput {
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--ink);
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.formInput:focus {
+  border-color: var(--amber);
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Confirm revoke */
+.confirmBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.confirmBody p {
+  font-size: 13.5px;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.confirmCode {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}

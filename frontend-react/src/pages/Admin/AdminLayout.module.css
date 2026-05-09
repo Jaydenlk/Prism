@@ -1,0 +1,128 @@
+.shell {
+  display: flex;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Dark sidebar rail */
+.rail {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--ink);
+  color: var(--paper);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+  border-right: 1px solid #000;
+  overflow-y: auto;
+}
+
+.railTitle {
+  font-family: var(--serif);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+  padding: 0 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  transition: color 0.15s, background 0.15s;
+  position: relative;
+}
+
+.navItem:hover {
+  color: var(--paper);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.navItemActive {
+  color: var(--amber);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.navItemActive::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  background: var(--amber);
+  border-radius: 0 3px 3px 0;
+}
+
+.content {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+/* Mobile: hide rail, show horizontal tab bar */
+.tabBar {
+  display: none;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  background: var(--ink);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.tabBarItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.tabBarItem:hover {
+  color: var(--paper);
+}
+
+.tabBarItemActive {
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+}
+
+@media (max-width: 640px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  .rail {
+    display: none;
+  }
+
+  .tabBar {
+    display: flex;
+  }
+
+  .content {
+    padding: 16px;
+  }
+}

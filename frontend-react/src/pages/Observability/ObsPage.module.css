@@ -1,0 +1,287 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: 32px 36px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 400;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.rangeSelector {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.rangeBtn {
+  height: 30px;
+  min-width: 52px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.rangeBtn:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.rangeBtnActive {
+  background: var(--ink) !important;
+  color: var(--paper) !important;
+}
+
+.errorNotice {
+  background: var(--rust-soft);
+  color: var(--rust);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.loadingState {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.emptyState {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-3);
+  padding: 40px 0;
+}
+
+/* Signal indicators */
+.signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.signal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 8px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  border: 1px solid transparent;
+}
+
+.signalDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.signalLabel {
+  color: var(--ink-2);
+}
+
+.signalValue {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.healthy {
+  background: var(--teal-soft);
+  border-color: transparent;
+}
+
+.healthy .signalDot {
+  background: var(--teal);
+}
+
+.warning {
+  background: var(--amber-soft);
+  border-color: transparent;
+}
+
+.warning .signalDot {
+  background: var(--amber);
+}
+
+.critical {
+  background: var(--rust-soft);
+  border-color: transparent;
+}
+
+.critical .signalDot {
+  background: var(--rust);
+}
+
+/* Stat cards */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.statCard {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: var(--shadow-2);
+}
+
+.statCardFeatured {
+  border-color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.statLabel {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+}
+
+.statBody {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.statValue {
+  font-family: var(--serif);
+  font-size: 28px;
+  color: var(--ink);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.statUnit {
+  font-size: 16px;
+  color: var(--ink-4);
+  margin-left: 1px;
+}
+
+.statSub {
+  width: 100%;
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 6px;
+}
+
+.statSubTeal {
+  color: var(--teal);
+}
+
+.statSubWarn {
+  color: var(--rust);
+}
+
+/* Governance */
+.sectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 12px;
+}
+
+.governanceCard {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: var(--shadow-2);
+}
+
+.governanceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.govItem {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.govLabel {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 6px;
+}
+
+.govValue {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+.govValueWarn {
+  color: var(--amber);
+}
+
+@media (max-width: 900px) {
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .governanceGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 20px 16px;
+  }
+
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .governanceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

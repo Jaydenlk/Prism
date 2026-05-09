@@ -1,0 +1,169 @@
+.page {
+  max-width: 1100px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.title {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.filterInput {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 12.5px;
+  background: var(--bg);
+  color: var(--ink);
+  outline: none;
+  min-width: 140px;
+}
+
+.filterInput:focus {
+  border-color: var(--amber);
+}
+
+.tableWrap {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  min-width: 700px;
+}
+
+.table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  vertical-align: top;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.logRow:hover td {
+  background: rgba(28, 27, 24, 0.02);
+}
+
+.timestamp {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.userId {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.resource {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.details {
+  cursor: pointer;
+  max-width: 260px;
+}
+
+.detailsExpanded {
+  max-width: none;
+}
+
+.detailCode {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  word-break: break-all;
+  background: none;
+}
+
+.emptyCell {
+  text-align: center;
+  padding: 48px;
+  color: var(--ink-4);
+  font-family: var(--serif);
+  font-style: italic;
+}
+
+.loadingState,
+.errorState {
+  padding: 48px;
+  text-align: center;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-4);
+}
+
+.errorState {
+  color: var(--rust);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.pageInfo {
+  font-size: 13px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}

@@ -1,0 +1,36 @@
+.skipLink {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  padding: 8px 16px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  text-decoration: none;
+  border-radius: 0 0 8px 0;
+  z-index: 9999;
+  transition: top 0.1s;
+}
+
+.skipLink:focus {
+  top: 0;
+}
+
+.shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+}

@@ -1,0 +1,64 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+}
+
+.inputPreview {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.description {
+  font-size: 14px;
+  color: var(--ink-2);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.timer {
+  font-family: var(--mono);
+  font-size: 18px;
+  text-align: center;
+  margin: 4px 0;
+  transition: color 0.3s ease;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}

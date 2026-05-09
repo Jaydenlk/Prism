@@ -1,0 +1,143 @@
+.page {
+  max-width: 960px;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 12px;
+}
+
+.searchRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.searchInput {
+  flex: 1;
+  max-width: 320px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--paper);
+  color: var(--ink);
+  outline: none;
+}
+
+.searchInput:focus {
+  border-color: var(--amber);
+}
+
+.tableWrap {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover td {
+  background: rgba(28, 27, 24, 0.02);
+}
+
+.username {
+  font-weight: 500;
+}
+
+.email {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.date {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.roleSelect {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.emptyCell {
+  text-align: center;
+  padding: 48px;
+  color: var(--ink-4);
+  font-family: var(--serif);
+  font-style: italic;
+}
+
+.loadingState,
+.errorState {
+  padding: 48px;
+  text-align: center;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-4);
+}
+
+.errorState {
+  color: var(--rust);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.pageInfo {
+  font-size: 13px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}

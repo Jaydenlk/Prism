@@ -1,0 +1,48 @@
+.root {
+  position: relative;
+  display: inline-block;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  background: var(--paper);
+  box-shadow: var(--shadow-3);
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  min-width: 160px;
+  z-index: 100;
+  padding: 4px;
+}
+
+.menuLeft {
+  left: 0;
+}
+
+.menuRight {
+  right: 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.item:hover {
+  background: var(--bg);
+}
+
+.danger {
+  color: var(--danger);
+}
