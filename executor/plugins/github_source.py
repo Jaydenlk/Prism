@@ -1,11 +1,10 @@
-"""GitHub SkillSource — 搜索 GitHub 仓库中与 Skills 相关的项目。
+"""GitHub SkillSource — search GitHub repos for Claude Code skills/plugins.
 
-使用 GitHub Repository Search API（无需认证），搜索仓库后验证
-SKILL.md 存在性，确保结果是真正的 skill 而非普通项目。
+Uses GitHub Repository Search API (unauthenticated, 10 req/min).
+Returns results directly without per-repo validation to avoid rate limits.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 
 import httpx
@@ -16,29 +15,25 @@ logger = logging.getLogger(__name__)
 
 _GITHUB_REPOS_URL = "https://api.github.com/search/repositories"
 _TIMEOUT = httpx.Timeout(connect=10.0, read=15.0, write=5.0, pool=5.0)
-_PLUGIN_PATHS = [
-    "https://api.github.com/repos/{owner}/{repo}/contents/SKILL.md",
-    "https://api.github.com/repos/{owner}/{repo}/contents/.claude-plugin/marketplace.json",
-    "https://api.github.com/repos/{owner}/{repo}/contents/.claude-plugin/plugin.json",
-]
+
+_CLAUDE_TOPICS = {"claude-code", "claude-plugin", "claude-skill", "mcp-server", "claude-code-plugin", "skill"}
 
 
-async def _is_claude_plugin(client: httpx.AsyncClient, owner: str, repo: str) -> str | None:
-    """Check if repo is a Claude skill/plugin. Returns type or None."""
-    headers = {"Accept": "application/vnd.github.v3+json"}
-    for path in _PLUGIN_PATHS:
-        try:
-            resp = await client.head(path.format(owner=owner, repo=repo), headers=headers)
-            if resp.status_code == 200:
-                if "marketplace.json" in path:
-                    return "marketplace"
-                elif "plugin.json" in path:
-                    return "plugin"
-                else:
-                    return "skill"
-        except httpx.HTTPError:
-            continue
-    return None
+def _infer_type(topics: list[str], name: str, desc: str) -> str:
+    """Infer whether a repo is a skill, plugin, or marketplace from metadata."""
+    t_set = set(topics)
+    combined = (name + " " + desc).lower()
+    if t_set & {"claude-plugin", "claude-code-plugin"}:
+        return "plugin"
+    if "marketplace" in combined or "registry" in combined:
+        return "marketplace"
+    if t_set & {"claude-skill", "skill"}:
+        return "skill"
+    if t_set & {"mcp-server", "mcp"}:
+        return "mcp"
+    if any(kw in combined for kw in ("skill", "plugin", "claude-code", "agent")):
+        return "plugin"
+    return "repo"
 
 
 class GitHubSource(SkillSource):
@@ -55,39 +50,30 @@ class GitHubSource(SkillSource):
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 resp = await client.get(
                     _GITHUB_REPOS_URL,
-                    params={"q": github_query, "per_page": 10, "sort": "stars"},
+                    params={"q": github_query, "per_page": 15, "sort": "stars"},
                     headers={"Accept": "application/vnd.github.v3+json"},
                 )
+                if resp.status_code == 403:
+                    logger.warning("GitHub API rate limited")
+                    return []
                 if resp.status_code != 200:
                     logger.warning("GitHub search returned %d", resp.status_code)
                     return []
                 data = resp.json()
-
-                candidates = data.get("items", [])
-                checks = [
-                    _is_claude_plugin(
-                        client,
-                        repo.get("owner", {}).get("login", ""),
-                        repo.get("name", ""),
-                    )
-                    for repo in candidates
-                ]
-                plugin_types = await asyncio.gather(*checks)
-
         except httpx.HTTPError as exc:
             logger.warning("GitHub search failed: %s", exc)
             return []
 
         results: list[SkillPackage] = []
-        for repo, ptype in zip(candidates, plugin_types):
-            if not ptype:
-                continue
-            tags = repo.get("topics") or []
-            if ptype not in tags:
-                tags = [ptype] + tags
+        for repo in data.get("items", []):
+            topics = repo.get("topics") or []
+            name = repo.get("name", "")
+            desc = repo.get("description") or ""
+            ptype = _infer_type(topics, name, desc)
+            tags = [ptype] + topics[:5] if ptype not in topics else topics[:6]
             results.append(SkillPackage(
-                name=repo.get("name", ""),
-                description=repo.get("description") or "",
+                name=name,
+                description=desc,
                 version="latest",
                 source="github",
                 source_url=repo.get("html_url", ""),
