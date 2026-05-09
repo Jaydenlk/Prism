@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Placeholder } from '@/pages/Placeholder';
 import { LoginPage } from '@/pages/Auth/LoginPage';
 import { RegisterPage } from '@/pages/Auth/RegisterPage';
+import { ChatPage } from '@/pages/Chat/ChatPage';
 import type { ReactNode } from 'react';
 
 function AuthGuard({ children }: { children: ReactNode }) {
@@ -28,7 +29,7 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route element={<AuthGuard><AppLayout /></AuthGuard>}>
-        <Route index element={<Placeholder name="对话" />} />
+        <Route index element={<ChatPage />} />
         <Route path="sessions" element={<Placeholder name="会话" />} />
         <Route path="settings" element={<Placeholder name="设置" />} />
         <Route path="usage" element={<Placeholder name="用量" />} />
