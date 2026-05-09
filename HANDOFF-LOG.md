@@ -6,6 +6,54 @@
 
 ---
 
+## 🔴🔴 2026-05-09 React 前端迁移 + 后端全面审计 + Skills Market 重构
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop（30 commits）
+**统计**: 140 文件变更，19,296 行新增
+
+### 本 session 三大交付
+
+| 领域 | 交付 |
+|---|---|
+| **P1 前端迁移** | Prism.html 单文件 → React 18 + TypeScript + Vite 完整迁移。6 Phase 全部完成：设计系统 + 39 Icon + 12 共享组件 + typed API client(955行) + useSSE + Auth/Theme/Session contexts + Auth 页面 + Chat(SSE streaming) + Content Renderer(marked+Prism.js) + Markdown Export(Turndown) + Sessions/Settings(5tabs)/Skills Market/Plugin Builder/Usage/Observability + Admin(Dashboard+Users+Audit+Invites) + Dark mode/Mobile/A11y/Lazy loading/ErrorBoundary。Simplify 3-agent 审查 → 13 项修复。PJR ESLint 0 errors + build 通过。 |
+| **P2 后端审计修复** | 11 个并发 subagent 全面审计（API 5 域 + executor + services + DB + 集成 + 契约 + 配置）。发现并修复 20 项问题：SIGTERM 崩溃(C1+C2)、timeout 状态链路断裂(C3)、AuditLog schema 崩溃(C4)、前后端类型不匹配(C5-C7)、callback 字段缺失(H4+H5)、providers/usage 路由顺序 bug(H6)、mcp-servers/{id} 路由缺失(H7)、config 不一致(M1)等。 |
+| **P3 Skills Market 重构** | 对齐 Claude Code CLI 的 marketplace/skills 逻辑：GUI 来源管理（添加/移除 marketplace 源，常用预设）+ GitHub 双重搜索（精确名称+Claude 范围，star 排序 top 5）+ "你要找的是不是？"拼写纠错（edit distance ≤ 2）+ Context7 文档搜索源（Docs tab）+ 直接安装 by URL + GitHub 安装真实下载内容 + **skill_invoke 工具**（agent 可动态加载并使用已安装 skill）+ 安装后子 skill 扫描注册。 |
+
+### 新增文件/目录
+
+- `frontend-react/` — 完整 React + TS 前端（116 文件）
+- `executor/tools/builtin/skill_invoke.py` — skill 调用工具
+- `executor/plugins/context7_source.py` — Context7 搜索源
+- `executor/plugins/github_source.py` — 重写：双重搜索 + 纠错
+- `start-dev.sh` + `start-dev.ps1` — 开发启动脚本
+- `.mcp.json` — Context7 MCP 配置
+
+### 已知问题（下个 session 处理）
+
+1. **Skill 完整调用链路未 E2E 验证** — skill_invoke 工具已实现但需要配置 Provider API Key 后实际触发一次 Agent Run 验证
+2. **nginx unhealthy** — 静态文件路径指向旧 `frontend/`，需更新为 `frontend-react/dist/`
+3. **前端未接入 Docker** — 目前用 Vite dev server 独立运行，生产部署需要 `vite build` + nginx 托管
+4. **卸载只删 DB 记录** — 未清理本地下载的文件（`.prism/skills/@github/`）
+
+### 环境信息
+
+- 端口：8080（nginx → backend:8000），3000（Vite dev server）
+- 账号：admin@prism.dev / admin123
+- Docker 服务：backend healthy，nginx unhealthy（需更新静态文件路径）
+- 前端 React 项目：`frontend-react/`，ESLint 0 errors，build 通过（10 chunks）
+
+### 用户明确指示
+
+- Prism 对标 Manus，兼顾个人自用和商业化
+- 前端用 React + TypeScript（非 HTML），因为要对标商业级品质
+- Skills Market 对齐 Claude Code CLI 的 marketplace/skills 逻辑
+- 所有开发严格遵循 superpowers 流程（brainstorming → plan → worktree → simplify → PJR → merge → E2E）
+- 反打补丁硬规则：深度融合代码逻辑，不打补丁
+- Context7 MCP all in（Claude Code + Prism 都装）
+
+---
+
 ## 🔴 2026-05-10 搜索 + Marketplace + Plugin Builder v2 三连交付
 
 **模型**: Opus 4.6 (1M context)
