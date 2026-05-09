@@ -343,11 +343,37 @@ async def install_skill(
             user_id=str(current_user.id),
         )
 
-    elif request.source == "github" and not request.source_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="source='github' 时 source_url 为必填",
-        )
+    elif request.source == "github":
+        # source_url already validated non-None above for non-content_base64 path
+        if not request.source_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="source='github' 时 source_url 为必填",
+            )
+        workspace = os.environ.get("PRISM_WORKSPACE", os.getcwd())
+        try:
+            resolved_install_path = await _download_github_skill(
+                source_url=request.source_url,
+                skill_name=effective_skill_name,
+                workspace=workspace,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            )
+        except Exception as exc:
+            logger.error(
+                "skills_api.install.github_download_error",
+                skill_name=effective_skill_name,
+                source_url=request.source_url,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"GitHub 内容下载失败: {exc}",
+            )
+        resolved_source_url = request.source_url
     elif request.source == "marketplace" and not request.content_base64:
         # marketplace_id + plugin_name path: delegate to MarketplaceService.install_plugin()
         # which runs the 5-source resolver, downloads, parses SKILL.md, and UPSERTs skill_installs.
@@ -838,6 +864,60 @@ async def get_skill_detail(
 # ---------------------------------------------------------------------------
 # 内部工具
 # ---------------------------------------------------------------------------
+
+
+import re as _re
+
+
+async def _download_github_skill(source_url: str, skill_name: str, workspace: str) -> str:
+    """Download skill files from a GitHub repo. Returns the install_path directory.
+
+    Fetches SKILL.md, .claude-plugin/plugin.json, .claude-plugin/marketplace.json,
+    and README.md from raw.githubusercontent.com via httpx (no git clone needed).
+    Raises ValueError for bad URLs or when no skill files are found.
+    """
+    match = _re.match(r"https?://github\.com/([^/]+/[^/?#]+)", source_url)
+    if not match:
+        raise ValueError(f"无效的 GitHub URL: {source_url}")
+
+    owner_repo = match.group(1).rstrip("/")
+    if owner_repo.endswith(".git"):
+        owner_repo = owner_repo[:-4]
+
+    install_dir = os.path.join(workspace, ".prism", "skills", "@github", skill_name)
+    os.makedirs(install_dir, exist_ok=True)
+
+    files_to_try = [
+        ("SKILL.md", f"https://raw.githubusercontent.com/{owner_repo}/HEAD/SKILL.md"),
+        ("plugin.json", f"https://raw.githubusercontent.com/{owner_repo}/HEAD/.claude-plugin/plugin.json"),
+        ("marketplace.json", f"https://raw.githubusercontent.com/{owner_repo}/HEAD/.claude-plugin/marketplace.json"),
+        ("README.md", f"https://raw.githubusercontent.com/{owner_repo}/HEAD/README.md"),
+    ]
+
+    downloaded: list[str] = []
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        for filename, url in files_to_try:
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    file_path = os.path.join(install_dir, filename)
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        f.write(resp.text)
+                    downloaded.append(filename)
+            except Exception:
+                continue
+
+    if not downloaded:
+        raise ValueError(f"{owner_repo} 中未找到任何 skill 文件（SKILL.md / plugin.json / README.md）")
+
+    logger.info(
+        "skills_api.install.github_downloaded",
+        owner_repo=owner_repo,
+        skill_name=skill_name,
+        files=downloaded,
+        install_dir=install_dir,
+    )
+    return install_dir
 
 
 def _get_registry():
