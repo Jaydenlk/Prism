@@ -1,10 +1,13 @@
-"""GitHub SkillSource — search GitHub repos for Claude Code skills/plugins.
+"""GitHub SkillSource — dual-query search for Claude Code skills/plugins.
 
-Uses GitHub Repository Search API (unauthenticated, 10 req/min).
-Returns results directly without per-repo validation to avoid rate limits.
+Strategy: two parallel GitHub API searches for better coverage:
+1. Exact name match: `{query} in:name` → finds repos named exactly like the query
+2. Claude-scoped match: `{query} claude skill plugin in:name,description,topics`
+Merge, dedup, sort by stars, return top 5.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -16,11 +19,8 @@ logger = logging.getLogger(__name__)
 _GITHUB_REPOS_URL = "https://api.github.com/search/repositories"
 _TIMEOUT = httpx.Timeout(connect=10.0, read=15.0, write=5.0, pool=5.0)
 
-_CLAUDE_TOPICS = {"claude-code", "claude-plugin", "claude-skill", "mcp-server", "claude-code-plugin", "skill"}
-
 
 def _infer_type(topics: list[str], name: str, desc: str) -> str:
-    """Infer whether a repo is a skill, plugin, or marketplace from metadata."""
     t_set = set(topics)
     combined = (name + " " + desc).lower()
     if t_set & {"claude-plugin", "claude-code-plugin"}:
@@ -36,6 +36,43 @@ def _infer_type(topics: list[str], name: str, desc: str) -> str:
     return "repo"
 
 
+async def _search_github(client: httpx.AsyncClient, query: str, per_page: int = 10) -> list[dict]:
+    try:
+        resp = await client.get(
+            _GITHUB_REPOS_URL,
+            params={"q": query, "per_page": per_page, "sort": "stars", "order": "desc"},
+            headers={"Accept": "application/vnd.github.v3+json"},
+        )
+        if resp.status_code in (403, 422):
+            logger.warning("GitHub search returned %d for query: %s", resp.status_code, query[:50])
+            return []
+        if resp.status_code != 200:
+            logger.warning("GitHub search returned %d", resp.status_code)
+            return []
+        return resp.json().get("items", [])
+    except httpx.HTTPError as exc:
+        logger.warning("GitHub search failed: %s", exc)
+        return []
+
+
+def _repo_to_package(repo: dict) -> SkillPackage:
+    topics = repo.get("topics") or []
+    name = repo.get("name", "")
+    desc = repo.get("description") or ""
+    ptype = _infer_type(topics, name, desc)
+    tags = [ptype] + topics[:5] if ptype not in topics else topics[:6]
+    return SkillPackage(
+        name=name,
+        description=desc,
+        version="latest",
+        source="github",
+        source_url=repo.get("html_url", ""),
+        author=repo.get("owner", {}).get("login"),
+        tags=tags,
+        stars=repo.get("stargazers_count", 0),
+    )
+
+
 class GitHubSource(SkillSource):
 
     @property
@@ -45,45 +82,28 @@ class GitHubSource(SkillSource):
     async def search(self, query: str) -> list[SkillPackage]:
         if not query.strip():
             return []
-        github_query = f"{query} in:name,description"
-        try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-                resp = await client.get(
-                    _GITHUB_REPOS_URL,
-                    params={"q": github_query, "per_page": 15, "sort": "stars"},
-                    headers={"Accept": "application/vnd.github.v3+json"},
-                )
-                if resp.status_code == 403:
-                    logger.warning("GitHub API rate limited")
-                    return []
-                if resp.status_code != 200:
-                    logger.warning("GitHub search returned %d", resp.status_code)
-                    return []
-                data = resp.json()
-        except httpx.HTTPError as exc:
-            logger.warning("GitHub search failed: %s", exc)
-            return []
 
-        results: list[SkillPackage] = []
-        for repo in data.get("items", []):
-            topics = repo.get("topics") or []
-            name = repo.get("name", "")
-            desc = repo.get("description") or ""
-            ptype = _infer_type(topics, name, desc)
-            tags = [ptype] + topics[:5] if ptype not in topics else topics[:6]
-            stars = repo.get("stargazers_count", 0)
-            results.append(SkillPackage(
-                name=name,
-                description=desc,
-                version="latest",
-                source="github",
-                source_url=repo.get("html_url", ""),
-                author=repo.get("owner", {}).get("login"),
-                tags=tags,
-                stars=stars,
-            ))
-        results.sort(key=lambda p: p.stars or 0, reverse=True)
-        return results[:3]
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            exact_q = f"{query} in:name"
+            broad_q = f"{query} claude skill plugin mcp in:name,description,topics"
+
+            exact_items, broad_items = await asyncio.gather(
+                _search_github(client, exact_q, per_page=5),
+                _search_github(client, broad_q, per_page=10),
+            )
+
+        seen: set[str] = set()
+        merged: list[SkillPackage] = []
+
+        for repo in exact_items + broad_items:
+            full_name = repo.get("full_name", "")
+            if full_name in seen:
+                continue
+            seen.add(full_name)
+            merged.append(_repo_to_package(repo))
+
+        merged.sort(key=lambda p: p.stars or 0, reverse=True)
+        return merged[:5]
 
     async def fetch(self, package_id: str, version: str | None = None):
         raise NotImplementedError("GitHub install uses marketplace clone flow")
