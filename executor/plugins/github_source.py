@@ -71,6 +71,7 @@ class GitHubSource(SkillSource):
             desc = repo.get("description") or ""
             ptype = _infer_type(topics, name, desc)
             tags = [ptype] + topics[:5] if ptype not in topics else topics[:6]
+            stars = repo.get("stargazers_count", 0)
             results.append(SkillPackage(
                 name=name,
                 description=desc,
@@ -79,9 +80,10 @@ class GitHubSource(SkillSource):
                 source_url=repo.get("html_url", ""),
                 author=repo.get("owner", {}).get("login"),
                 tags=tags,
-                stars=repo.get("stargazers_count", 0),
+                stars=stars,
             ))
-        return results
+        results.sort(key=lambda p: p.stars or 0, reverse=True)
+        return results[:3]
 
     async def fetch(self, package_id: str, version: str | None = None):
         raise NotImplementedError("GitHub install uses marketplace clone flow")
