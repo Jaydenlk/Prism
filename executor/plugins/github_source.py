@@ -1,9 +1,10 @@
-"""GitHub SkillSource — dual-query search for Claude Code skills/plugins.
+"""GitHub SkillSource — dual-query search with "did you mean?" suggestion.
 
-Strategy: two parallel GitHub API searches for better coverage:
-1. Exact name match: `{query} in:name` → finds repos named exactly like the query
-2. Claude-scoped match: `{query} claude skill plugin in:name,description,topics`
-Merge, dedup, sort by stars, return top 5.
+Strategy:
+1. Exact name match: `{query} in:name`
+2. Claude-scoped match: `{query} claude skill plugin mcp in:name,description,topics`
+3. If top result < 1000 stars → fuzzy search for high-star similar names
+4. Merge, dedup, sort by stars, return top 5
 """
 from __future__ import annotations
 
@@ -34,6 +35,30 @@ def _infer_type(topics: list[str], name: str, desc: str) -> str:
     if any(kw in combined for kw in ("skill", "plugin", "claude-code", "agent")):
         return "plugin"
     return "repo"
+
+
+def _edit_distance(a: str, b: str) -> int:
+    """Levenshtein distance between two strings."""
+    if len(a) < len(b):
+        return _edit_distance(b, a)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (0 if ca == cb else 1)))
+        prev = curr
+    return prev[-1]
+
+
+def _is_similar(query: str, name: str) -> bool:
+    """Check if name is a plausible typo of query (edit distance <= 2)."""
+    q = query.lower()
+    n = name.lower()
+    if q == n:
+        return False
+    return _edit_distance(q, n) <= 2
 
 
 async def _search_github(client: httpx.AsyncClient, query: str, per_page: int = 10) -> list[dict]:
@@ -92,17 +117,32 @@ class GitHubSource(SkillSource):
                 _search_github(client, broad_q, per_page=10),
             )
 
-        seen: set[str] = set()
-        merged: list[SkillPackage] = []
+            seen: set[str] = set()
+            merged: list[SkillPackage] = []
 
-        for repo in exact_items + broad_items:
-            full_name = repo.get("full_name", "")
-            if full_name in seen:
-                continue
-            seen.add(full_name)
-            merged.append(_repo_to_package(repo))
+            for repo in exact_items + broad_items:
+                full_name = repo.get("full_name", "")
+                if full_name in seen:
+                    continue
+                seen.add(full_name)
+                merged.append(_repo_to_package(repo))
 
-        merged.sort(key=lambda p: p.stars or 0, reverse=True)
+            merged.sort(key=lambda p: p.stars or 0, reverse=True)
+
+            top_stars = merged[0].stars if merged else 0
+            if top_stars < 1000 and len(query) >= 3:
+                fuzzy_items = await _search_github(client, query, per_page=5)
+                for repo in fuzzy_items:
+                    full_name = repo.get("full_name", "")
+                    stars = repo.get("stargazers_count", 0)
+                    name = repo.get("name", "")
+                    if full_name not in seen and stars >= 1000 and _is_similar(query, name):
+                        pkg = _repo_to_package(repo)
+                        pkg.description = f"你要找的是不是这个？ — {pkg.description}"
+                        pkg.tags = ["suggestion"] + pkg.tags
+                        merged.insert(0, pkg)
+                        break
+
         return merged[:5]
 
     async def fetch(self, package_id: str, version: str | None = None):
