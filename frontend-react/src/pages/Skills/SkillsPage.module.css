@@ -99,6 +99,100 @@
   color: var(--paper);
 }
 
+/* ── Direct install ──────────────────────────────────────────────── */
+.directInstall {
+  margin: 0 24px 8px;
+  background: var(--bg);
+  border-radius: 10px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.directInstallToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s ease;
+}
+
+.directInstallToggle:hover {
+  color: var(--ink);
+}
+
+.directInstallBody {
+  padding: 0 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.directInstallRow {
+  display: flex;
+  gap: 8px;
+}
+
+.directInstallInput {
+  flex: 1;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.directInstallInput:focus {
+  border-color: var(--ink-3);
+  box-shadow: 0 0 0 3px rgba(28,27,24,0.06);
+}
+
+.directInstallInput::placeholder {
+  color: var(--ink-4);
+}
+
+.directInstallBtn {
+  height: 36px;
+  padding: 0 16px;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.directInstallBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.directInstallBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.directInstallHint {
+  font-size: 11.5px;
+  color: var(--ink-4);
+  margin: 0;
+  line-height: 1.5;
+}
+
 /* ── Search error ────────────────────────────────────────────────── */
 .searchErr {
   margin: 0 24px 12px;
@@ -143,6 +237,25 @@
   color: var(--ink-3);
   margin: 0;
   line-height: 1.5;
+}
+
+.emptyDirectInstallLink {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease;
+}
+
+.emptyDirectInstallLink:hover {
+  color: var(--ink);
 }
 
 /* ── Results grid ────────────────────────────────────────────────── */
