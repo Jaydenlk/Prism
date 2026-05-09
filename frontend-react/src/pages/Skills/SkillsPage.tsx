@@ -388,6 +388,7 @@ export function SkillsPage() {
                   description={sk.description}
                   source={sk.source}
                   sourceUrl={sk.source_url}
+                  stars={sk.stars}
                   installed={isInstalled(sk.name)}
                   onInstall={() => handleInstall(sk)}
                   onUninstall={() => handleUninstall(sk.name)}

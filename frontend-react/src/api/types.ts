@@ -258,6 +258,7 @@ export interface SkillPackage {
   source_url: string;
   author: string | null;
   tags: string[];
+  stars: number;
   installed: boolean;
   installed_version: string | null;
   marketplace_id: string | null;

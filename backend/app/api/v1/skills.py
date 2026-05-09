@@ -99,6 +99,7 @@ class SkillPackageResponse(BaseModel):
     source_url: str
     author: str | None = None
     tags: list[str] = Field(default_factory=list)
+    stars: int = 0
     installed: bool = False
     installed_version: str | None = None
     marketplace_id: str | None = None
@@ -218,6 +219,7 @@ async def search_skills(
             source_url=p.source_url,
             author=p.author,
             tags=p.tags,
+            stars=p.stars,
             installed=p.installed,
             installed_version=p.installed_version,
             marketplace_id=p.marketplace_id,

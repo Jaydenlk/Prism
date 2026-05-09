@@ -11,6 +11,7 @@ export interface SkillCardProps {
   sourceUrl: string | null;
   installed: boolean;
   score?: number;
+  stars?: number;
   onInstall: () => void;
   onUninstall: () => void;
   onClick: () => void;
@@ -20,7 +21,9 @@ export function SkillCard({
   name,
   description,
   source,
+  sourceUrl,
   installed,
+  stars,
   onInstall,
   onUninstall,
   onClick,
@@ -40,8 +43,22 @@ export function SkillCard({
           <span className={styles.name}>{name}</span>
           <Badge variant={sourceBadge.variant}>{sourceBadge.label}</Badge>
           {installed && <Badge variant="teal">已安装</Badge>}
+          {source === 'github' && stars != null && stars > 0 && (
+            <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 'auto' }}>⭐ {stars >= 1000 ? `${(stars / 1000).toFixed(1)}k` : stars}</span>
+          )}
         </div>
         <p className={styles.description}>{description || '暂无描述'}</p>
+        {source === 'github' && sourceUrl && (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            style={{ fontSize: 12, color: 'var(--amber)', textDecoration: 'none', marginTop: 4, display: 'inline-block' }}
+          >
+            {sourceUrl.replace('https://github.com/', '')} ↗
+          </a>
+        )}
       </div>
 
       <Button
