@@ -3,6 +3,7 @@ import { Icon } from '@/components/Icon/Icon';
 import { Button } from '@/components/Button/Button';
 import { Badge } from '@/components/Badge/Badge';
 import { Spinner } from '@/components/Spinner/Spinner';
+import { ConfirmModal } from '@/components/ConfirmModal/ConfirmModal';
 import { useToast } from '@/components/Toast/ToastContext';
 import { useSSE } from '@/hooks/useSSE';
 import * as api from '@/api/client';
@@ -97,6 +98,7 @@ export function PluginBuilderPage() {
   const [library, setLibrary]                   = useState<PluginLibraryItem[]>([]);
   const [libraryLoading, setLibraryLoading]     = useState(false);
   const [actionLoading, setActionLoading]       = useState<string | null>(null);
+  const [confirmDeletePlugin, setConfirmDeletePlugin] = useState<PluginLibraryItem | null>(null);
 
   const bottomRef  = useRef<HTMLDivElement>(null);
   const streamBuf  = useRef<Record<string, { text: string; finalized: boolean }>>({});
@@ -273,7 +275,13 @@ export function PluginBuilderPage() {
   }
 
   async function handleDeletePlugin(plugin: PluginLibraryItem) {
-    if (!confirm(`确认删除插件 "${plugin.name}"？`)) return;
+    setConfirmDeletePlugin(plugin);
+  }
+
+  async function handleDeletePluginConfirm() {
+    if (!confirmDeletePlugin) return;
+    const plugin = confirmDeletePlugin;
+    setConfirmDeletePlugin(null);
     setActionLoading(plugin.id);
     try {
       await api.plugins.delete(plugin.id);
@@ -599,6 +607,18 @@ export function PluginBuilderPage() {
           </div>
         </div>
       )}
+
+      {/* ── Delete plugin confirm modal ─────────────────────────────────────── */}
+      <ConfirmModal
+        open={confirmDeletePlugin !== null}
+        title="确认删除"
+        message={confirmDeletePlugin ? `确认删除插件 "${confirmDeletePlugin.name}"？` : ''}
+        confirmLabel="删除"
+        danger
+        loading={confirmDeletePlugin !== null && actionLoading === confirmDeletePlugin.id}
+        onConfirm={handleDeletePluginConfirm}
+        onCancel={() => setConfirmDeletePlugin(null)}
+      />
     </div>
   );
 }

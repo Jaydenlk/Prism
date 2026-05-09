@@ -87,7 +87,7 @@ export interface SSETicketResponse {
 export interface Session {
   id: string;
   title: string | null;
-  status: string;
+  status: 'active' | 'archived' | 'running';
   blocking_run_id: string | null;
   config_snapshot: Record<string, unknown>;
   is_pinned: boolean;
@@ -103,7 +103,7 @@ export interface Session {
 export interface SessionListItem {
   id: string;
   title: string | null;
-  status: string;
+  status: 'active' | 'archived' | 'running';
   is_pinned: boolean;
   last_message_preview: string | null;
   updated_at: string;
@@ -114,7 +114,7 @@ export interface SessionListItem {
 // ---------------------------------------------------------------------------
 
 export interface ContentBlock {
-  type: string;
+  type: 'text' | 'tool_use' | 'thinking';
   text?: string;
   thinking?: string;
   id?: string;
@@ -126,7 +126,7 @@ export interface ContentBlock {
 export interface Message {
   id: string;
   run_id: string | null;
-  role: string;
+  role: 'user' | 'assistant' | 'system';
   content: ContentBlock[];
   text_preview: string | null;
   sequence_no: number;
@@ -141,7 +141,7 @@ export interface Run {
   id: string;
   session_id: string;
   prompt: string;
-  status: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'crashed';
   model: string;
   provider_id: string | null;
   schedule_mode: string;
@@ -159,7 +159,7 @@ export interface Run {
 
 export interface RunListItem {
   id: string;
-  status: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'crashed';
   prompt: string;
   agent_type: string | null;
   turn_count: number | null;

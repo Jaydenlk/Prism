@@ -5,6 +5,7 @@ import { useToast } from '@/components/Toast/ToastContext';
 import { Button } from '@/components/Button/Button';
 import { Badge } from '@/components/Badge/Badge';
 import { Modal } from '@/components/Modal/Modal';
+import { ConfirmModal } from '@/components/ConfirmModal/ConfirmModal';
 import { Spinner } from '@/components/Spinner/Spinner';
 import styles from './SettingsPage.module.css';
 
@@ -190,27 +191,16 @@ export function ImTab() {
         </div>
       </Modal>
 
-      {/* Confirm unbind modal */}
-      <Modal
+      <ConfirmModal
         open={confirmUnbindId !== null}
-        onClose={() => setConfirmUnbindId(null)}
         title="确认解绑"
-        width={400}
-      >
-        <p style={{ fontSize: 15, color: 'var(--ink-2)', marginBottom: 20 }}>
-          确认解绑该用户？解绑后需重新配对。
-        </p>
-        <div className={styles.modalFooter}>
-          <Button variant="ghost" onClick={() => setConfirmUnbindId(null)}>取消</Button>
-          <Button
-            variant="danger"
-            loading={unbindingId !== null}
-            onClick={() => { if (confirmUnbindId) handleUnbind(confirmUnbindId); }}
-          >
-            解绑
-          </Button>
-        </div>
-      </Modal>
+        message="确认解绑该用户？解绑后需重新配对。"
+        confirmLabel="解绑"
+        danger
+        loading={unbindingId !== null}
+        onConfirm={() => { if (confirmUnbindId) handleUnbind(confirmUnbindId); }}
+        onCancel={() => setConfirmUnbindId(null)}
+      />
     </>
   );
 }

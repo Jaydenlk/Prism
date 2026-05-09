@@ -6,6 +6,7 @@ import { Spinner } from '@/components/Spinner/Spinner';
 import { ContentRenderer } from '@/pages/Chat/ContentRenderer';
 import * as api from '@/api/client';
 import type { SkillPackage } from '@/api/types';
+import { getSourceBadge } from './utils';
 import styles from './SkillDetailPanel.module.css';
 
 interface SkillDetailPanelProps {
@@ -14,22 +15,6 @@ interface SkillDetailPanelProps {
   onInstall: () => void;
   onUninstall: () => void;
   onClose: () => void;
-}
-
-type BadgeVariant = 'amber' | 'teal' | 'rust' | 'plum' | 'neutral';
-
-function sourceBadgeVariant(source: string): BadgeVariant {
-  if (source === 'local') return 'teal';
-  if (source === 'github') return 'plum';
-  if (source === 'marketplace') return 'amber';
-  return 'neutral';
-}
-
-function sourceLabel(source: string): string {
-  if (source === 'local') return '本地';
-  if (source === 'github') return 'GitHub';
-  if (source === 'marketplace') return '市场';
-  return source;
 }
 
 export function SkillDetailPanel({
@@ -65,7 +50,7 @@ export function SkillDetailPanel({
         <div className={styles.headerMeta}>
           <span className={styles.headerTitle}>{skill.name}</span>
           <div className={styles.headerBadges}>
-            <Badge variant={sourceBadgeVariant(skill.source)}>{sourceLabel(skill.source)}</Badge>
+            <Badge variant={getSourceBadge(skill.source).variant}>{getSourceBadge(skill.source).label}</Badge>
             {skill.version && (
               <span className={styles.version}>v{skill.version}</span>
             )}

@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import * as api from '@/api/client';
 import type { AuditLog } from '@/api/types';
 import { Button } from '@/components/Button/Button';
+import { Pagination } from '@/components/Pagination/Pagination';
 import styles from './AuditPage.module.css';
 
 function severityColor(severity: string): string {
@@ -26,7 +27,7 @@ export function AuditPage() {
   const [exporting, setExporting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const load = useCallback(() => {
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setErr('');
@@ -53,10 +54,6 @@ export function AuditPage() {
 
     return () => { cancelled = true; };
   }, [filters, page]);
-
-  useEffect(() => {
-    return load();
-  }, [load]);
 
   function applyFilters() {
     setFilters(pendingFilters);
@@ -192,26 +189,8 @@ export function AuditPage() {
         </div>
       )}
 
-      {!loading && totalPages > 1 && (
-        <div className={styles.pagination}>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-          >
-            上一页
-          </Button>
-          <span className={styles.pageInfo}>{page} / {totalPages}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-          >
-            下一页
-          </Button>
-        </div>
+      {!loading && (
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
       )}
     </div>
   );

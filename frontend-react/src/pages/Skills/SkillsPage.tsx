@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from '@/components/Icon/Icon';
 import { Spinner } from '@/components/Spinner/Spinner';
 import { useToast } from '@/components/Toast/ToastContext';
 import * as api from '@/api/client';
 import type { SkillInstall, SkillPackage } from '@/api/types';
+import { useDebounce } from '@/hooks/useDebounce';
 import { SkillCard } from './SkillCard';
 import { SkillDetailPanel } from './SkillDetailPanel';
 import styles from './SkillsPage.module.css';
@@ -29,7 +30,7 @@ export function SkillsPage() {
   const [actionLoading, setActionLoading]     = useState<string | null>(null);
   const [detailSkill, setDetailSkill]         = useState<SkillPackage | null>(null);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedQ = useDebounce(q, 300);
 
   // ── Loaders ──────────────────────────────────────────────────────────────
   async function loadInstalled() {
@@ -61,14 +62,11 @@ export function SkillsPage() {
 
   useEffect(() => {
     loadInstalled();
-    doSearch('', 'all');
   }, []);
 
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(q, source), 300);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [q, source]);
+    doSearch(debouncedQ, source);
+  }, [debouncedQ, source]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function isInstalled(name: string) {

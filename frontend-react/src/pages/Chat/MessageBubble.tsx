@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, memo } from 'react';
 import type { ContentBlock } from '@/api/types';
 import { useToast } from '@/components/Toast/ToastContext';
 import { Icon } from '@/components/Icon/Icon';
@@ -22,7 +22,7 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
 }
 
-export function MessageBubble({
+function MessageBubbleInner({
   role,
   content,
   contentBlocks,
@@ -124,5 +124,7 @@ export function MessageBubble({
     </div>
   );
 }
+
+export const MessageBubble = memo(MessageBubbleInner);
 
 export type { ToolState };

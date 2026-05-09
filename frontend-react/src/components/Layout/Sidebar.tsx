@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import type { IconName } from '@/components/Icon/Icon';
 import { Icon, PrismMark } from '@/components/Icon/Icon';
 import { Button } from '@/components/Button/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useSessions } from '@/hooks/useSessions';
 import { groupByTime, formatTime } from '@/utils/time';
+import { useDebounce } from '@/hooks/useDebounce';
 import styles from './Sidebar.module.css';
 
 interface NavItem {
@@ -36,12 +37,7 @@ export function Sidebar({ open, onClose, currentPage, onNavigate }: SidebarProps
   const { user } = useAuth();
   const { sessions, currentSessionId, createSession, setCurrentSessionId } = useSessions();
   const [q, setQ] = useState('');
-  const [debouncedQ, setDebouncedQ] = useState('');
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQ(q), 300);
-    return () => clearTimeout(t);
-  }, [q]);
+  const debouncedQ = useDebounce(q, 300);
 
   const groups = useMemo(() => {
     const filtered = debouncedQ

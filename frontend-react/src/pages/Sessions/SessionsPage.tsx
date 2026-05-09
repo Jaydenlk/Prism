@@ -1,25 +1,16 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '@/api/client';
 import { useSessions } from '@/hooks/useSessions';
 import { useToast } from '@/components/Toast/ToastContext';
-import { groupByTime } from '@/utils/time';
+import { groupByTime, formatTime } from '@/utils/time';
 import { downloadMarkdown } from '@/utils/export';
 import { Icon } from '@/components/Icon/Icon';
 import { Button } from '@/components/Button/Button';
 import { Modal } from '@/components/Modal/Modal';
 import { Badge } from '@/components/Badge/Badge';
+import { useDebounce } from '@/hooks/useDebounce';
 import styles from './SessionsPage.module.css';
-
-function formatTime(isoStr: string): string {
-  const d = new Date(isoStr);
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
-  if (d >= startOfToday) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  if (d >= startOfYesterday) return '昨天';
-  return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
-}
 
 const GROUP_LABELS: Record<string, string> = {
   today: '今天',
@@ -34,17 +25,13 @@ export function SessionsPage() {
   const navigate = useNavigate();
 
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [exportingId, setExportingId] = useState<string | null>(null);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const handleSearchChange = useCallback((val: string) => {
     setSearch(val);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setDebouncedSearch(val), 300);
   }, []);
 
   useEffect(() => {

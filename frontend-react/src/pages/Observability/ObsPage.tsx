@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as api from '@/api/client';
+import { StatCard } from '@/components/StatCard/StatCard';
 import styles from './ObsPage.module.css';
 
 // Typed shape of harness.analytics() response (matches backend schema)
@@ -255,17 +256,3 @@ export function ObsPage() {
   );
 }
 
-interface StatCardProps {
-  label: string;
-  featured?: boolean;
-  children: React.ReactNode;
-}
-
-function StatCard({ label, featured, children }: StatCardProps) {
-  return (
-    <div className={`${styles.statCard} ${featured ? styles.statCardFeatured : ''}`}>
-      <div className={styles.statLabel}>{label}</div>
-      <div className={styles.statBody}>{children}</div>
-    </div>
-  );
-}

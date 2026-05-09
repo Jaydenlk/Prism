@@ -5,6 +5,7 @@ import { useToast } from '@/components/Toast/ToastContext';
 import { Button } from '@/components/Button/Button';
 import { Badge } from '@/components/Badge/Badge';
 import { Modal } from '@/components/Modal/Modal';
+import { ConfirmModal } from '@/components/ConfirmModal/ConfirmModal';
 import { Spinner } from '@/components/Spinner/Spinner';
 import styles from './SettingsPage.module.css';
 
@@ -205,27 +206,16 @@ export function McpTab() {
         </div>
       </Modal>
 
-      {/* Delete confirm modal */}
-      <Modal
+      <ConfirmModal
         open={confirmDeleteId !== null}
-        onClose={() => setConfirmDeleteId(null)}
         title="确认删除"
-        width={400}
-      >
-        <p style={{ fontSize: 15, color: 'var(--ink-2)', marginBottom: 20 }}>
-          确认删除该 MCP 服务？此操作不可撤销。
-        </p>
-        <div className={styles.modalFooter}>
-          <Button variant="ghost" onClick={() => setConfirmDeleteId(null)}>取消</Button>
-          <Button
-            variant="danger"
-            loading={deletingId !== null}
-            onClick={() => { if (confirmDeleteId) handleDelete(confirmDeleteId); }}
-          >
-            删除
-          </Button>
-        </div>
-      </Modal>
+        message="确认删除该 MCP 服务？此操作不可撤销。"
+        confirmLabel="删除"
+        danger
+        loading={deletingId !== null}
+        onConfirm={() => { if (confirmDeleteId) handleDelete(confirmDeleteId); }}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </>
   );
 }

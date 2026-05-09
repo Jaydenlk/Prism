@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-typescript';
@@ -18,7 +18,7 @@ interface ContentRendererProps {
 export function ContentRenderer({ content, className }: ContentRendererProps) {
   const ref = useRef<HTMLDivElement>(null);
 
-  const html = renderMarkdown(content);
+  const html = useMemo(() => renderMarkdown(content), [content]);
 
   useEffect(() => {
     if (!ref.current) return;

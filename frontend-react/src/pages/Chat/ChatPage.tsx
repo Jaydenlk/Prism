@@ -24,6 +24,7 @@ export function ChatPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null);
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [planCurrentStep, setPlanCurrentStep] = useState(0);
@@ -72,7 +73,7 @@ export function ChatPage() {
 
     load();
     return () => { cancelled = true; };
-  }, [currentSessionId]);
+  }, [currentSessionId, retryKey]);
 
   // SSE event handler
   const handleSSEEvent = useCallback((evt: SSEEvent) => {
@@ -109,7 +110,7 @@ export function ChatPage() {
       case 'message_complete': {
         // Build final message from SSE payload
         const rawContent = (evt.content as Message['content'] | undefined) ?? [];
-        const role = (evt.role as string | undefined) ?? 'assistant';
+        const role = ((evt.role as string | undefined) ?? 'assistant') as Message['role'];
 
         const textPreview = rawContent
           .filter(b => b.type === 'text')
@@ -143,13 +144,7 @@ export function ChatPage() {
         setIsRunning(false);
         setStreamingText('');
         setStreamingTools([]);
-        // Refresh from DB to get authoritative state
-        if (currentSessionId) {
-          api.sessions.listMessages(currentSessionId, {}).then(res => {
-            setMessages(res.items);
-          }).catch(() => {});
-          refreshSessions();
-        }
+        refreshSessions();
         break;
       }
 
@@ -293,10 +288,7 @@ export function ChatPage() {
           </div>
           <button
             className={styles.retryBtn}
-            onClick={() => {
-              setLoadError(false);
-              setLoadingMessages(true);
-            }}
+            onClick={() => setRetryKey(k => k + 1)}
           >
             重试
           </button>

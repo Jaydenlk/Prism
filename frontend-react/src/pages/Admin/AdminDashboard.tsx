@@ -1,21 +1,8 @@
 import { useState, useEffect } from 'react';
 import * as api from '@/api/client';
 import type { SystemStats } from '@/api/types';
+import { StatCard } from '@/components/StatCard/StatCard';
 import styles from './AdminDashboard.module.css';
-
-interface StatCardProps {
-  label: string;
-  value: string;
-}
-
-function StatCard({ label, value }: StatCardProps) {
-  return (
-    <div className={styles.card}>
-      <div className={styles.cardLabel}>{label}</div>
-      <div className={styles.cardValue}>{value}</div>
-    </div>
-  );
-}
 
 export function AdminDashboard() {
   const [stats, setStats] = useState<SystemStats | null>(null);

@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import * as api from '@/api/client';
 import type { AdminUser } from '@/api/types';
 import { Badge } from '@/components/Badge/Badge';
 import { Button } from '@/components/Button/Button';
+import { Pagination } from '@/components/Pagination/Pagination';
 import { useToast } from '@/components/Toast/ToastContext';
 import styles from './UsersPage.module.css';
 
@@ -24,8 +25,9 @@ export function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const load = useCallback(() => {
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setErr('');
@@ -44,11 +46,7 @@ export function UsersPage() {
       });
 
     return () => { cancelled = true; };
-  }, [page, search]);
-
-  useEffect(() => {
-    return load();
-  }, [load]);
+  }, [page, search, refreshKey]);
 
   function handleSearch() {
     setSearch(searchInput);
@@ -85,7 +83,7 @@ export function UsersPage() {
     try {
       await api.admin.disableUser(user.id);
       addToast(`${user.username} 已禁用`, 'success');
-      load();
+      setRefreshKey(k => k + 1);
     } catch (e) {
       addToast((e as Error).message ?? '操作失败', 'error');
     } finally {
@@ -169,26 +167,8 @@ export function UsersPage() {
         </div>
       )}
 
-      {!loading && totalPages > 1 && (
-        <div className={styles.pagination}>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-          >
-            上一页
-          </Button>
-          <span className={styles.pageInfo}>{page} / {totalPages}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-          >
-            下一页
-          </Button>
-        </div>
+      {!loading && (
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
       )}
     </div>
   );
