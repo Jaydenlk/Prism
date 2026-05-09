@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
 
+    # --- Executor / Callback URL -------------------------------------------
+    BACKEND_URL: str = "http://backend:8000"
+
     # --- Google OAuth (Task B) --------------------------------------------
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""

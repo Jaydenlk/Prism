@@ -46,7 +46,7 @@ class AuditLogResponse(BaseModel):
     action: str
     resource_type: Optional[str]
     resource_id: Optional[str]
-    severity: str
+    severity: str = "info"
     details: dict
     ip_address: Optional[str] = None
     created_at: datetime

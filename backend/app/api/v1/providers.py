@@ -128,6 +128,49 @@ async def create_provider(
 
 
 # ---------------------------------------------------------------------------
+# GET /providers/usage — 用量统计(ADR-082: cache tokens 三字段 + savings)
+# 必须在 /{provider_id} 之前注册，否则 FastAPI 会把 "usage" 当作 provider_id
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/usage",
+    response_model=ApiResponse[dict],
+    summary="当前用户 Provider 用量统计",
+    description=(
+        "聚合当前用户的 runs 表数据，返回 cache tokens 三字段 + cache_hit_ratio + "
+        "estimated_cache_savings_usd(ADR-082)。"
+        "按 Provider / 模型 / 时间维度分组。铁律4: user_id 严格隔离。"
+    ),
+)
+async def get_provider_usage(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    start_date: Optional[date] = Query(
+        default=None,
+        description="查询起始日期(含), 默认最近 30 天。格式: YYYY-MM-DD",
+    ),
+    end_date: Optional[date] = Query(
+        default=None,
+        description="查询截止日期(含), 默认今天。格式: YYYY-MM-DD",
+    ),
+    group_by: str = Query(
+        default="day",
+        description="时间分组粒度: day | week | month",
+        pattern="^(day|week|month)$",
+    ),
+) -> ApiResponse[dict]:
+    """ADR-082: 返回 cache tokens 三字段 + cache_hit_ratio + estimated_cache_savings_usd."""
+    svc = UsageService(db)
+    data = svc.get_user_usage(
+        user_id=str(current_user.id),
+        start_date=start_date,
+        end_date=end_date,
+        group_by=group_by,
+    )
+    return ApiResponse(data=data)
+
+
+# ---------------------------------------------------------------------------
 # GET /providers/{id} — 获取单个 Provider
 # ---------------------------------------------------------------------------
 
@@ -234,46 +277,3 @@ async def test_provider(
     return ApiResponse(data=result)
 
 
-# ---------------------------------------------------------------------------
-# GET /providers/usage — 用量统计(ADR-082: cache tokens 三字段 + savings)
-# ---------------------------------------------------------------------------
-
-@router.get(
-    "/usage",
-    response_model=ApiResponse[dict],
-    summary="当前用户 Provider 用量统计",
-    description=(
-        "聚合当前用户的 runs 表数据，返回 cache tokens 三字段 + cache_hit_ratio + "
-        "estimated_cache_savings_usd(ADR-082)。"
-        "按 Provider / 模型 / 时间维度分组。铁律4: user_id 严格隔离。"
-    ),
-)
-async def get_provider_usage(
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-    start_date: Optional[date] = Query(
-        default=None,
-        description="查询起始日期(含), 默认最近 30 天。格式: YYYY-MM-DD",
-    ),
-    end_date: Optional[date] = Query(
-        default=None,
-        description="查询截止日期(含), 默认今天。格式: YYYY-MM-DD",
-    ),
-    group_by: str = Query(
-        default="day",
-        description="时间分组粒度: day | week | month",
-        pattern="^(day|week|month)$",
-    ),
-) -> ApiResponse[dict]:
-    """ADR-082: 返回 cache tokens 三字段 + cache_hit_ratio + estimated_cache_savings_usd.
-
-    铁律4: user_id 严格过滤,确保用户只能查看自己的数据。
-    """
-    svc = UsageService(db)
-    data = svc.get_user_usage(
-        user_id=str(current_user.id),
-        start_date=start_date,
-        end_date=end_date,
-        group_by=group_by,
-    )
-    return ApiResponse(data=data)

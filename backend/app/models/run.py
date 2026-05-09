@@ -4,7 +4,7 @@ Prism v2 — Run ORM model (DOC-01 v4 §4.2 — 执行域)
 Includes all Harness-related fields added in v4:
   turn_count, harness_summary, cache_hit_tokens, cache_miss_tokens,
   cache_creation_tokens, agent_type, run_mode, parent_run_id,
-  harness_version, subprocess_pid, otel_trace_id
+  harness_version, subprocess_pid
 """
 from __future__ import annotations
 
