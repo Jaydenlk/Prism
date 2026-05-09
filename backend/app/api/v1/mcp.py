@@ -86,6 +86,18 @@ def create_mcp_server(
     return ApiResponse(data=server)
 
 
+@router.get("/mcp-servers/{server_id}", response_model=ApiResponse)
+def get_mcp_server(
+    server_id: str,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> ApiResponse:
+    """Fetch a single MCP Server by ID (system or user-owned)."""
+    svc = MCPService(db)
+    server = svc.get_server(server_id=server_id, user_id=str(current_user.id))
+    return ApiResponse(data=server)
+
+
 @router.delete(
     "/mcp-servers/{server_id}",
     status_code=status.HTTP_204_NO_CONTENT,

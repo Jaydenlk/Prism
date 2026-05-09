@@ -80,11 +80,11 @@ class Coordinator:
             current_step=start_idx,
             total_steps=len(plan.steps),
             status="running",
-            step_results=[s.result for s in plan.steps if s.result],
+            step_results=[s.result for s in plan.steps if s.result is not None],
         )
 
         # Step 2: 按顺序执行(从 resume_from_step 开始)
-        step_results: list[str] = [s.result for s in plan.steps[:start_idx] if s.result]
+        step_results: list[str] = [s.result for s in plan.steps[:start_idx] if s.result is not None]
 
         for i, step in enumerate(plan.steps[start_idx:], start=start_idx):
             # v4:step 开始 checkpoint

@@ -311,7 +311,7 @@ class RunLifecycle:
             except ProcessLookupError:
                 pass
 
-        run.status = "failed"
+        run.status = "timeout"
         run.error_message = "Run timed out"
         run.finished_at = datetime.now(timezone.utc)
 

@@ -339,6 +339,7 @@ class ProcessManager:
         env = {**os.environ}
         env["ENCRYPTION_KEY"] = self._settings.ENCRYPTION_KEY
         env["OTEL_EXPORTER_OTLP_ENDPOINT"] = self._settings.OTEL_EXPORTER_OTLP_ENDPOINT or ""
+        env["BACKEND_URL"] = self._settings.BACKEND_URL
         return env
 
     # ------------------------------------------------------------------

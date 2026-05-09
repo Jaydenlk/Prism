@@ -670,14 +670,9 @@ async def main() -> None:
         # ----------------------------------------------------------------
         # Step 7: SIGTERM 处理（graceful cancel）
         # ----------------------------------------------------------------
-        _engine_holder: list = [engine]  # mutable container for closure
-
         def _sigterm(*_: object) -> None:
             logger.info("harness.subprocess.sigterm_received", run_id=args.run_id)
             stop_event.set()
-            if _engine_holder:
-                loop = asyncio.get_event_loop()
-                loop.create_task(_engine_holder[0].cancel(graceful=True))
 
         signal.signal(signal.SIGTERM, _sigterm)
 

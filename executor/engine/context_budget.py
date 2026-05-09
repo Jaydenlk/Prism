@@ -147,7 +147,7 @@ class ContextBudgetManager:
         for i, msg in enumerate(messages):
             is_user_query = (
                 msg.role == "user"
-                and not any(block.type == "tool_result" for block in msg.content)
+                and not any(getattr(block, "type", None) == "tool_result" for block in msg.content)
             )
             if is_user_query:
                 if start is not None:

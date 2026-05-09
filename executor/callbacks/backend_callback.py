@@ -186,7 +186,7 @@ class BackendCallback:
             {
                 "tool_use_id": tool_use_id,
                 "tool_name": tool_name,
-                "input": tool_input,
+                "tool_input": tool_input,
             },
         )
 
@@ -196,15 +196,19 @@ class BackendCallback:
         output: str,
         is_error: bool,
         duration_ms: int,
+        permission_decision: str | None = None,
+        hook_modified: bool = False,
     ) -> None:
         """工具执行结束事件（HTTP 带重试）"""
         await self._http_post_with_retry(
             "tool_end",
             {
                 "tool_use_id": tool_use_id,
-                "output": output[:500],  # 回调 preview，完整内容走 messages 表
+                "output": output[:500],
                 "is_error": is_error,
                 "duration_ms": duration_ms,
+                "permission_decision": permission_decision,
+                "hook_modified": hook_modified,
             },
         )
 

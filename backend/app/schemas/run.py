@@ -31,6 +31,9 @@ class RunResponse(BaseModel):
     error_message: str | None
     input_tokens: int | None
     output_tokens: int | None
+    cache_hit_tokens: int | None = None
+    cache_miss_tokens: int | None = None
+    cache_creation_tokens: int | None = None
     cost_usd: float | None
     turn_count: int | None
     harness_summary: dict | None  # JSONB，schema 见文档前置定义
