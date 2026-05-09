@@ -1,0 +1,101 @@
+/* AuthLayout — full-viewport centered wrapper */
+
+.wrap {
+  min-height: 100vh;
+  display: flex;
+  background: var(--bg);
+}
+
+/* ── Left panel (desktop only) ─────────────────────────── */
+.left {
+  display: none;
+  flex: 1;
+  background: var(--ink-2);
+  position: relative;
+  overflow: hidden;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 48px 52px;
+}
+
+.leftGlyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+.leftContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.leftBrand {
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--paper);
+  letter-spacing: -0.02em;
+  margin-top: 8px;
+}
+
+.leftTagline {
+  font-size: 14px;
+  color: rgba(232, 228, 220, 0.65);
+  line-height: 1.65;
+  max-width: 380px;
+}
+
+/* ── Right panel ─────────────────────────────────────────── */
+.right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 32px 20px;
+  background: var(--bg);
+}
+
+.mobileLogo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  margin-bottom: 28px;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+/* ── Card ─────────────────────────────────────────────────── */
+.card {
+  background: var(--paper);
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: var(--shadow-3);
+}
+
+/* ── Responsive breakpoint ───────────────────────────────── */
+@media (min-width: 641px) {
+  .left {
+    display: flex;
+    max-width: 480px;
+  }
+
+  .mobileLogo {
+    display: none;
+  }
+
+  .right {
+    padding: 48px 60px;
+  }
+}

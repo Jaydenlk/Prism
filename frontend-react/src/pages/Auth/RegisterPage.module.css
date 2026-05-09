@@ -1,0 +1,121 @@
+/* RegisterPage form styles — shares same field/input language as LoginPage */
+
+.title {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  margin: 0 0 24px;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.input {
+  height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--paper);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  width: 100%;
+}
+
+.input:focus {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 2px var(--amber-soft);
+}
+
+.inputWrap {
+  position: relative;
+}
+
+.inputWrap .input {
+  padding-right: 44px;
+}
+
+.eyeBtn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+}
+
+.eyeBtn:hover {
+  color: var(--ink);
+}
+
+.helper {
+  font-size: 12px;
+  color: var(--ink-4);
+  margin-top: 2px;
+}
+
+.fieldError {
+  font-size: 13px;
+  color: var(--danger);
+  margin-top: 2px;
+}
+
+.errBox {
+  padding: 8px 12px;
+  background: var(--rust-soft);
+  border: 1px solid rgba(155, 74, 53, 0.25);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--rust);
+}
+
+.submitBtn {
+  width: 100%;
+  height: 44px;
+  font-size: 15px;
+  justify-content: center;
+  border-radius: 10px;
+  margin-top: 4px;
+}
+
+.footer {
+  margin-top: 24px;
+  font-size: 13px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.footerLink {
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-strong);
+  margin-left: 4px;
+}
+
+.footerLink:hover {
+  color: var(--amber);
+  border-color: var(--amber);
+}

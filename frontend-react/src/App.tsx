@@ -7,6 +7,8 @@ import { Toast } from '@/components/Toast/Toast';
 import { AppLayout } from '@/components/Layout/AppLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { Placeholder } from '@/pages/Placeholder';
+import { LoginPage } from '@/pages/Auth/LoginPage';
+import { RegisterPage } from '@/pages/Auth/RegisterPage';
 import type { ReactNode } from 'react';
 
 function AuthGuard({ children }: { children: ReactNode }) {
@@ -23,8 +25,8 @@ function AuthGuard({ children }: { children: ReactNode }) {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<Placeholder name="Login" />} />
-      <Route path="/register" element={<Placeholder name="Register" />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
       <Route element={<AuthGuard><AppLayout /></AuthGuard>}>
         <Route index element={<Placeholder name="对话" />} />
         <Route path="sessions" element={<Placeholder name="会话" />} />
