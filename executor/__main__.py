@@ -574,6 +574,12 @@ async def main() -> None:
             skills_dir=os.environ.get("PRISM_PLUGIN_DIR", "plugins/skills"),
             hook_system=hook_system,
         )
+
+        # Register skill_invoke tool now that skill_loader is available.
+        # Must happen before assembler.update_tools() below.
+        from executor.tools.builtin.skill_invoke import SkillInvokeTool
+        registry.register(SkillInvokeTool(skill_loader))
+
         plugin_host = PluginHost(
             skill_loader=skill_loader,
             hook_system=hook_system,

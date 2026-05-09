@@ -374,6 +374,42 @@ async def install_skill(
                 detail=f"GitHub 内容下载失败: {exc}",
             )
         resolved_source_url = request.source_url
+
+        # Register sub-skills from skills/<name>/SKILL.md (multi-skill plugins like superpowers).
+        # When _download_github_skill fetched marketplace.json, it created these sub-dirs.
+        sub_skills_dir = os.path.join(resolved_install_path, "skills")
+        if os.path.isdir(sub_skills_dir):
+            import glob as _glob
+            redis_client = _get_redis_client()
+            svc = SkillInstallService(db=db, redis_client=redis_client)
+            for sf in sorted(_glob.glob(os.path.join(sub_skills_dir, "*", "SKILL.md"))):
+                sub_dir = os.path.dirname(sf)
+                sub_name = os.path.basename(sub_dir)
+                qualified_name = f"{effective_skill_name}:{sub_name}"
+                try:
+                    svc.install(
+                        user_id=current_user.id,
+                        skill_name=qualified_name,
+                        source="github",
+                        source_url=request.source_url,
+                        version=resolved_version,
+                        install_path=sub_dir,
+                        has_hooks=request.has_hooks,
+                        has_mcp=request.has_mcp,
+                    )
+                    logger.info(
+                        "skills_api.install.sub_skill_registered",
+                        skill_name=qualified_name,
+                        install_path=sub_dir,
+                        user_id=str(current_user.id),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "skills_api.install.sub_skill_register_failed",
+                        skill_name=qualified_name,
+                        error=str(exc),
+                    )
+
     elif request.source == "marketplace" and not request.content_base64:
         # marketplace_id + plugin_name path: delegate to MarketplaceService.install_plugin()
         # which runs the 5-source resolver, downloads, parses SKILL.md, and UPSERTs skill_installs.
@@ -872,10 +908,17 @@ import re as _re
 async def _download_github_skill(source_url: str, skill_name: str, workspace: str) -> str:
     """Download skill files from a GitHub repo. Returns the install_path directory.
 
-    Fetches SKILL.md, .claude-plugin/plugin.json, .claude-plugin/marketplace.json,
-    and README.md from raw.githubusercontent.com via httpx (no git clone needed).
+    Fetches top-level files (SKILL.md, README.md, .claude-plugin/marketplace.json,
+    .claude-plugin/plugin.json) and, when marketplace.json is present, also fetches
+    each plugin's SKILL.md into a sub-directory named after the plugin.
+
+    This supports single-skill repos (SKILL.md at root) and multi-skill plugin
+    repos (marketplace.json listing N plugins, each with its own SKILL.md).
+
     Raises ValueError for bad URLs or when no skill files are found.
     """
+    import json as _json
+
     match = _re.match(r"https?://github\.com/([^/]+/[^/?#]+)", source_url)
     if not match:
         raise ValueError(f"无效的 GitHub URL: {source_url}")
@@ -887,16 +930,19 @@ async def _download_github_skill(source_url: str, skill_name: str, workspace: st
     install_dir = os.path.join(workspace, ".prism", "skills", "@github", skill_name)
     os.makedirs(install_dir, exist_ok=True)
 
-    files_to_try = [
-        ("SKILL.md", f"https://raw.githubusercontent.com/{owner_repo}/HEAD/SKILL.md"),
-        ("plugin.json", f"https://raw.githubusercontent.com/{owner_repo}/HEAD/.claude-plugin/plugin.json"),
-        ("marketplace.json", f"https://raw.githubusercontent.com/{owner_repo}/HEAD/.claude-plugin/marketplace.json"),
-        ("README.md", f"https://raw.githubusercontent.com/{owner_repo}/HEAD/README.md"),
+    base_raw = f"https://raw.githubusercontent.com/{owner_repo}/HEAD"
+    top_level_files = [
+        ("SKILL.md", f"{base_raw}/SKILL.md"),
+        ("plugin.json", f"{base_raw}/.claude-plugin/plugin.json"),
+        ("marketplace.json", f"{base_raw}/.claude-plugin/marketplace.json"),
+        ("README.md", f"{base_raw}/README.md"),
     ]
 
     downloaded: list[str] = []
+    marketplace_json: dict | None = None
+
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-        for filename, url in files_to_try:
+        for filename, url in top_level_files:
             try:
                 resp = await client.get(url)
                 if resp.status_code == 200:
@@ -904,8 +950,48 @@ async def _download_github_skill(source_url: str, skill_name: str, workspace: st
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(resp.text)
                     downloaded.append(filename)
+                    if filename == "marketplace.json":
+                        try:
+                            marketplace_json = _json.loads(resp.text)
+                        except Exception:
+                            marketplace_json = None
             except Exception:
                 continue
+
+        # For multi-skill plugin repos: fetch each plugin's SKILL.md
+        if marketplace_json and isinstance(marketplace_json.get("plugins"), list):
+            for plugin in marketplace_json["plugins"]:
+                if not isinstance(plugin, dict):
+                    continue
+                plugin_name = plugin.get("name", "")
+                source = plugin.get("source", "")
+                # source may be a string path or a dict with a "path" key
+                if isinstance(source, dict):
+                    source_path = source.get("path", "")
+                elif isinstance(source, str):
+                    source_path = source
+                else:
+                    continue
+                if not plugin_name or not source_path:
+                    continue
+                # source_path is relative to repo root (e.g. "skills/brainstorming")
+                skill_md_url = f"{base_raw}/{source_path.rstrip('/')}/SKILL.md"
+                sub_dir = os.path.join(install_dir, "skills", plugin_name)
+                os.makedirs(sub_dir, exist_ok=True)
+                try:
+                    resp = await client.get(skill_md_url)
+                    if resp.status_code == 200:
+                        with open(os.path.join(sub_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+                            f.write(resp.text)
+                        downloaded.append(f"skills/{plugin_name}/SKILL.md")
+                        logger.info(
+                            "skills_api.install.sub_skill_downloaded",
+                            owner_repo=owner_repo,
+                            plugin_name=plugin_name,
+                            skill_md_url=skill_md_url,
+                        )
+                except Exception:
+                    continue
 
     if not downloaded:
         raise ValueError(f"{owner_repo} 中未找到任何 skill 文件（SKILL.md / plugin.json / README.md）")

@@ -16,6 +16,7 @@ from executor.tools.builtin.edit import EditTool
 from executor.tools.builtin.glob import GlobTool
 from executor.tools.builtin.grep import GrepTool
 from executor.tools.builtin.read import ReadTool
+from executor.tools.builtin.skill_invoke import SkillInvokeTool
 from executor.tools.builtin.skills_search import SkillsSearchTool
 from executor.tools.builtin.web_fetch import WebFetchTool
 from executor.tools.builtin.write import WriteTool
@@ -23,6 +24,7 @@ from executor.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from executor.coordinator.fork_manager import ForkManager
+    from executor.plugins.skill_loader import SkillLoader
     from executor.plugins.skills_registry import SkillsRegistry
 
 
@@ -30,6 +32,7 @@ def register_builtin_tools(
     registry: ToolRegistry,
     fork_manager: "ForkManager | None" = None,
     skills_registry: "SkillsRegistry | None" = None,
+    skill_loader: "SkillLoader | None" = None,
 ) -> None:
     """将所有内置工具注册到 ToolRegistry。
 
@@ -46,6 +49,7 @@ def register_builtin_tools(
       - Bash            [exec_shell]     shell command with timeout
       - WebFetch        [web_access]     HTTP GET, html→text
       - SkillsSearch    [—]              search installed skills (read-only)
+      - SkillInvoke     [—]              load skill full content (only when skill_loader set)
       - Fork            [fork_agent]     spawn sub-agent (only when fork_manager set)
 
     Per-agent capability filtering happens in the executor pipeline via
@@ -61,6 +65,8 @@ def register_builtin_tools(
     registry.register(BashTool())
     registry.register(WebFetchTool())
     registry.register(SkillsSearchTool(registry=skills_registry))
+    if skill_loader is not None:
+        registry.register(SkillInvokeTool(skill_loader))
     if fork_manager is not None:
         from executor.tools.builtin.fork import ForkTool
         registry.register(ForkTool(fork_manager))
@@ -74,6 +80,7 @@ __all__ = [
     "GlobTool",
     "GrepTool",
     "ReadTool",
+    "SkillInvokeTool",
     "SkillsSearchTool",
     "WebFetchTool",
     "WriteTool",
