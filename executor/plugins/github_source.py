@@ -15,19 +15,30 @@ from executor.plugins.skills_registry import SkillPackage, SkillSource
 logger = logging.getLogger(__name__)
 
 _GITHUB_REPOS_URL = "https://api.github.com/search/repositories"
-_GITHUB_CONTENTS_URL = "https://api.github.com/repos/{owner}/{repo}/contents/SKILL.md"
 _TIMEOUT = httpx.Timeout(connect=10.0, read=15.0, write=5.0, pool=5.0)
+_PLUGIN_PATHS = [
+    "https://api.github.com/repos/{owner}/{repo}/contents/SKILL.md",
+    "https://api.github.com/repos/{owner}/{repo}/contents/.claude-plugin/marketplace.json",
+    "https://api.github.com/repos/{owner}/{repo}/contents/.claude-plugin/plugin.json",
+]
 
 
-async def _has_skill_md(client: httpx.AsyncClient, owner: str, repo: str) -> bool:
-    try:
-        resp = await client.head(
-            _GITHUB_CONTENTS_URL.format(owner=owner, repo=repo),
-            headers={"Accept": "application/vnd.github.v3+json"},
-        )
-        return resp.status_code == 200
-    except httpx.HTTPError:
-        return False
+async def _is_claude_plugin(client: httpx.AsyncClient, owner: str, repo: str) -> str | None:
+    """Check if repo is a Claude skill/plugin. Returns type or None."""
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    for path in _PLUGIN_PATHS:
+        try:
+            resp = await client.head(path.format(owner=owner, repo=repo), headers=headers)
+            if resp.status_code == 200:
+                if "marketplace.json" in path:
+                    return "marketplace"
+                elif "plugin.json" in path:
+                    return "plugin"
+                else:
+                    return "skill"
+        except httpx.HTTPError:
+            continue
+    return None
 
 
 class GitHubSource(SkillSource):
@@ -54,23 +65,26 @@ class GitHubSource(SkillSource):
 
                 candidates = data.get("items", [])
                 checks = [
-                    _has_skill_md(
+                    _is_claude_plugin(
                         client,
                         repo.get("owner", {}).get("login", ""),
                         repo.get("name", ""),
                     )
                     for repo in candidates
                 ]
-                has_skill = await asyncio.gather(*checks)
+                plugin_types = await asyncio.gather(*checks)
 
         except httpx.HTTPError as exc:
             logger.warning("GitHub search failed: %s", exc)
             return []
 
         results: list[SkillPackage] = []
-        for repo, is_skill in zip(candidates, has_skill):
-            if not is_skill:
+        for repo, ptype in zip(candidates, plugin_types):
+            if not ptype:
                 continue
+            tags = repo.get("topics") or []
+            if ptype not in tags:
+                tags = [ptype] + tags
             results.append(SkillPackage(
                 name=repo.get("name", ""),
                 description=repo.get("description") or "",
@@ -78,7 +92,7 @@ class GitHubSource(SkillSource):
                 source="github",
                 source_url=repo.get("html_url", ""),
                 author=repo.get("owner", {}).get("login"),
-                tags=repo.get("topics") or [],
+                tags=tags,
                 stars=repo.get("stargazers_count", 0),
             ))
         return results
