@@ -11,13 +11,14 @@ import styles from './SkillsPage.module.css';
 
 const POPULAR_SOURCES = ['superpowers', 'gstake', 'claude-skills'];
 
-type SourceFilter = 'all' | 'local' | 'github' | 'marketplace';
+type SourceFilter = 'all' | 'local' | 'github' | 'marketplace' | 'context7';
 
 const SOURCE_OPTIONS: { value: SourceFilter; label: string }[] = [
   { value: 'all',         label: '全部' },
   { value: 'local',       label: '本地' },
   { value: 'github',      label: 'GitHub' },
   { value: 'marketplace', label: '市场' },
+  { value: 'context7',    label: 'Docs' },
 ];
 
 export function SkillsPage() {

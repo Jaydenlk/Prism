@@ -95,7 +95,7 @@ class SkillPackageResponse(BaseModel):
     name: str
     description: str
     version: str
-    source: Literal["local", "github", "marketplace"]  # fix#3+ 加 marketplace
+    source: Literal["local", "github", "marketplace", "context7"]
     source_url: str
     author: str | None = None
     tags: list[str] = Field(default_factory=list)
@@ -847,6 +847,7 @@ def _get_registry():
     search 从已注册 catalogs 浏览。无 GITHUB_TOKEN 依赖。
     """
     from app.core.database import SessionLocal
+    from executor.plugins.context7_source import Context7Source
     from executor.plugins.github_source import GitHubSource
     from executor.plugins.skills_registry import (
         LocalSource,
@@ -861,6 +862,7 @@ def _get_registry():
             LocalSource(workspace=workspace),
             MarketplaceCatalogSource(db_session_factory=SessionLocal),
             GitHubSource(),
+            Context7Source(),
         ],
         install_dir=install_dir,
     )

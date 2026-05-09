@@ -774,7 +774,7 @@ export const skills = {
   },
   install(params: {
     skill_name?: string;
-    source: 'local' | 'github' | 'marketplace';
+    source: 'local' | 'github' | 'marketplace' | 'context7';
     source_url?: string;
     version?: string;
     install_path?: string;

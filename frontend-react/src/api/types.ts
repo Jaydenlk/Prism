@@ -254,7 +254,7 @@ export interface SkillPackage {
   name: string;
   description: string;
   version: string;
-  source: 'local' | 'github' | 'marketplace';
+  source: 'local' | 'github' | 'marketplace' | 'context7';
   source_url: string;
   author: string | null;
   tags: string[];

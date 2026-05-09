@@ -52,7 +52,7 @@ class SkillPackage:
     name: str                                          # Skill 名称
     description: str                                   # 简短描述
     version: str                                       # 版本号
-    source: Literal["local", "github", "marketplace"]  # fix#3+ 加 marketplace
+    source: Literal["local", "github", "marketplace", "context7"]
     source_url: str                                    # 源地址(本地路径 / GitHub URL / marketplace://name/plugin)
     author: str | None = None
     tags: list[str] = field(default_factory=list)
