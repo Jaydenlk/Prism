@@ -14,7 +14,7 @@ export function useSSE({ sessionId, onEvent, enabled = true }: UseSSEOptions) {
   const [status, setStatus] = useState<SSEStatus>('disconnected');
   const esRef = useRef<EventSource | null>(null);
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+  useEffect(() => { onEventRef.current = onEvent; });
 
   const disconnect = useCallback(() => {
     if (esRef.current) {
