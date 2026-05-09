@@ -12,13 +12,20 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "dompurify": "^3.4.2",
+    "marked": "^18.0.3",
+    "prismjs": "^1.30.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.3"
+    "react-router-dom": "^6.30.3",
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/prismjs": "^1.26.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^4.7.0",
     "typescript": "^6.0.3",
     "vite": "^6.4.2"

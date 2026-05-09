@@ -29,6 +29,7 @@ export function AppLayout() {
 
   return (
     <div className={styles.shell}>
+      <a href="#main" className={styles.skipLink}>跳至主内容</a>
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -37,7 +38,7 @@ export function AppLayout() {
       />
       <div className={styles.main}>
         <Topbar title={title} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        <div className={styles.content}>
+        <div id="main" className={styles.content}>
           <Outlet />
         </div>
       </div>

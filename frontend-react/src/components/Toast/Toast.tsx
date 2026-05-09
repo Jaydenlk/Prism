@@ -23,7 +23,7 @@ export function Toast() {
   if (toasts.length === 0) return null;
 
   return createPortal(
-    <div className={styles.stack}>
+    <div className={styles.stack} role="status" aria-live="polite" aria-atomic="false">
       {toasts.map((toast) => (
         <div key={toast.id} className={`${styles.toast} ${styles[toast.variant]}`}>
           <span className={styles.icon} style={{ color: variantColor[toast.variant] }}>

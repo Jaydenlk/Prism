@@ -130,7 +130,7 @@ export function Sidebar({ open, onClose, currentPage, onNavigate }: SidebarProps
           })}
         </div>
 
-        <nav className={styles.nav}>
+        <nav className={styles.nav} aria-label="主导航">
           {visibleNavItems.map(item => (
             <button
               key={item.path}

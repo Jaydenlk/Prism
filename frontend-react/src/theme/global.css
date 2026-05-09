@@ -54,12 +54,19 @@
   --rust-soft:      #3A2420;
   --teal-soft:      #1C2E28;
   --panel:          #242220;
+  --shadow-2:       0 2px 8px rgba(0,0,0,0.30), 0 1px 2px rgba(0,0,0,0.20);
+  --shadow-3:       0 4px 18px rgba(0,0,0,0.40), 0 2px 4px rgba(0,0,0,0.25);
 }
 
 /* ── Reset ────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* ── Base ─────────────────────────────────────────────────── */
+html {
+  color-scheme: light dark;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
 html, body {
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -81,7 +88,7 @@ html, body {
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--bg);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -97,6 +104,13 @@ html, body {
 ::selection {
   background: var(--amber-soft);
   color: var(--ink);
+}
+
+/* ── Focus visible ────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* ── Animations ───────────────────────────────────────────── */

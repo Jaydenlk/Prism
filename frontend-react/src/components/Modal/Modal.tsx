@@ -53,13 +53,13 @@ export function Modal({ open, onClose, title, children, width = 480 }: ModalProp
         style={{ width: `min(${width}px, calc(100vw - 32px))` }}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={title ? 'modal-title' : undefined}
         tabIndex={-1}
         onClick={handleDialogClick}
       >
         {title && (
           <div className={styles.header}>
-            <h3 className={styles.title}>{title}</h3>
+            <h3 id="modal-title" className={styles.title}>{title}</h3>
             <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
               <Icon name="close" size={14} />
             </button>
