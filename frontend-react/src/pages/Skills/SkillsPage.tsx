@@ -3,11 +3,13 @@ import { Icon } from '@/components/Icon/Icon';
 import { Spinner } from '@/components/Spinner/Spinner';
 import { useToast } from '@/components/Toast/ToastContext';
 import * as api from '@/api/client';
-import type { SkillInstall, SkillPackage } from '@/api/types';
+import type { Marketplace, SkillInstall, SkillPackage } from '@/api/types';
 import { useDebounce } from '@/hooks/useDebounce';
 import { SkillCard } from './SkillCard';
 import { SkillDetailPanel } from './SkillDetailPanel';
 import styles from './SkillsPage.module.css';
+
+const POPULAR_SOURCES = ['superpowers', 'gstake', 'claude-skills'];
 
 type SourceFilter = 'all' | 'local' | 'github' | 'marketplace';
 
@@ -32,6 +34,12 @@ export function SkillsPage() {
   const [showDirectInstall, setShowDirectInstall] = useState(false);
   const [directUrl, setDirectUrl]             = useState('');
   const [directInstalling, setDirectInstalling] = useState(false);
+
+  // Marketplace source management
+  const [marketplaces, setMarketplaces]       = useState<Marketplace[]>([]);
+  const [showAddSource, setShowAddSource]     = useState(false);
+  const [sourceInput, setSourceInput]         = useState('');
+  const [addingSource, setAddingSource]       = useState(false);
 
   const debouncedQ = useDebounce(q, 300);
 
@@ -63,8 +71,51 @@ export function SkillsPage() {
     setSearching(false);
   }
 
+  async function loadMarketplaces() {
+    try {
+      const data = await api.marketplaces.list();
+      setMarketplaces(Array.isArray(data) ? data : []);
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function handleAddSource() {
+    const raw = sourceInput.trim();
+    if (!raw) return;
+    // Accept owner/repo or full GitHub URL
+    const ownerRepo = raw.replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
+    const name = ownerRepo.split('/').pop() ?? ownerRepo;
+    const url = ownerRepo.startsWith('http') ? ownerRepo : `https://github.com/${ownerRepo}`;
+    setAddingSource(true);
+    try {
+      await api.marketplaces.create({ url, name });
+      addToast(`已添加来源 ${name}`, 'success');
+      setSourceInput('');
+      setShowAddSource(false);
+      await loadMarketplaces();
+      await doSearch(debouncedQ, source);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '添加失败';
+      addToast(msg, 'error');
+    }
+    setAddingSource(false);
+  }
+
+  async function handleRemoveSource(id: string, name: string) {
+    try {
+      await api.marketplaces.delete(id);
+      addToast(`已移除来源 ${name}`, 'success');
+      await loadMarketplaces();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '移除失败';
+      addToast(msg, 'error');
+    }
+  }
+
   useEffect(() => {
     loadInstalled();
+    loadMarketplaces();
   }, []);
 
   useEffect(() => {
@@ -154,6 +205,67 @@ export function SkillsPage() {
         </p>
       </div>
 
+      {/* Marketplace source management */}
+      <div className={styles.sourceBar}>
+        <div className={styles.sourceBarRow}>
+          <span className={styles.sourceBarLabel}>来源管理</span>
+          <div className={styles.sourcePills}>
+            {marketplaces.map(m => (
+              <span key={m.id} className={styles.sourcePill}>
+                {m.name} ✓
+                <button
+                  className={styles.sourcePillRemove}
+                  onClick={() => handleRemoveSource(m.id, m.name)}
+                  aria-label={`移除 ${m.name}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <button
+              className={[styles.sourcePill, styles.sourcePillAdd].join(' ')}
+              onClick={() => setShowAddSource(v => !v)}
+            >
+              + 添加来源
+            </button>
+          </div>
+        </div>
+        {showAddSource && (
+          <div className={styles.sourceAddRow}>
+            <input
+              className={styles.sourceAddInput}
+              type="text"
+              placeholder="owner/repo 或 GitHub URL"
+              value={sourceInput}
+              onChange={e => setSourceInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !addingSource && handleAddSource()}
+              autoFocus
+            />
+            <button
+              className={styles.sourceAddBtn}
+              onClick={handleAddSource}
+              disabled={addingSource || !sourceInput.trim()}
+            >
+              {addingSource ? <Spinner size={12} /> : '添加'}
+            </button>
+            <div className={styles.sourceQuickLinks}>
+              常用来源：
+              {POPULAR_SOURCES.map(s => (
+                <button
+                  key={s}
+                  className={styles.sourceQuickLink}
+                  onClick={() => {
+                    setSourceInput(s);
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Search + filter row */}
       <div className={styles.searchRow}>
         <div className={styles.searchWrap}>
@@ -238,21 +350,32 @@ export function SkillsPage() {
           ) : searchResults.length === 0 ? (
             <div className={styles.emptyState}>
               <p className={styles.emptyTitle}>
-                {q ? `没有找到 "${q}" 相关的技能` : '暂无可搜索内容'}
+                {q ? `没有找到 "${q}"` : '暂无可搜索内容'}
               </p>
               {q ? (
                 <>
-                  <p className={styles.emptySub}>试试用不同的关键词，或者直接安装：</p>
-                  <button
-                    className={styles.emptyDirectInstallLink}
-                    onClick={() => setShowDirectInstall(true)}
-                  >
-                    展开直接安装 ↗
-                  </button>
+                  <ul className={styles.emptyReasons}>
+                    <li>该技能可能在未注册的来源中 — 试试添加来源</li>
+                    <li>拼写不完整 — 试试更短的关键词</li>
+                  </ul>
+                  <div className={styles.emptyActions}>
+                    <button
+                      className={styles.emptyActionBtn}
+                      onClick={() => setShowAddSource(true)}
+                    >
+                      添加来源
+                    </button>
+                    <button
+                      className={styles.emptyActionBtnGhost}
+                      onClick={() => setShowDirectInstall(true)}
+                    >
+                      直接安装
+                    </button>
+                  </div>
                 </>
               ) : (
                 <p className={styles.emptySub}>
-                  可在 Marketplace tab 注册目录，或从本地上传 SKILL.md
+                  添加来源后即可浏览和搜索，或直接输入 GitHub URL 安装
                 </p>
               )}
             </div>

@@ -26,6 +26,167 @@
   line-height: 1.5;
 }
 
+/* ── Source management bar ───────────────────────────────────────── */
+.sourceBar {
+  margin: 0 24px 12px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sourceBarRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sourceBarLabel {
+  font-size: 11.5px;
+  color: var(--ink-4);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sourcePills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.sourcePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+
+.sourcePillAdd {
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.sourcePillAdd:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+
+.sourcePillRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: none;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  border-radius: 50%;
+  transition: color 0.15s ease;
+}
+
+.sourcePillRemove:hover {
+  color: var(--rust);
+}
+
+.sourceAddRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0 4px;
+}
+
+.sourceAddInput {
+  flex: 1;
+  min-width: 180px;
+  height: 34px;
+  padding: 0 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sourceAddInput:focus {
+  border-color: var(--ink-3);
+  box-shadow: 0 0 0 3px rgba(28,27,24,0.06);
+}
+
+.sourceAddInput::placeholder {
+  color: var(--ink-4);
+}
+
+.sourceAddBtn {
+  height: 34px;
+  padding: 0 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sourceAddBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.sourceAddBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sourceQuickLinks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-4);
+  flex-wrap: wrap;
+}
+
+.sourceQuickLink {
+  background: transparent;
+  border: none;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+
+.sourceQuickLink:hover {
+  color: var(--ink);
+}
+
 /* ── Search row ──────────────────────────────────────────────────── */
 .searchRow {
   display: flex;
@@ -255,6 +416,54 @@
 }
 
 .emptyDirectInstallLink:hover {
+  color: var(--ink);
+}
+
+.emptyReasons {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin: 6px 0 10px 0;
+  padding-left: 18px;
+  line-height: 1.8;
+}
+
+.emptyActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.emptyActionBtn {
+  height: 32px;
+  padding: 0 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.emptyActionBtn:hover {
+  opacity: 0.85;
+}
+
+.emptyActionBtnGhost {
+  height: 32px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.emptyActionBtnGhost:hover {
+  border-color: var(--ink-3);
   color: var(--ink);
 }
 
