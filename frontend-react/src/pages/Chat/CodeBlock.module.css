@@ -1,0 +1,58 @@
+.container {
+  position: relative;
+  background: #1e1e1e;
+  border-radius: 10px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px 10px 0 0;
+}
+
+.lang {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  font-family: var(--mono);
+  letter-spacing: 0.05em;
+}
+
+.copyBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.15s;
+  line-height: 1;
+}
+
+.copyBtn:hover {
+  color: rgba(255, 255, 255, 1);
+}
+
+.codeArea {
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.codeArea :global(code) {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4d4;
+  background: none;
+  display: block;
+  white-space: pre;
+}

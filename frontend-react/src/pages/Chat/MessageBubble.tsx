@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { marked } from 'marked';
 import type { ContentBlock } from '@/api/types';
-import { Badge } from '@/components/Badge/Badge';
+import { ContentRenderer } from './ContentRenderer';
+import { ToolCard } from './ToolCard';
+import { ThinkingBlock } from './ThinkingBlock';
 import styles from './MessageBubble.module.css';
 
 interface ToolState {
@@ -18,14 +18,6 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
 }
 
-function renderMarkdown(text: string): string {
-  try {
-    return marked.parse(text, { async: false }) as string;
-  } catch {
-    return text;
-  }
-}
-
 export function MessageBubble({
   role,
   content,
@@ -33,13 +25,6 @@ export function MessageBubble({
   streamingTools,
   isStreaming,
 }: MessageBubbleProps) {
-  const html = useMemo(() => {
-    if (role === 'assistant' && content) return renderMarkdown(content);
-    return '';
-  }, [role, content]);
-
-  const thinkingBlocks = contentBlocks?.filter(b => b.type === 'thinking') ?? [];
-
   if (role === 'user') {
     return (
       <div className={`${styles.wrap} ${styles.userWrap}`}>
@@ -48,43 +33,60 @@ export function MessageBubble({
     );
   }
 
-  // Assistant
-  const tools = streamingTools ?? [];
+  // Assistant: prefer contentBlocks (final messages) over raw string
+  const hasBlocks = contentBlocks && contentBlocks.length > 0;
 
   return (
     <div className={`${styles.wrap} ${styles.assistantWrap}`}>
-      {thinkingBlocks.map((b, i) => (
-        <div key={i} className={styles.thinkingText}>
-          [思考] {String(b.thinking ?? '').slice(0, 120)}
-        </div>
-      ))}
-      {tools.map(tool => (
-        <div
-          key={tool.id}
-          className={`${styles.toolCard} ${
-            tool.status === 'running'
-              ? styles.toolCardRunning
-              : tool.status === 'ok'
-              ? styles.toolCardOk
-              : styles.toolCardError
-          }`}
-        >
-          <Badge variant={tool.status === 'running' ? 'amber' : tool.status === 'ok' ? 'teal' : 'rust'}>
-            {tool.status === 'running' ? '运行中' : tool.status === 'ok' ? '完成' : '失败'}
-          </Badge>
-          <span>{tool.name}</span>
-        </div>
-      ))}
-      {content ? (
-        <div
-          className={styles.assistantBubble}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : isStreaming ? (
-        <div className={styles.assistantBubble}>
-          <span className={styles.cursor} />
-        </div>
-      ) : null}
+      {hasBlocks ? (
+        <>
+          {contentBlocks.map((block, i) => {
+            if (block.type === 'thinking') {
+              return (
+                <ThinkingBlock
+                  key={i}
+                  content={String(block.thinking ?? '')}
+                />
+              );
+            }
+            if (block.type === 'tool_use') {
+              return (
+                <ToolCard
+                  key={i}
+                  name={String(block.name ?? 'tool')}
+                  status="ok"
+                  input={block.input ? JSON.stringify(block.input, null, 2) : undefined}
+                />
+              );
+            }
+            if (block.type === 'text') {
+              const text = String(block.text ?? '');
+              return text ? (
+                <ContentRenderer key={i} content={text} className={styles.assistantBubble} />
+              ) : null;
+            }
+            return null;
+          })}
+        </>
+      ) : (
+        <>
+          {/* Streaming path: render tools from state, text as ContentRenderer */}
+          {(streamingTools ?? []).map(tool => (
+            <ToolCard
+              key={tool.id}
+              name={tool.name}
+              status={tool.status}
+            />
+          ))}
+          {content ? (
+            <ContentRenderer content={content} className={styles.assistantBubble} />
+          ) : isStreaming ? (
+            <div className={styles.assistantBubble}>
+              <span className={styles.cursor} />
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
