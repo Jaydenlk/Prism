@@ -6,7 +6,6 @@ import structlog
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from claude_agent_sdk.types import (
     AssistantMessage,
-    HookMatcher,
     ResultMessage,
     StreamEvent,
     TextBlock,
@@ -17,18 +16,31 @@ from claude_agent_sdk.types import (
 
 from executor_v2.callbacks import BackendCallback
 from executor_v2.config import RunConfig
-from executor_v2.hooks.prism_hook import PrismHooks
+from executor_v2.hooks.registry import (
+    HookRegistry,
+    MESSAGE_COMPLETE,
+    RUN_COMPLETE,
+    RUN_ERROR,
+    SESSION_END,
+    SESSION_START,
+    TEXT_DELTA,
+)
+from executor_v2.hooks.sdk_bridge import SDKBridge
 
 logger = structlog.get_logger(__name__)
 
 
 class PrismAgentRuntime:
     def __init__(
-        self, config: RunConfig, callback: BackendCallback, hooks: PrismHooks
+        self,
+        config: RunConfig,
+        callback: BackendCallback,
+        registry: HookRegistry,
     ) -> None:
         self._config = config
         self._callback = callback
-        self._hooks = hooks
+        self._registry = registry
+        self._bridge = SDKBridge(registry)
         self._client: ClaudeSDKClient | None = None
 
     def _build_options(self) -> ClaudeAgentOptions:
@@ -52,25 +64,19 @@ class PrismAgentRuntime:
             allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
             env=env,
             include_partial_messages=True,
-            hooks={
-                "PreToolUse": [
-                    HookMatcher(matcher=None, hooks=[self._hooks.on_pre_tool_use])
-                ],
-                "PostToolUse": [
-                    HookMatcher(matcher=None, hooks=[self._hooks.on_post_tool_use])
-                ],
-                "PostToolUseFailure": [
-                    HookMatcher(
-                        matcher=None, hooks=[self._hooks.on_post_tool_use_failure]
-                    )
-                ],
-            },
+            hooks=self._bridge.build_sdk_hooks(),
         )
 
     async def run(self) -> None:
         options = self._build_options()
         self._client = ClaudeSDKClient(options=options)
         log = logger.bind(run_id=self._config.run_id)
+
+        await self._registry.fire(SESSION_START, {
+            "run_id": self._config.run_id,
+            "session_id": self._config.session_id,
+            "model": self._config.model,
+        })
 
         try:
             await self._client.connect()
@@ -82,8 +88,16 @@ class PrismAgentRuntime:
                 await self._handle_message(msg)
         except Exception:
             log.exception("runtime_error")
+            await self._registry.fire(RUN_ERROR, {
+                "run_id": self._config.run_id,
+                "error": "runtime_error",
+            })
             raise
         finally:
+            await self._registry.fire(SESSION_END, {
+                "run_id": self._config.run_id,
+                "session_id": self._config.session_id,
+            })
             if self._client:
                 await self._client.disconnect()
                 log.info("sdk_disconnected")
@@ -105,6 +119,7 @@ class PrismAgentRuntime:
             text = delta.get("text", "")
             if text:
                 await self._callback.text_delta(text, event.uuid)
+                await self._registry.fire(TEXT_DELTA, {"text": text, "uuid": event.uuid})
 
     async def _on_assistant_message(self, msg: AssistantMessage) -> None:
         blocks: list[dict[str, Any]] = []
@@ -133,11 +148,13 @@ class PrismAgentRuntime:
                 )
         if blocks:
             await self._callback.message_complete("assistant", blocks)
+            await self._registry.fire(MESSAGE_COMPLETE, {"role": "assistant", "blocks": blocks})
 
     async def _on_result(self, msg: ResultMessage) -> None:
         usage = msg.usage or {}
         if msg.is_error:
             await self._callback.run_error(msg.result or "Unknown error")
+            await self._registry.fire(RUN_ERROR, {"error": msg.result})
         else:
             await self._callback.run_complete(
                 input_tokens=usage.get("input_tokens", 0),
@@ -146,6 +163,10 @@ class PrismAgentRuntime:
                 cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
                 turn_count=msg.num_turns,
             )
+            await self._registry.fire(RUN_COMPLETE, {
+                "usage": usage,
+                "num_turns": msg.num_turns,
+            })
 
     async def interrupt(self) -> None:
         if self._client:

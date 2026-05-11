@@ -10,10 +10,38 @@ import structlog
 from executor_v2.callbacks import BackendCallback
 from executor_v2.config import load_run_config, parse_args
 from executor_v2.heartbeat import run_heartbeat
+from executor_v2.hooks.builtin.guardrail import guardrail_handler
+from executor_v2.hooks.builtin.observability import observability_handler
+from executor_v2.hooks.builtin.permission import permission_handler
+from executor_v2.hooks.builtin.safety import safety_handler
 from executor_v2.hooks.prism_hook import PrismHooks
+from executor_v2.hooks.registry import (
+    POST_TOOL_USE,
+    POST_TOOL_USE_FAILURE,
+    PRE_TOOL_USE,
+    HookHandler,
+    HookRegistry,
+)
 from executor_v2.runtime import PrismAgentRuntime
 
 logger = structlog.get_logger()
+
+
+def build_registry(callback: BackendCallback) -> HookRegistry:
+    registry = HookRegistry()
+    prism = PrismHooks(callback)
+
+    registry.register(PRE_TOOL_USE, HookHandler(callback=permission_handler, priority=10, category="permission"))
+    registry.register(PRE_TOOL_USE, HookHandler(callback=prism.on_pre_tool_use, priority=50, category="observability"))
+    registry.register(POST_TOOL_USE, HookHandler(callback=guardrail_handler, priority=20, category="guardrail"))
+    registry.register(POST_TOOL_USE, HookHandler(callback=safety_handler, priority=30, category="safety"))
+    registry.register(POST_TOOL_USE, HookHandler(callback=prism.on_post_tool_use, priority=50, category="observability"))
+    registry.register(POST_TOOL_USE_FAILURE, HookHandler(callback=prism.on_post_tool_use_failure, priority=50, category="observability"))
+
+    for event in [PRE_TOOL_USE, POST_TOOL_USE, POST_TOOL_USE_FAILURE]:
+        registry.register(event, HookHandler(callback=observability_handler, priority=999, category="observability"))
+
+    return registry
 
 
 async def main() -> None:
@@ -42,8 +70,8 @@ async def main() -> None:
         )
     )
 
-    hooks = PrismHooks(callback)
-    runtime = PrismAgentRuntime(config, callback, hooks)
+    registry = build_registry(callback)
+    runtime = PrismAgentRuntime(config, callback, registry)
 
     shutdown_task: asyncio.Task[None] | None = None
 
