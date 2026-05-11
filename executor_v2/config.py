@@ -71,14 +71,12 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
             row = conn.execute(
                 text("""
                     SELECT r.prompt, r.model, r.agent_type,
-                           p.base_url, p.api_key_encrypted, p.model_id,
-                           s.system_prompt
+                           p.base_url, p.api_key_encrypted, p.model_id
                       FROM runs r
                       JOIN providers p ON p.id = r.provider_id
-                      JOIN sessions s ON s.id = :session_id
                      WHERE r.id = :run_id
                 """),
-                {"run_id": args.run_id, "session_id": args.session_id},
+                {"run_id": args.run_id},
             ).mappings().one()
     finally:
         engine.dispose()
@@ -101,7 +99,7 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
         api_key=api_key,
         base_url=row["base_url"],
         agent_type=agent_type,
-        system_prompt=row["system_prompt"] or "",
+        system_prompt="",
         max_turns=MAX_TURNS.get(agent_type, MAX_TURNS["chat"]),
         resume_from_step=args.resume_from_step,
     )
