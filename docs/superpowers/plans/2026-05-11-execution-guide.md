@@ -17,8 +17,9 @@
 ## 执行顺序
 
 ```
-Phase A → Phase B → Phase C → Phase D → Phase E → Phase F
-  SDK       多模型     记忆      验证      路由      集成
+Phase A → Phase B → Phase C → Phase D → Phase E → Phase E2 → Phase F
+  SDK      多模型+     记忆      验证      路由+     会话高级    集成
+          21Hook                        8Skill   分享/Fork
 ```
 
 **严格顺序，不能跳。** 每个 phase 依赖前一个的产出。
