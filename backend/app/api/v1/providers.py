@@ -18,9 +18,12 @@ ADR-082: 用量 API 返回 cache tokens 三字段 + cache_hit_ratio + estimated_
 """
 from __future__ import annotations
 
+import time
 from datetime import date
 from typing import Annotated, Optional
 
+import httpx
+import structlog
 import redis as sync_redis
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -28,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_db, require_admin
+from app.core.security import decrypt_value
 from app.models.provider import Provider
 from app.models.user import User
 from app.schemas.common import ApiResponse
@@ -40,6 +44,8 @@ from app.schemas.provider import (
 )
 from app.services.provider_service import ProviderService
 from app.services.usage_service import UsageService
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
@@ -276,4 +282,72 @@ async def test_provider(
     )
     return ApiResponse(data=result)
 
+
+# ---------------------------------------------------------------------------
+# POST /providers/{id}/test-connection — 简单连接测试
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{provider_id}/test-connection",
+    response_model=ApiResponse[dict],
+    summary="测试 Provider 连接",
+    description=(
+        "向 Provider 发送最简单的测试消息，验证 base_url + API Key 是否有效。"
+        "超时 10 秒。成功返回 status/model/latency_ms，失败返回 status/error。"
+    ),
+)
+async def test_provider_connection(
+    provider_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict]:
+    provider = db.get(Provider, provider_id)
+    if provider is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Provider {provider_id} not found.")
+
+    if provider.scope == "user" and provider.user_id != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    try:
+        api_key = decrypt_value(provider.api_key_encrypted, settings.ENCRYPTION_KEY)
+    except Exception:
+        return ApiResponse(data={"status": "error", "error": "API key 解密失败"})
+
+    url = provider.base_url.rstrip("/") + "/v1/messages"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    payload = {
+        "model": provider.model_id,
+        "max_tokens": 10,
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+
+    start_ms = int(time.monotonic() * 1000)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+
+        latency_ms = int(time.monotonic() * 1000) - start_ms
+
+        if resp.status_code == 401:
+            logger.warning("provider.test_connection.auth_failed", provider_id=provider_id)
+            return ApiResponse(data={"status": "error", "error": "API key 无效"})
+
+        resp.raise_for_status()
+        body = resp.json()
+        logger.info("provider.test_connection.ok", provider_id=provider_id, latency_ms=latency_ms)
+        return ApiResponse(data={"status": "ok", "model": body.get("model", provider.model_id), "latency_ms": latency_ms})
+
+    except httpx.TimeoutException:
+        latency_ms = int(time.monotonic() * 1000) - start_ms
+        logger.warning("provider.test_connection.timeout", provider_id=provider_id)
+        return ApiResponse(data={"status": "error", "error": "连接超时"})
+
+    except Exception as exc:
+        latency_ms = int(time.monotonic() * 1000) - start_ms
+        logger.warning("provider.test_connection.failed", provider_id=provider_id, error=str(exc))
+        return ApiResponse(data={"status": "error", "error": str(exc)})
 
