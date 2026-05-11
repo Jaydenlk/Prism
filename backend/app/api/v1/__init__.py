@@ -18,6 +18,7 @@ Routers:
   im         — IM channels config + Webhook + bindings (DOC-08 Task 8.1)
   mcp        — MCP Server CRUD + install/uninstall (DOC-09 Task 9.1)
   frontend   — POST /frontend-errors receiver (DOC-12 Task 12.7, ADR-119)
+  memories   — Memory CRUD + search via mem0 (GET/POST/DELETE/search)
 """
 from fastapi import APIRouter
 
@@ -36,6 +37,7 @@ from app.api.v1.internal import router as internal_router
 from app.api.v1.im import router as im_router
 from app.api.v1.mcp import router as mcp_router
 from app.api.v1.frontend import router as frontend_router
+from app.api.v1.memories import router as memories_router
 
 # Master v1 router
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -56,3 +58,4 @@ api_v1_router.include_router(internal_router)
 api_v1_router.include_router(im_router)
 api_v1_router.include_router(mcp_router)
 api_v1_router.include_router(frontend_router)
+api_v1_router.include_router(memories_router)

@@ -14,6 +14,7 @@ from executor_v2.hooks.builtin.guardrail import guardrail_handler
 from executor_v2.hooks.builtin.observability import observability_handler
 from executor_v2.hooks.builtin.permission import permission_handler
 from executor_v2.hooks.builtin.safety import safety_handler
+from executor_v2.hooks.memory_hook import MemoryHook
 from executor_v2.hooks.prism_hook import PrismHooks
 from executor_v2.hooks.registry import (
     POST_TOOL_USE,
@@ -23,11 +24,14 @@ from executor_v2.hooks.registry import (
     HookRegistry,
 )
 from executor_v2.runtime import PrismAgentRuntime
+from executor_v2.userbrain.memory import MemoryManager
 
 logger = structlog.get_logger()
 
 
-def build_registry(callback: BackendCallback) -> HookRegistry:
+def build_registry(callback: BackendCallback, config: "RunConfig") -> HookRegistry:
+    from executor_v2.config import RunConfig as _RC  # noqa: F811
+
     registry = HookRegistry()
     prism = PrismHooks(callback)
 
@@ -40,6 +44,9 @@ def build_registry(callback: BackendCallback) -> HookRegistry:
 
     for event in [PRE_TOOL_USE, POST_TOOL_USE, POST_TOOL_USE_FAILURE]:
         registry.register(event, HookHandler(callback=observability_handler, priority=999, category="observability"))
+
+    memory_hook = MemoryHook(MemoryManager(), config)
+    memory_hook.register(registry)
 
     return registry
 
@@ -70,7 +77,7 @@ async def main() -> None:
         )
     )
 
-    registry = build_registry(callback)
+    registry = build_registry(callback, config)
     runtime = PrismAgentRuntime(config, callback, registry)
 
     shutdown_task: asyncio.Task[None] | None = None
