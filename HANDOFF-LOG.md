@@ -6,6 +6,60 @@
 
 ---
 
+## 🔴🔴🔴 2026-05-09 Session 尾声：产品方向定调 + Executor 根因定位 + 架构重构决策
+
+**模型**: Opus 4.6 (1M context)
+
+### 产品定位（用户最终确认）
+
+**Prism = Claude Code 的 agent system，跑在 Web + 本地私有化部署，给团队和个人用，弱模型也要 80-90% 效果。**
+
+- 不是"另一个 Poco" — Poco 是开发者工具，Prism 是个人助手 + 轻度生产力
+- 不是只为黑客松 — 要真的能用在日常生活里
+- 场景：日常记录、备忘、提醒、会议、brainstorming、对话、PM/文职类轻度生产力
+- 部署：自托管优先 + 云端订阅开放
+- 核心体验四字：**预判、懂你、顺手、放心**
+
+### Executor 根因（功能测试 subagent 发现）
+
+**致命 Bug：AnthropicDriver 丢弃 thinking blocks → 所有多轮工具调用崩溃**
+
+- Provider 配了 `extended_thinking: true`
+- `anthropic_driver.py` 的 `stream()` 只处理 text + tool_use，thinking block 被静默丢弃
+- 第二轮 API 调用时 Anthropic 要求传回 thinking → 400 错误 → run 崩溃
+- **单轮纯文本能跑通，任何用工具的任务都在第二轮挂**
+
+历史 14 个失败 run 分类：
+- thinking block 丢失 → 400（核心 bug）
+- 600s 超时 × 3（skill 循环/git clone）
+- Provider 500/403 × 6（上游问题）
+- 心跳超时 × 2（网络卡住）
+
+### 架构重构决策（用户明确要求）
+
+1. **先修架构，再加 UserBrain** — 在烂地基上盖房子没意义
+2. **不许抄 Poco，可以借鉴** — 参考其架构思路但不复制代码
+3. **重点参考 Claude Code 源码 + Claude Agent SDK** — 这两个可以直接用代码
+4. **清理胶水代码** — 之前 Opus 4.7 的 35 个 Task 各自跑通但整体拼接粗糙
+5. **核心修复**：ThinkingBlock 全链路支持（driver → query_engine → messages → API 回传）
+
+### UserBrain 架构方向（已讨论未实施）
+
+在 executor 上层加 UserBrain 智能调度层：
+- **记忆（更懂你）**：mem0 集成，跨 session 持久用户画像，自动提取偏好
+- **自验证（放心交给他）**：结果自审 agent，置信度评估，不确定时主动问用户
+- **意图路由（顺手好用）**：一句话自动匹配工作流 skill，用户不需要知道底层
+- **Context7 集成**：实时文档查询，增强事实准确性
+
+### 下个 Session 开工路径
+
+1. 读 Claude Agent SDK 源码 + Claude Code executor 相关代码
+2. 设计新的 executor 架构（清理胶水，ThinkingBlock 全链路）
+3. 写 spec → plan → 实施
+4. executor 修好后再加 UserBrain
+
+---
+
 ## 🔴🔴 2026-05-09 React 前端迁移 + 后端全面审计 + Skills Market 重构
 
 **模型**: Opus 4.6 (1M context)
