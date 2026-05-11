@@ -307,7 +307,7 @@ class ProcessManager:
           --otel-trace-id=traceparent (OTel 跨进程传播)
         """
         cmd = [
-            "python", "-m", "executor",
+            "python", "-m", "executor_v2",
             f"--run-id={run.id}",
             f"--session-id={run.session_id}",
             f"--user-id={run.user_id}",

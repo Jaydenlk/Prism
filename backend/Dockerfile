@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend package + executor package so subprocess can import executor
 COPY backend /app/backend
 COPY executor /app/executor
+COPY executor_v2 /app/executor_v2
 
 # Make both importable: cwd = /app means `from app.*` (via backend/app) still
 # resolves if we cd into backend, AND `from executor.*` resolves directly.
