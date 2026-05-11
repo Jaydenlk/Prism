@@ -10,25 +10,16 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-HookInput = dict[str, Any]
-HookContext = dict[str, Any]
-SyncHookJSONOutput = dict[str, Any]
-
 
 class PrismHooks:
     def __init__(self, callback: BackendCallback) -> None:
         self._callback = callback
         self._tool_start_times: dict[str, float] = {}
 
-    async def on_pre_tool_use(
-        self,
-        input_data: HookInput,
-        tool_use_id: str | None,
-        context: HookContext,
-    ) -> SyncHookJSONOutput:
-        tid = input_data.get("tool_use_id") or tool_use_id or ""
-        tool_name = input_data.get("tool_name", "")
-        tool_input = input_data.get("tool_input") or {}
+    async def on_pre_tool_use(self, payload: dict[str, Any]) -> dict[str, Any]:
+        tid = payload.get("tool_use_id", "")
+        tool_name = payload.get("tool_name", "")
+        tool_input = payload.get("tool_input") or {}
         self._tool_start_times[tid] = time.monotonic()
         try:
             await self._callback.tool_start(tid, tool_name, tool_input)
@@ -36,15 +27,10 @@ class PrismHooks:
             logger.warning("hook_tool_start_failed", tool_use_id=tid, error=str(exc))
         return {"continue_": True}
 
-    async def on_post_tool_use(
-        self,
-        input_data: HookInput,
-        tool_use_id: str | None,
-        context: HookContext,
-    ) -> SyncHookJSONOutput:
-        tid = input_data.get("tool_use_id") or tool_use_id or ""
-        tool_name = input_data.get("tool_name", "")
-        raw = input_data.get("tool_response", "")
+    async def on_post_tool_use(self, payload: dict[str, Any]) -> dict[str, Any]:
+        tid = payload.get("tool_use_id", "")
+        tool_name = payload.get("tool_name", "")
+        raw = payload.get("tool_response", "")
         output = str(raw)[:500]
         duration_ms = self._pop_duration_ms(tid)
         try:
@@ -53,15 +39,10 @@ class PrismHooks:
             logger.warning("hook_tool_end_failed", tool_use_id=tid, error=str(exc))
         return {"continue_": True}
 
-    async def on_post_tool_use_failure(
-        self,
-        input_data: HookInput,
-        tool_use_id: str | None,
-        context: HookContext,
-    ) -> SyncHookJSONOutput:
-        tid = input_data.get("tool_use_id") or tool_use_id or ""
-        tool_name = input_data.get("tool_name", "")
-        error = str(input_data.get("error", ""))[:500]
+    async def on_post_tool_use_failure(self, payload: dict[str, Any]) -> dict[str, Any]:
+        tid = payload.get("tool_use_id", "")
+        tool_name = payload.get("tool_name", "")
+        error = str(payload.get("error", ""))[:500]
         duration_ms = self._pop_duration_ms(tid)
         try:
             await self._callback.tool_end(tid, tool_name, error, True, duration_ms)
