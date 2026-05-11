@@ -25,7 +25,9 @@ COPY executor_v2 /app/executor_v2
 ENV PYTHONPATH=/app:/app/backend
 WORKDIR /app/backend
 
+RUN useradd -m -s /bin/bash prism
+
 EXPOSE 8000
 
-# Alembic uses backend/alembic.ini (runs from /app/backend cwd)
-ENTRYPOINT ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Alembic runs as root (needs DB perms), then switch to non-root for uvicorn
+ENTRYPOINT ["sh", "-c", "alembic upgrade head && exec su prism -c 'uvicorn app.main:app --host 0.0.0.0 --port 8000'"]

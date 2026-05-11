@@ -47,7 +47,7 @@ class PrismAgentRuntime:
         return ClaudeAgentOptions(
             model=self._config.model,
             system_prompt=system_prompt,
-            permission_mode="bypassPermissions",
+            permission_mode="acceptEdits",
             max_turns=self._config.max_turns,
             allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
             env=env,
