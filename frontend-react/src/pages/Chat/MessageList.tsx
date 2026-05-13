@@ -66,6 +66,8 @@ export function MessageList({
                 role={role}
                 content={text || msg.text_preview || ''}
                 contentBlocks={msg.content}
+                confidence={msg.confidence}
+                uncertainClaims={msg.uncertain_claims}
               />
             );
           })}

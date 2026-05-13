@@ -131,6 +131,8 @@ export interface Message {
   text_preview: string | null;
   sequence_no: number;
   created_at: string;
+  confidence?: 'high' | 'medium' | 'low';
+  uncertain_claims?: string[];
 }
 
 // ---------------------------------------------------------------------------

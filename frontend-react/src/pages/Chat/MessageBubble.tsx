@@ -20,6 +20,8 @@ interface MessageBubbleProps {
   contentBlocks?: ContentBlock[];
   streamingTools?: ToolState[];
   isStreaming?: boolean;
+  confidence?: 'high' | 'medium' | 'low';
+  uncertainClaims?: string[];
 }
 
 function MessageBubbleInner({
@@ -28,6 +30,8 @@ function MessageBubbleInner({
   contentBlocks,
   streamingTools,
   isStreaming,
+  confidence,
+  uncertainClaims,
 }: MessageBubbleProps) {
   const { addToast } = useToast();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -108,6 +112,30 @@ function MessageBubbleInner({
           </>
         )}
       </div>
+
+      {role === 'assistant' && !isStreaming && confidence && confidence !== 'high' && (
+        <div>
+          {confidence === 'medium' && (
+            <span style={{ display: 'inline-block', background: '#FEF3CD', color: '#856404', borderRadius: 4, padding: '4px 8px', fontSize: 12, marginTop: 6 }}>
+              ⚠ 部分内容待确认
+            </span>
+          )}
+          {confidence === 'low' && (
+            <div style={{ marginTop: 6 }}>
+              <span style={{ display: 'inline-block', background: '#F8D7DA', color: '#721C24', borderRadius: 4, padding: '4px 8px', fontSize: 12 }}>
+                ❓ 置信度较低，建议确认
+              </span>
+              {uncertainClaims && uncertainClaims.length > 0 && (
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16, fontSize: 12, color: '#721C24' }}>
+                  {uncertainClaims.map((claim, i) => (
+                    <li key={i}>{claim}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {!isStreaming && (content || hasBlocks) && (
         <div className={styles.actionBar}>
