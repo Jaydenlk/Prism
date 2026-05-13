@@ -65,6 +65,15 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: Me
 
 
 async def main() -> None:
+    from executor_v2.masking import structlog_masker
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog_masker,
+            structlog.dev.ConsoleRenderer(),
+        ],
+    )
+
     args = parse_args()
     log = logger.bind(run_id=args.run_id)
     log.info("executor_v2.starting")

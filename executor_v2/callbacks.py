@@ -8,9 +8,25 @@ import httpx
 import redis.asyncio as aioredis
 import structlog
 
+from executor_v2.masking import mask
+
 logger = structlog.get_logger(__name__)
 
 _RETRY_DELAYS = (0.5, 1.0, 2.0)
+
+
+def _mask_dict(d: dict) -> dict:
+    result = {}
+    for k, v in d.items():
+        if isinstance(v, str):
+            result[k] = mask(v)
+        elif isinstance(v, dict):
+            result[k] = _mask_dict(v)
+        elif isinstance(v, list):
+            result[k] = [_mask_dict(i) if isinstance(i, dict) else mask(i) if isinstance(i, str) else i for i in v]
+        else:
+            result[k] = v
+    return result
 
 
 class BackendCallback:
@@ -52,12 +68,12 @@ class BackendCallback:
             logger.warning("text_delta_publish_failed", error=str(exc))
 
     async def _http_post(self, event_type: str, data: dict) -> None:
-        payload = {
+        payload = _mask_dict({
             "run_id": self._run_id,
             "event_type": event_type,
             "data": data,
             "timestamp": self._now(),
-        }
+        })
         last_exc: Exception | str | None = None
         for attempt, delay in enumerate(_RETRY_DELAYS):
             try:
