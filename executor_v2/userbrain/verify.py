@@ -156,8 +156,11 @@ class VerifyAgent:
                 resp.raise_for_status()
                 data = resp.json()
                 content = data.get("content", [])
-                if content and content[0].get("type") == "text":
-                    return content[0]["text"]
+                for block in content:
+                    if block.get("type") == "text":
+                        return block["text"]
+                    if block.get("type") == "thinking":
+                        return block.get("thinking", "")
                 return ""
         except Exception as exc:
             logger.warning("verify.llm_call_failed", error=str(exc))

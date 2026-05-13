@@ -59,8 +59,15 @@ class IntentRouter:
                 resp.raise_for_status()
                 data = resp.json()
                 content = data.get("content", [])
-                if content and content[0].get("type") == "text":
-                    category = content[0]["text"].strip().lower()
+                raw_text = ""
+                for block in content:
+                    if block.get("type") == "text":
+                        raw_text = block["text"]
+                        break
+                    if block.get("type") == "thinking":
+                        raw_text = block.get("thinking", "")
+                if raw_text:
+                    category = raw_text.strip().lower().split()[-1].strip(".,!?\"'")
                     if category in INTENT_CATEGORIES:
                         return Intent(category=category, confidence=0.9)
         except Exception as exc:
