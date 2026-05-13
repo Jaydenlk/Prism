@@ -6,6 +6,153 @@
 
 ---
 
+## 🔴🔴🔴 2026-05-13 Stage 1-2 完成 + 性能修复 + E2E 验证
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop（20+ commits via worktree-backend-audit-fixes）
+
+### 本 session 交付
+
+| 领域 | 交付 |
+|---|---|
+| Stage 1: 4 个 critical bug | provider NULL 崩溃、heartbeat 线程化、mem0 OpenAI provider、confidence 管线 |
+| Stage 1: simplify + code review | URL 去重、共享 MemoryManager、recall 缓存、provider scope、fast-fail |
+| Stage 2: 7 个 Poco 对齐功能 | Workspace 隔离、PromptAssembler、Secret Masking、MCP 注入、交互式权限（BLPOP）、SDK Resume、IM Gateway |
+| 性能: 3 个 critical 修复 | pipe buffer 死锁（communicate）、mem0 event loop 隔离、embedding 模型预缓存 |
+| 模型统一 | 所有 LLM 调用走 CloudDreamAI auto-v2，默认模型改 auto-v2，fallback 去除 Claude |
+
+### E2E Playwright 验证（桌面 1280x720 + 移动 390x844）
+
+- 登录 → 主界面 → 新对话 → 发消息 → 27s 收到回复 ✅
+- 分析任务 → analysis skill 触发 → Bash 工具调用 → 权限弹窗 → 用户审批 ✅
+- 记忆召回 → "两杯美式咖啡" 跨 session 正确回忆 ✅
+- 移动端响应式布局正常 ✅
+- API key masking 验证（grep 0 匹配）✅
+
+### 关键技术决策
+
+- heartbeat 改独立线程（Claude SDK 阻塞 asyncio event loop）
+- mem0 init+recall 在专用线程+专用 event loop（AsyncMemory 绑定创建线程的 loop）
+- ProcessManager 用 communicate() 替代 wait()+read()（64KB pipe buffer 死锁）
+- permission_mode 保持 acceptEdits（default 模式等待终端输入永久挂起）
+- embedding 保持本地 HuggingFace（CloudDreamAI 不支持 embedding API）
+- Docker build 时预下载 embedding 模型（消除运行时下载延迟）
+
+### 未完成（阶段三 7 个任务）
+
+- Playwright 全流程 E2E（桌面+移动端每个按钮）
+- Memory Tab CRUD 测试
+- Settings Provider 连接测试
+- 弱模型（DeepSeek）效果对比
+- 5 并发任务稳定性测试
+- 性能基准
+- PROGRESS.md 完整更新
+
+### 环境
+
+- 端口：8080（nginx → backend:8000）
+- 账号：admin@prism.dev / PrismAdmin!2026
+- Docker：pgvector/pgvector:pg16 + prism-backend:2.0
+- Provider：CloudDreamAI 中转站（auto-v2 = GLM5）
+- 冷启动：~27s（含 mem0 init + SDK connect + LLM response）
+
+---
+
+## 🔴🔴🔴 2026-05-13 Phase A-E 完成 + 14 项审计修复 + 阶段一修复
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop（35+ commits）
+
+### 本 session 交付
+
+| Phase | 交付 |
+|---|---|
+| A: SDK 集成 | executor_v2 基于 claude-agent-sdk，622 LOC 替代 15K LOC |
+| B: Hook + 治理 | 16 事件 HookRegistry + SDKBridge + 权限/护栏/安全/可观测 |
+| C: 记忆层 | mem0 + pgvector + sentence-transformers 本地 embedding + Memory API + Tab |
+| D: 验证层 | VerifyAgent + Context7 + 置信度 UI（OpenAI 格式避免 thinking block） |
+| E: 意图路由 | IntentRouter 关键词匹配 10/10 + 8 个 Skill + 前端置信度徽章 |
+| E2: 会话高级 | Session Share/Fork API |
+| 审计修复 | 14 项（IDOR/memory 时序/Redis 容错/guardrail 拆分/死代码等） |
+| 阶段一修复 | mem0 恢复 + VerifyAgent 改 OpenAI + Memory list 修复 + Share revoke 修复 + 置信度联调 |
+
+### 验证通过的功能
+
+- SDK agent 循环（单轮 + 多轮工具调用）
+- Hook 系统触发（tool_start/tool_end callback 入库）
+- Guardrail 路径拦截 + Bash 放行
+- mem0 记忆提取（3 条从一句话自动提取入 pgvector）
+- mem0 语义搜索（搜 coffee 返回相关记忆）
+- IntentRouter 10/10 准确率
+- Session Share/Fork API
+- Provider 连接测试
+- 15 个自动化测试通过
+
+### 关键技术决策
+
+- Claude Agent SDK = 本地 Claude Code CLI 包装，不是云 API
+- 所有国产模型统一 Anthropic API 格式（ccswitch 模式）
+- mem0 用 openai provider（避免 DeepSeek thinking block 崩溃）
+- IntentRouter 改关键词匹配（LLM 分类不可靠——thinking 占满 token）
+- workspace 默认 /tmp（Docker 无 /workspace）
+- heartbeat 在 callback 后立即启动（CPU-bound model load 不阻塞）
+
+### 未完成（3 阶段 21 任务）
+
+**阶段一剩余**：Skill 效果验证 + 跨 session 记忆联调（需 Docker）
+**阶段二**：Workspace 管理 + SDK 客户端池 + MCP 注入 + 交互式权限 + 提示词组合 + 日志 masking + IM 对接
+**阶段三**：Playwright E2E 桌面+移动端 + 弱模型对比 + 性能基准
+
+### 环境
+
+- 端口：8080（nginx → backend:8000）
+- 账号：admin@prism.dev / admin123
+- Docker：pgvector/pgvector:pg16 + prism-backend:2.0
+- Provider：CloudDreamAI 中转站（auto-v2 模型）
+- mem0：pgvector + sentence-transformers + openai provider
+
+---
+
+## 🔴 2026-05-11 Phase A 完成：executor_v2 — Claude Agent SDK 集成
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop（3 commits）
+
+### 交付
+
+| 领域 | 交付 |
+|---|---|
+| executor_v2 | 622 LOC 新 executor，基于 `claude-agent-sdk==0.1.50` 构建，替代 15K LOC 旧 executor |
+| SDK 集成 | `ClaudeSDKClient` + `ClaudeAgentOptions` + Hook 系统（PreToolUse/PostToolUse/PostToolUseFailure）|
+| Callback 协议 | HTTP + Redis 双通道完整实现，与旧 executor 协议兼容 |
+| 致命 bug 修复 | thinking block 丢弃 → SDK 原生处理 `ThinkingBlock` 类型 |
+| ProcessManager | 切换到 `python -m executor_v2` |
+| Docker | 非 root 用户 `prism`，`acceptEdits` 权限模式 |
+
+### 集成测试通过
+
+提交 "What is 2+2?" → agent 回答 "Four" → message_complete + run_complete callback → DB 持久化 → returncode=0
+
+### Simplify 审查修复 10 个问题
+
+最严重：`decrypt_api_key` 信封格式错误（`<nonce>:<ciphertext>` 不是连续 bytes），会导致所有 run 崩溃。已修复。
+
+### 已知限制（Phase B 解决）
+
+1. 仅支持 Claude 模型（SDK 绑定 Claude Code CLI）
+2. Hook 系统仅 3 个事件（需扩展到 21 个）
+3. 无权限/护栏/循环检测
+4. 无多模型路由
+
+### 环境
+
+- 端口：8080（nginx → backend:8000）
+- 账号：admin@prism.dev / admin123
+- Docker 全部 healthy
+- Provider: Anthropic Claude (model_id=auto-v2)
+
+---
+
 ## 🔴🔴🔴 2026-05-09 Session 尾声：产品方向定调 + Executor 根因定位 + 架构重构决策
 
 **模型**: Opus 4.6 (1M context)
