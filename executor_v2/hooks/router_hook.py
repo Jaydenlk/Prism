@@ -10,11 +10,10 @@ from executor_v2.hooks.registry import (
 
 logger = structlog.get_logger(__name__)
 
-# Intent → Skill 映射
 _SKILL_MAP: dict[str, object] = {}
 
 
-def _load_skills() -> dict[str, object]:
+def load_skills() -> dict[str, object]:
     if _SKILL_MAP:
         return _SKILL_MAP
     from executor_v2.skills.chat import CHAT_SKILL
@@ -39,46 +38,23 @@ def _load_skills() -> dict[str, object]:
 
 
 class RouterHook:
+    """Logs session start with skill info injected by __main__.py.
+
+    Intent classification and skill selection happen eagerly in __main__.py
+    before the runtime starts (because skill_prompt must be in the system
+    prompt at SDK connect time). This hook only records the event.
+    """
+
     def __init__(self, prompt: str, user_id: str) -> None:
         self._prompt = prompt
         self._user_id = user_id
-        self._router = None
-        self.matched_skill = None  # 供外部读取
-
-    def _get_router(self):
-        if self._router is None:
-            from executor_v2.userbrain.router import IntentRouter
-            self._router = IntentRouter()
-        return self._router
 
     async def on_session_start(self, payload: dict) -> dict:
-        router = self._get_router()
-
-        # 获取用户记忆做上下文
-        memories: list[dict] = []
-        try:
-            from executor_v2.userbrain.memory import MemoryManager
-            mem = MemoryManager()
-            memories = await mem.recall(self._user_id, self._prompt)
-        except Exception:
-            pass
-
-        intent = await router.classify(self._prompt, memories)
-        skills = _load_skills()
-        skill = skills.get(intent.category, skills["chat"])
-
-        self.matched_skill = skill
         logger.info(
-            "router.matched",
-            intent=intent.category,
-            confidence=intent.confidence,
-            skill=getattr(skill, 'name', 'chat'),
+            "router.session_start",
+            skill=payload.get("_skill_name", ""),
+            user_id=self._user_id,
         )
-
-        # 将 skill 信息存到 payload 供下游消费
-        payload["_skill_name"] = getattr(skill, 'name', '')
-        payload["_skill_prompt"] = getattr(skill, 'system_prompt_addition', '')
-
         return {"continue_": True}
 
     def register(self, registry: HookRegistry) -> None:

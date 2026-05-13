@@ -24,12 +24,16 @@ class MemoryManager:
         try:
             from mem0 import AsyncMemory
 
+            from executor_v2.userbrain import normalize_openai_base_url
+            openai_base = normalize_openai_base_url(self._base_url)
+
             config: dict = {
                 "llm": {
-                    "provider": "anthropic",
+                    "provider": "openai",
                     "config": {
-                        "model": self._model or "claude-haiku-4-5-20251001",
+                        "model": self._model or "auto-v2",
                         "api_key": self._api_key,
+                        "openai_base_url": openai_base,
                     },
                 },
                 "embedder": {
@@ -52,9 +56,6 @@ class MemoryManager:
                 },
             }
 
-            if self._base_url:
-                os.environ.setdefault("ANTHROPIC_BASE_URL", self._base_url)
-
             self._memory = AsyncMemory.from_config(config)
             logger.info("memory.initialized", model=self._model)
         except Exception as exc:
@@ -65,6 +66,10 @@ class MemoryManager:
         if not self._initialized and self._api_key:
             self._initialized = True
             self._init_mem0()
+
+    def eager_init(self) -> "MemoryManager":
+        self._ensure_init()
+        return self
 
     async def recall(self, user_id: str, query: str, limit: int = 10) -> list[dict]:
         self._ensure_init()
@@ -89,6 +94,7 @@ class MemoryManager:
             return []
 
     async def get_all(self, user_id: str) -> list[dict]:
+        self._ensure_init()
         if self._memory is None:
             return []
         try:
@@ -99,6 +105,7 @@ class MemoryManager:
             return []
 
     async def delete(self, memory_id: str) -> None:
+        self._ensure_init()
         if self._memory is None:
             return
         try:
