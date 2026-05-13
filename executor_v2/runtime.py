@@ -85,7 +85,7 @@ class PrismAgentRuntime:
             model=self._config.model,
             cwd=self._config.workspace_path,
             system_prompt=system_prompt,
-            permission_mode="acceptEdits",
+            permission_mode="default",
             max_turns=self._config.max_turns,
             allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
             env=env,

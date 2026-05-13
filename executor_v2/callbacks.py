@@ -174,6 +174,17 @@ class BackendCallback:
             data["harness_summary"] = harness_summary
         await self._http_post("run_complete", data)
 
+    async def permission_ask(self, request_id: str, tool_name: str, tool_input: dict) -> str:
+        await self._http_post("permission_ask", {
+            "request_id": request_id,
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+        })
+        result = await self._redis.blpop(f"perm_answer:{request_id}", timeout=60)
+        if result is None:
+            return "deny"
+        return result[1].decode() if isinstance(result[1], bytes) else str(result[1])
+
     async def run_error(self, error: str) -> None:
         await self._http_post("run_error", {"error": error})
 

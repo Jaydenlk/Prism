@@ -13,7 +13,7 @@ from executor_v2.config import RunConfig, load_run_config, parse_args
 from executor_v2.heartbeat import start_heartbeat_thread
 from executor_v2.hooks.builtin.guardrail import post_guardrail, pre_guardrail
 from executor_v2.hooks.builtin.observability import observability_handler
-from executor_v2.hooks.builtin.permission import permission_handler
+from executor_v2.hooks.builtin.permission import PermissionController
 from executor_v2.hooks.builtin.safety import safety_handler
 from executor_v2.hooks.memory_hook import MemoryHook
 from executor_v2.hooks.router_hook import RouterHook
@@ -36,7 +36,8 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: Me
     registry = HookRegistry()
     prism = PrismHooks(callback)
 
-    registry.register(PRE_TOOL_USE, HookHandler(callback=permission_handler, priority=10, category="permission"))
+    perm = PermissionController(callback)
+    registry.register(PRE_TOOL_USE, HookHandler(callback=perm.check, priority=10, category="permission"))
     registry.register(PRE_TOOL_USE, HookHandler(callback=pre_guardrail, priority=20, category="guardrail"))
     registry.register(PRE_TOOL_USE, HookHandler(callback=prism.on_pre_tool_use, priority=50, category="observability"))
 
