@@ -100,9 +100,18 @@ async def main() -> None:
     memories: list[dict] = []
     mem: MemoryManager | None = None
     try:
-        mem = MemoryManager(api_key=config.api_key, base_url=config.base_url, model=config.model)
-        mem.eager_init()
-        memories = await asyncio.wait_for(mem.recall(config.user_id, config.prompt), timeout=15)
+        def _init_and_recall() -> tuple[MemoryManager, list[dict]]:
+            m = MemoryManager(api_key=config.api_key, base_url=config.base_url, model=config.model)
+            m.eager_init()
+            import asyncio as _aio
+            loop = _aio.new_event_loop()
+            try:
+                mems = loop.run_until_complete(m.recall(config.user_id, config.prompt))
+            finally:
+                loop.close()
+            return m, mems
+
+        mem, memories = await asyncio.wait_for(asyncio.to_thread(_init_and_recall), timeout=15)
     except Exception as exc:
         log.warning("memory_init_skipped", error=str(exc))
 
