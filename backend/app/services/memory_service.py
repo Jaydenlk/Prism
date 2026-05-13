@@ -16,7 +16,7 @@ def _build_config() -> dict:
         "llm": {
             "provider": "anthropic",
             "config": {
-                "model": os.environ.get("MEM0_MODEL", "claude-haiku-4-5-20251001"),
+                "model": os.environ.get("MEM0_MODEL", "auto-v2"),
                 "api_key": _API_KEY,
             },
         },
