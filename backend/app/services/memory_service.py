@@ -27,10 +27,11 @@ def _build_config() -> dict:
             },
         },
         "embedder": {
-            "provider": "huggingface",
+            "provider": "openai",
             "config": {
-                "model": "sentence-transformers/all-MiniLM-L6-v2",
-                "model_kwargs": {"device": "cpu"},
+                "model": "text-embedding-3-small",
+                "api_key": _API_KEY,
+                "openai_base_url": _openai_base,
             },
         },
         "vector_store": {
@@ -41,7 +42,7 @@ def _build_config() -> dict:
                 "user": os.environ.get("POSTGRES_USER", "prism"),
                 "password": os.environ.get("POSTGRES_PASSWORD", ""),
                 "dbname": os.environ.get("POSTGRES_DB", "prism"),
-                "embedding_model_dims": 384,
+                "embedding_model_dims": 1536,
             },
         },
     }
