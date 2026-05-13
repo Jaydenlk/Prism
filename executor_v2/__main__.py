@@ -15,6 +15,7 @@ from executor_v2.hooks.builtin.observability import observability_handler
 from executor_v2.hooks.builtin.permission import permission_handler
 from executor_v2.hooks.builtin.safety import safety_handler
 from executor_v2.hooks.memory_hook import MemoryHook
+from executor_v2.hooks.router_hook import RouterHook
 from executor_v2.hooks.verify_hook import VerifyHook
 from executor_v2.hooks.prism_hook import PrismHooks
 from executor_v2.hooks.registry import (
@@ -51,10 +52,13 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str) -> Hook
     memory_hook = MemoryHook(MemoryManager(), user_id)
     memory_hook.register(registry)
 
+    router_hook = RouterHook(prompt=prompt, user_id=user_id)
+    router_hook.register(registry)
+
     verify_hook = VerifyHook(prompt=prompt, user_id=user_id)
     verify_hook.register(registry)
 
-    return registry
+    return registry, router_hook
 
 
 async def main() -> None:
@@ -88,8 +92,19 @@ async def main() -> None:
         )
     )
 
-    registry = build_registry(callback, config.user_id, config.prompt)
-    runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=memory_prompt)
+    # Classify intent BEFORE runtime (same pattern as memory recall)
+    from executor_v2.userbrain.router import IntentRouter
+    intent = await IntentRouter().classify(config.prompt, memories)
+    from executor_v2.hooks.router_hook import _load_skills
+    skills = _load_skills()
+    matched_skill = skills.get(intent.category, skills["chat"])
+    skill_prompt = getattr(matched_skill, "system_prompt_addition", "")
+    log.info("intent.classified", category=intent.category, skill=getattr(matched_skill, "name", ""))
+
+    combined_prompt = "\n\n".join(p for p in [memory_prompt, skill_prompt] if p)
+
+    registry, _ = build_registry(callback, config.user_id, config.prompt)
+    runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=combined_prompt)
 
     shutdown_task: asyncio.Task[None] | None = None
 
