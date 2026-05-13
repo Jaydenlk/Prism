@@ -7,24 +7,24 @@ from fastapi import HTTPException, status
 
 logger = structlog.get_logger()
 
-_ENABLED = bool(os.environ.get("MEM0_LLM_API_KEY", ""))
+_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+_ENABLED = bool(_API_KEY)
 
 
 def _build_config() -> dict:
-    return {
+    config: dict = {
         "llm": {
-            "provider": os.environ.get("MEM0_LLM_PROVIDER", "anthropic"),
+            "provider": "anthropic",
             "config": {
-                "model": os.environ.get("MEM0_LLM_MODEL", "claude-sonnet-4-6"),
-                "api_key": os.environ.get("MEM0_LLM_API_KEY", ""),
-                "base_url": os.environ.get("MEM0_LLM_BASE_URL", ""),
+                "model": os.environ.get("MEM0_MODEL", "claude-haiku-4-5-20251001"),
+                "api_key": _API_KEY,
             },
         },
         "embedder": {
-            "provider": os.environ.get("MEM0_EMBEDDER_PROVIDER", "openai"),
+            "provider": "huggingface",
             "config": {
-                "model": os.environ.get("MEM0_EMBEDDER_MODEL", "text-embedding-3-small"),
-                "api_key": os.environ.get("MEM0_EMBEDDER_API_KEY", ""),
+                "model": "sentence-transformers/all-MiniLM-L6-v2",
+                "model_kwargs": {"device": "cpu"},
             },
         },
         "vector_store": {
@@ -35,88 +35,92 @@ def _build_config() -> dict:
                 "user": os.environ.get("POSTGRES_USER", "prism"),
                 "password": os.environ.get("POSTGRES_PASSWORD", ""),
                 "dbname": os.environ.get("POSTGRES_DB", "prism"),
-                "embedding_model_dims": 1536,
+                "embedding_model_dims": 384,
             },
         },
     }
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+    if base_url:
+        config["llm"]["config"]["base_url"] = base_url
+    return config
+
+
+_memory_instance: object | None = None
+
+
+def _get_memory() -> object:
+    global _memory_instance
+    if _memory_instance is None:
+        from mem0 import AsyncMemory
+        _memory_instance = AsyncMemory.from_config(_build_config())
+    return _memory_instance
 
 
 class MemoryService:
     def __init__(self) -> None:
-        if _ENABLED:
-            from mem0 import AsyncMemory
-            self._memory: object = AsyncMemory.from_config(_build_config())
-        else:
-            self._memory = None
+        pass
 
     def _require_enabled(self) -> None:
-        if self._memory is None:
+        if not _ENABLED:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Memory service is not configured (MEM0_LLM_API_KEY missing)",
+                detail="Memory service not configured (ANTHROPIC_API_KEY missing)",
             )
 
     async def list_memories(self, user_id: str) -> list[dict]:
         self._require_enabled()
+        mem = _get_memory()
         try:
-            result = await self._memory.get_all(filters={"user_id": user_id})  # type: ignore[union-attr]
+            result = await mem.get_all(filters={"user_id": user_id})
             return result if isinstance(result, list) else []
         except HTTPException:
             raise
         except Exception as exc:
-            logger.warning("memory.list_error", user_id=user_id, error=str(exc))
+            logger.warning("memory.list_error", error=str(exc))
             return []
 
     async def add_memory(self, user_id: str, content: str) -> dict:
         self._require_enabled()
+        mem = _get_memory()
         try:
-            result = await self._memory.add(  # type: ignore[union-attr]
+            result = await mem.add(
                 messages=[{"role": "user", "content": content}],
                 user_id=user_id,
             )
-            return result if isinstance(result, dict) else {"result": result}
+            return {"status": "ok", "result": result}
         except HTTPException:
             raise
         except Exception as exc:
-            logger.warning("memory.add_error", user_id=user_id, error=str(exc))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to add memory",
-            )
+            logger.error("memory.add_error", error=str(exc))
+            raise HTTPException(status_code=502, detail="Memory add failed")
 
     async def delete_memory(self, user_id: str, memory_id: str) -> None:
         self._require_enabled()
+        mem = _get_memory()
         try:
-            all_memories = await self._memory.get_all(filters={"user_id": user_id})  # type: ignore[union-attr]
+            all_memories = await mem.get_all(filters={"user_id": user_id})
+            owned_ids = set()
             if isinstance(all_memories, list):
                 owned_ids = {m.get("id") for m in all_memories}
             elif isinstance(all_memories, dict):
                 owned_ids = {m.get("id") for m in all_memories.get("results", [])}
-            else:
-                owned_ids = set()
             if memory_id not in owned_ids:
                 raise HTTPException(status_code=404, detail="Memory not found")
-            await self._memory.delete(memory_id=memory_id)  # type: ignore[union-attr]
+            await mem.delete(memory_id=memory_id)
         except HTTPException:
             raise
         except Exception as exc:
-            logger.error("memory.delete_failed", memory_id=memory_id, error=str(exc))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Memory delete failed",
-            )
+            logger.error("memory.delete_error", error=str(exc))
+            raise HTTPException(status_code=502, detail="Memory delete failed")
 
     async def search_memories(self, user_id: str, query: str, limit: int = 10) -> list[dict]:
         self._require_enabled()
+        mem = _get_memory()
         try:
-            results = await self._memory.search(  # type: ignore[union-attr]
-                query=query,
-                filters={"user_id": user_id},
-                top_k=limit,
-            )
+            results = await mem.search(query=query, filters={"user_id": user_id}, top_k=limit)
             return results.get("results", []) if isinstance(results, dict) else []
         except HTTPException:
             raise
         except Exception as exc:
-            logger.warning("memory.search_error", user_id=user_id, error=str(exc))
+            logger.warning("memory.search_error", error=str(exc))
             return []
