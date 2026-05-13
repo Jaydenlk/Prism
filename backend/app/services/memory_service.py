@@ -84,17 +84,26 @@ class MemoryService:
                 detail="Failed to add memory",
             )
 
-    async def delete_memory(self, memory_id: str) -> None:
+    async def delete_memory(self, user_id: str, memory_id: str) -> None:
         self._require_enabled()
         try:
+            all_memories = await self._memory.get_all(filters={"user_id": user_id})  # type: ignore[union-attr]
+            if isinstance(all_memories, list):
+                owned_ids = {m.get("id") for m in all_memories}
+            elif isinstance(all_memories, dict):
+                owned_ids = {m.get("id") for m in all_memories.get("results", [])}
+            else:
+                owned_ids = set()
+            if memory_id not in owned_ids:
+                raise HTTPException(status_code=404, detail="Memory not found")
             await self._memory.delete(memory_id=memory_id)  # type: ignore[union-attr]
         except HTTPException:
             raise
         except Exception as exc:
-            logger.warning("memory.delete_error", memory_id=memory_id, error=str(exc))
+            logger.error("memory.delete_failed", memory_id=memory_id, error=str(exc))
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to delete memory",
+                detail="Memory delete failed",
             )
 
     async def search_memories(self, user_id: str, query: str, limit: int = 10) -> list[dict]:

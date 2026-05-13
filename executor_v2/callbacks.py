@@ -46,7 +46,10 @@ class BackendCallback:
                 "ts": self._now(),
             }
         )
-        await self._redis.publish(f"run:{self._run_id}:stream", payload)
+        try:
+            await self._redis.publish(f"run:{self._run_id}:stream", payload)
+        except Exception as exc:
+            logger.warning("text_delta_publish_failed", error=str(exc))
 
     async def _http_post(self, event_type: str, data: dict) -> None:
         payload = {

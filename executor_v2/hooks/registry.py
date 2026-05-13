@@ -18,12 +18,7 @@ PRE_COMPACT = "PreCompact"
 NOTIFICATION = "Notification"
 SUBAGENT_START = "SubagentStart"
 PERMISSION_REQUEST = "PermissionRequest"
-TURN_START = "TurnStart"
-TURN_END = "TurnEnd"
 TEXT_DELTA = "TextDelta"
-THINKING_DELTA = "ThinkingDelta"
-TOOL_START = "ToolStart"
-TOOL_END = "ToolEnd"
 MESSAGE_COMPLETE = "MessageComplete"
 RUN_COMPLETE = "RunComplete"
 RUN_ERROR = "RunError"
@@ -33,7 +28,7 @@ _BLOCKING_CATEGORIES = {"permission", "guardrail", "safety"}
 
 @dataclass
 class HookHandler:
-    callback: Callable[..., Awaitable[dict[str, Any]]]
+    callback: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
     priority: int = 100
     category: str = "observability"
 
@@ -47,6 +42,7 @@ class HookRegistry:
         self._handlers[event].sort(key=lambda h: h.priority)
 
     async def fire(self, event: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        payload["_event"] = event
         handlers = self._handlers.get(event, [])
         results: list[dict[str, Any]] = []
         for handler in handlers:

@@ -45,11 +45,14 @@ class SDKBridge:
                 input_data: dict[str, Any],
                 tool_use_id: str | None,
                 context: dict[str, Any],
+                *,
                 _event: str = captured_event,
             ) -> dict[str, Any]:
                 payload = dict(input_data)
                 if tool_use_id is not None:
                     payload.setdefault("tool_use_id", tool_use_id)
+                if _event == POST_TOOL_USE_FAILURE:
+                    payload["_is_failure"] = True
                 results = await self._registry.fire(_event, payload)
                 for r in results:
                     if r.get("decision") == "block":

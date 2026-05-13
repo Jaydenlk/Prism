@@ -8,9 +8,9 @@ import sys
 import structlog
 
 from executor_v2.callbacks import BackendCallback
-from executor_v2.config import load_run_config, parse_args
+from executor_v2.config import RunConfig, load_run_config, parse_args
 from executor_v2.heartbeat import run_heartbeat
-from executor_v2.hooks.builtin.guardrail import guardrail_handler
+from executor_v2.hooks.builtin.guardrail import post_guardrail, pre_guardrail
 from executor_v2.hooks.builtin.observability import observability_handler
 from executor_v2.hooks.builtin.permission import permission_handler
 from executor_v2.hooks.builtin.safety import safety_handler
@@ -29,23 +29,25 @@ from executor_v2.userbrain.memory import MemoryManager
 logger = structlog.get_logger()
 
 
-def build_registry(callback: BackendCallback, config: "RunConfig") -> HookRegistry:
-    from executor_v2.config import RunConfig as _RC  # noqa: F811
-
+def build_registry(callback: BackendCallback, user_id: str) -> HookRegistry:
     registry = HookRegistry()
     prism = PrismHooks(callback)
 
     registry.register(PRE_TOOL_USE, HookHandler(callback=permission_handler, priority=10, category="permission"))
+    registry.register(PRE_TOOL_USE, HookHandler(callback=pre_guardrail, priority=20, category="guardrail"))
     registry.register(PRE_TOOL_USE, HookHandler(callback=prism.on_pre_tool_use, priority=50, category="observability"))
-    registry.register(POST_TOOL_USE, HookHandler(callback=guardrail_handler, priority=20, category="guardrail"))
+
+    registry.register(POST_TOOL_USE, HookHandler(callback=post_guardrail, priority=20, category="guardrail"))
     registry.register(POST_TOOL_USE, HookHandler(callback=safety_handler, priority=30, category="safety"))
     registry.register(POST_TOOL_USE, HookHandler(callback=prism.on_post_tool_use, priority=50, category="observability"))
+
+    registry.register(POST_TOOL_USE_FAILURE, HookHandler(callback=safety_handler, priority=30, category="safety"))
     registry.register(POST_TOOL_USE_FAILURE, HookHandler(callback=prism.on_post_tool_use_failure, priority=50, category="observability"))
 
     for event in [PRE_TOOL_USE, POST_TOOL_USE, POST_TOOL_USE_FAILURE]:
         registry.register(event, HookHandler(callback=observability_handler, priority=999, category="observability"))
 
-    memory_hook = MemoryHook(MemoryManager(), config)
+    memory_hook = MemoryHook(MemoryManager(), user_id)
     memory_hook.register(registry)
 
     return registry
@@ -57,6 +59,7 @@ async def main() -> None:
     log.info("executor_v2.starting")
 
     config = load_run_config(args)
+    log = log.bind(user_id=config.user_id, session_id=config.session_id)
 
     callback = BackendCallback(
         callback_url=config.callback_url,
@@ -65,6 +68,10 @@ async def main() -> None:
         session_id=config.session_id,
         redis_url=config.redis_url,
     )
+
+    mem = MemoryManager()
+    memories = await mem.recall(config.user_id, config.prompt)
+    memory_prompt = mem.build_prompt_section(memories)
 
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
@@ -77,8 +84,8 @@ async def main() -> None:
         )
     )
 
-    registry = build_registry(callback, config)
-    runtime = PrismAgentRuntime(config, callback, registry)
+    registry = build_registry(callback, config.user_id)
+    runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=memory_prompt)
 
     shutdown_task: asyncio.Task[None] | None = None
 
@@ -102,7 +109,7 @@ async def main() -> None:
             try:
                 await callback.run_error(str(exc))
             except Exception:
-                pass
+                log.warning("executor_v2.error_callback_failed", exc_info=True)
     finally:
         stop_event.set()
         try:

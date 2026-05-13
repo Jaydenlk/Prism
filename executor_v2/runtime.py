@@ -29,6 +29,8 @@ from executor_v2.hooks.sdk_bridge import SDKBridge
 
 logger = structlog.get_logger(__name__)
 
+Message = StreamEvent | AssistantMessage | ResultMessage
+
 
 class PrismAgentRuntime:
     def __init__(
@@ -36,11 +38,13 @@ class PrismAgentRuntime:
         config: RunConfig,
         callback: BackendCallback,
         registry: HookRegistry,
+        memory_prompt: str = "",
     ) -> None:
         self._config = config
         self._callback = callback
         self._registry = registry
         self._bridge = SDKBridge(registry)
+        self._memory_prompt = memory_prompt
         self._client: ClaudeSDKClient | None = None
 
     def _build_options(self) -> ClaudeAgentOptions:
@@ -48,12 +52,16 @@ class PrismAgentRuntime:
         if self._config.base_url:
             env["ANTHROPIC_BASE_URL"] = self._config.base_url
 
+        combined = self._config.system_prompt
+        if self._memory_prompt:
+            combined = f"{combined}\n\n{self._memory_prompt}".strip() if combined else self._memory_prompt
+
         system_prompt: dict[str, Any] | None = None
-        if self._config.system_prompt:
+        if combined:
             system_prompt = {
                 "type": "preset",
                 "preset": "claude_code",
-                "append": self._config.system_prompt,
+                "append": combined,
             }
 
         return ClaudeAgentOptions(
@@ -75,6 +83,7 @@ class PrismAgentRuntime:
         await self._registry.fire(SESSION_START, {
             "run_id": self._config.run_id,
             "session_id": self._config.session_id,
+            "user_id": self._config.user_id,
             "model": self._config.model,
         })
 
@@ -86,23 +95,24 @@ class PrismAgentRuntime:
             )
             async for msg in self._client.receive_response():
                 await self._handle_message(msg)
-        except Exception:
+        except Exception as exc:
             log.exception("runtime_error")
             await self._registry.fire(RUN_ERROR, {
                 "run_id": self._config.run_id,
-                "error": "runtime_error",
+                "error": str(exc),
             })
             raise
         finally:
             await self._registry.fire(SESSION_END, {
                 "run_id": self._config.run_id,
                 "session_id": self._config.session_id,
+                "user_id": self._config.user_id,
             })
             if self._client:
                 await self._client.disconnect()
                 log.info("sdk_disconnected")
 
-    async def _handle_message(self, msg: object) -> None:
+    async def _handle_message(self, msg: Message) -> None:
         if isinstance(msg, StreamEvent):
             await self._on_stream_event(msg)
         elif isinstance(msg, AssistantMessage):

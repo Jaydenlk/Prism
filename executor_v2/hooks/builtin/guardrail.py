@@ -2,39 +2,42 @@ from __future__ import annotations
 
 import os
 
-INVESTMENT_KEYWORDS: set[str] = {
-    "投资",
-    "理财",
-    "炒股",
-    "基金推荐",
-    "股票推荐",
-    "buy stock",
-    "investment advice",
-}
+import structlog
 
-_ALLOWED_PATHS_PREFIX = os.path.expanduser("~")
+logger = structlog.get_logger(__name__)
+
+INVESTMENT_KEYWORDS: frozenset[str] = frozenset({
+    "投资", "理财", "炒股", "基金推荐", "股票推荐",
+    "buy stock", "investment advice",
+})
+
+WORKSPACE_PREFIX = os.environ.get("WORKSPACE_PATH", "/workspace")
 
 
-async def guardrail_handler(payload: dict) -> dict:
-    response = str(payload.get("tool_response", ""))
+async def pre_guardrail(payload: dict) -> dict:
+    tool_input = payload.get("tool_input") or {}
+    for key in ("file_path", "path", "command"):
+        value = str(tool_input.get(key, ""))
+        if not value:
+            continue
+        resolved = os.path.realpath(value)
+        if not resolved.startswith(WORKSPACE_PREFIX) and not resolved.startswith("/tmp"):
+            logger.warning("guardrail.path_blocked", path=value, resolved=resolved)
+            return {
+                "continue_": False,
+                "decision": "block",
+                "reason": f"Guardrail: path outside workspace — {value}",
+            }
+    return {"continue_": True}
+
+
+async def post_guardrail(payload: dict) -> dict:
+    response = str(payload.get("tool_response", "")).lower()
     for keyword in INVESTMENT_KEYWORDS:
-        if keyword in response.lower():
+        if keyword in response:
             return {
                 "continue_": False,
                 "decision": "block",
                 "reason": "Guardrail: investment advice detected",
             }
-
-    tool_input = payload.get("tool_input") or {}
-    for value in tool_input.values():
-        path = str(value)
-        if path.startswith("/") or path.startswith("\\"):
-            resolved = os.path.realpath(path)
-            if not resolved.startswith(_ALLOWED_PATHS_PREFIX):
-                return {
-                    "continue_": False,
-                    "decision": "block",
-                    "reason": f"Guardrail: path access denied — {path}",
-                }
-
     return {"continue_": True}

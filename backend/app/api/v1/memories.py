@@ -33,9 +33,9 @@ async def list_memories(
 
 @router.get("/search", response_model=ApiResponse[list[dict]])
 async def search_memories(
+    user: Annotated[User, Depends(get_current_user)],
     q: Annotated[str, Query(min_length=1)],
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
-    user: Annotated[User, Depends(get_current_user)] = None,
 ) -> ApiResponse[list[dict]]:
     svc = MemoryService()
     results = await svc.search_memories(str(user.id), query=q, limit=limit)
@@ -46,7 +46,7 @@ async def search_memories(
 @router.post("", response_model=ApiResponse[dict], status_code=201)
 async def add_memory(
     body: AddMemoryRequest,
-    user: Annotated[User, Depends(get_current_user)] = None,
+    user: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[dict]:
     svc = MemoryService()
     result = await svc.add_memory(str(user.id), content=body.content)
@@ -57,8 +57,8 @@ async def add_memory(
 @router.delete("/{memory_id}", status_code=204)
 async def delete_memory(
     memory_id: str,
-    user: Annotated[User, Depends(get_current_user)] = None,
+    user: Annotated[User, Depends(get_current_user)],
 ) -> None:
     svc = MemoryService()
-    await svc.delete_memory(memory_id)
+    await svc.delete_memory(str(user.id), memory_id)
     logger.info("memory.delete", user_id=str(user.id), memory_id=memory_id)
