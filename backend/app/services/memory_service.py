@@ -12,12 +12,18 @@ _ENABLED = bool(_API_KEY)
 
 
 def _build_config() -> dict:
+    _base = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    _openai_base = _base.replace("/anthropic", "").rstrip("/") + "/v1"
+
     config: dict = {
         "llm": {
-            "provider": "anthropic",
+            "provider": "openai",
             "config": {
                 "model": os.environ.get("MEM0_MODEL", "auto-v2"),
                 "api_key": _API_KEY,
+                "openai_base_url": _openai_base,
+                "temperature": 0.1,
+                "max_tokens": 2048,
             },
         },
         "embedder": {
