@@ -18,6 +18,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.models.provider import Provider
 from app.models.run import Run
 from app.models.session import Session as SessionModel, SessionQueueItem
 from app.schemas.task import SubmitTaskRequest, SubmitTaskResponse
@@ -98,9 +99,23 @@ class TaskService:
         """从 session.config_snapshot 读取 model，不存在则用默认值。"""
         return session.config_snapshot.get("model", DEFAULT_MODEL)
 
-    def _resolve_provider_id(self, session: SessionModel) -> str | None:
-        """从 session.config_snapshot 读取 provider_id，可为 None。"""
-        return session.config_snapshot.get("provider_id", None)
+    def _resolve_provider_id(self, session: SessionModel) -> str:
+        """从 session.config_snapshot 读取 provider_id；未配置时取系统默认或首个活跃 provider。"""
+        pid = session.config_snapshot.get("provider_id")
+        if pid:
+            return pid
+        provider = (
+            self._db.query(Provider)
+            .filter(Provider.is_healthy.is_(True))
+            .order_by(Provider.is_default.desc(), Provider.priority.desc(), Provider.created_at.asc())
+            .first()
+        )
+        if provider is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No active provider available",
+            )
+        return provider.id
 
     def _create_run(
         self,

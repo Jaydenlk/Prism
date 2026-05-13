@@ -24,12 +24,18 @@ class MemoryManager:
         try:
             from mem0 import AsyncMemory
 
+            base = (self._base_url or "").rstrip("/")
+            if "/anthropic" in base:
+                base = base.replace("/anthropic", "")
+            openai_base = f"{base}/v1" if base else "https://api.anthropic.com/v1"
+
             config: dict = {
                 "llm": {
-                    "provider": "anthropic",
+                    "provider": "openai",
                     "config": {
-                        "model": self._model or "claude-haiku-4-5-20251001",
+                        "model": self._model or "auto-v2",
                         "api_key": self._api_key,
+                        "openai_base_url": openai_base,
                     },
                 },
                 "embedder": {
@@ -52,9 +58,6 @@ class MemoryManager:
                 },
             }
 
-            if self._base_url:
-                os.environ.setdefault("ANTHROPIC_BASE_URL", self._base_url)
-
             self._memory = AsyncMemory.from_config(config)
             logger.info("memory.initialized", model=self._model)
         except Exception as exc:
@@ -65,6 +68,10 @@ class MemoryManager:
         if not self._initialized and self._api_key:
             self._initialized = True
             self._init_mem0()
+
+    def eager_init(self) -> "MemoryManager":
+        self._ensure_init()
+        return self
 
     async def recall(self, user_id: str, query: str, limit: int = 10) -> list[dict]:
         self._ensure_init()

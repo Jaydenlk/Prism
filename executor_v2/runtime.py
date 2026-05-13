@@ -46,6 +46,8 @@ class PrismAgentRuntime:
         self._bridge = SDKBridge(registry)
         self._memory_prompt = memory_prompt
         self._client: ClaudeSDKClient | None = None
+        self._last_confidence: str | None = None
+        self._last_uncertain_claims: list[str] | None = None
 
     def _build_options(self) -> ClaudeAgentOptions:
         env: dict[str, str] = {"ANTHROPIC_API_KEY": self._config.api_key}
@@ -163,10 +165,15 @@ class PrismAgentRuntime:
         if blocks:
             payload = {"role": "assistant", "blocks": blocks}
             await self._registry.fire(MESSAGE_COMPLETE, payload)
+            conf = payload.get("_confidence")
+            claims = payload.get("_uncertain_claims")
+            if conf is not None:
+                self._last_confidence = conf
+                self._last_uncertain_claims = claims
             await self._callback.message_complete(
                 "assistant", blocks,
-                confidence=payload.get("_confidence"),
-                uncertain_claims=payload.get("_uncertain_claims"),
+                confidence=conf,
+                uncertain_claims=claims,
             )
 
     async def _on_result(self, msg: ResultMessage) -> None:
@@ -175,12 +182,18 @@ class PrismAgentRuntime:
             await self._callback.run_error(msg.result or "Unknown error")
             await self._registry.fire(RUN_ERROR, {"error": msg.result})
         else:
+            harness: dict[str, Any] = {}
+            if self._last_confidence is not None:
+                harness["confidence"] = self._last_confidence
+            if self._last_uncertain_claims:
+                harness["uncertain_claims"] = self._last_uncertain_claims
             await self._callback.run_complete(
                 input_tokens=usage.get("input_tokens", 0),
                 output_tokens=usage.get("output_tokens", 0),
                 cache_hit_tokens=usage.get("cache_read_input_tokens", 0),
                 cache_creation_tokens=usage.get("cache_creation_input_tokens", 0),
                 turn_count=msg.num_turns,
+                harness_summary=harness,
             )
             await self._registry.fire(RUN_COMPLETE, {
                 "usage": usage,

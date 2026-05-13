@@ -74,7 +74,7 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
                     SELECT r.prompt, r.model, r.agent_type,
                            p.base_url, p.api_key_encrypted, p.model_id
                       FROM runs r
-                      JOIN providers p ON p.id = r.provider_id
+                      LEFT JOIN providers p ON p.id = r.provider_id
                      WHERE r.id = :run_id
                 """),
                 {"run_id": args.run_id},
@@ -83,7 +83,15 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
         engine.dispose()
 
     agent_type = row["agent_type"] or "chat"
-    api_key = decrypt_api_key(row["api_key_encrypted"], encryption_key)
+
+    if row["api_key_encrypted"]:
+        api_key = decrypt_api_key(row["api_key_encrypted"], encryption_key)
+        base_url = row["base_url"]
+        model = row["model_id"] or row["model"]
+    else:
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+        model = row["model"] or "claude-sonnet-4-6-20251101"
 
     log = logger.bind(run_id=args.run_id, agent_type=agent_type)
     log.info("run_config_loaded")
@@ -96,9 +104,9 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
         callback_secret=args.callback_secret,
         redis_url=args.redis_url,
         prompt=row["prompt"],
-        model=row["model_id"] or row["model"],
+        model=model,
         api_key=api_key,
-        base_url=row["base_url"],
+        base_url=base_url,
         agent_type=agent_type,
         system_prompt="",
         max_turns=MAX_TURNS.get(agent_type, MAX_TURNS["chat"]),

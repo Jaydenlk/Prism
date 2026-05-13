@@ -145,17 +145,18 @@ class BackendCallback:
         cache_hit_tokens: int = 0,
         cache_creation_tokens: int = 0,
         turn_count: int = 0,
+        harness_summary: dict | None = None,
     ) -> None:
-        await self._http_post(
-            "run_complete",
-            {
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cache_hit_tokens": cache_hit_tokens,
-                "cache_creation_tokens": cache_creation_tokens,
-                "turn_count": turn_count,
-            },
-        )
+        data = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_hit_tokens": cache_hit_tokens,
+            "cache_creation_tokens": cache_creation_tokens,
+            "turn_count": turn_count,
+        }
+        if harness_summary:
+            data["harness_summary"] = harness_summary
+        await self._http_post("run_complete", data)
 
     async def run_error(self, error: str) -> None:
         await self._http_post("run_error", {"error": error})

@@ -9,7 +9,7 @@ import structlog
 
 from executor_v2.callbacks import BackendCallback
 from executor_v2.config import RunConfig, load_run_config, parse_args
-from executor_v2.heartbeat import run_heartbeat
+from executor_v2.heartbeat import start_heartbeat_thread
 from executor_v2.hooks.builtin.guardrail import post_guardrail, pre_guardrail
 from executor_v2.hooks.builtin.observability import observability_handler
 from executor_v2.hooks.builtin.permission import permission_handler
@@ -31,7 +31,7 @@ from executor_v2.userbrain.memory import MemoryManager
 logger = structlog.get_logger()
 
 
-def build_registry(callback: BackendCallback, user_id: str, prompt: str) -> HookRegistry:
+def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: MemoryManager | None = None) -> HookRegistry:
     registry = HookRegistry()
     prism = PrismHooks(callback)
 
@@ -49,7 +49,7 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str) -> Hook
     for event in [PRE_TOOL_USE, POST_TOOL_USE, POST_TOOL_USE_FAILURE]:
         registry.register(event, HookHandler(callback=observability_handler, priority=999, category="observability"))
 
-    memory_hook = MemoryHook(MemoryManager(), user_id)
+    memory_hook = MemoryHook(mem or MemoryManager(), user_id)
     memory_hook.register(registry)
 
     router_hook = RouterHook(prompt=prompt, user_id=user_id)
@@ -77,30 +77,28 @@ async def main() -> None:
         redis_url=config.redis_url,
     )
 
-    stop_event = asyncio.Event()
-    heartbeat_task = asyncio.create_task(
-        run_heartbeat(
-            redis_url=config.redis_url,
-            run_id=config.run_id,
-            stop_event=stop_event,
-            interval=int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "5")),
-            ttl=int(os.environ.get("HEARTBEAT_TTL_SECONDS", "60")),
-        )
+    heartbeat_stop = start_heartbeat_thread(
+        redis_url=config.redis_url,
+        run_id=config.run_id,
+        interval=int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "5")),
+        ttl=int(os.environ.get("HEARTBEAT_TTL_SECONDS", "60")),
     )
 
     memory_prompt = ""
     memories: list[dict] = []
+    mem: MemoryManager | None = None
     try:
         mem = await asyncio.wait_for(
-            asyncio.to_thread(MemoryManager, api_key=config.api_key, base_url=config.base_url, model=config.model),
-            timeout=20,
+            asyncio.to_thread(
+                lambda: MemoryManager(api_key=config.api_key, base_url=config.base_url, model=config.model).eager_init()
+            ),
+            timeout=30,
         )
         memories = await asyncio.wait_for(mem.recall(config.user_id, config.prompt), timeout=15)
         memory_prompt = mem.build_prompt_section(memories)
     except Exception as exc:
         log.warning("memory_init_skipped", error=str(exc))
 
-    # Classify intent BEFORE runtime (same pattern as memory recall)
     from executor_v2.userbrain.router import IntentRouter
     intent = await IntentRouter().classify(config.prompt, memories)
     from executor_v2.hooks.router_hook import _load_skills
@@ -111,7 +109,7 @@ async def main() -> None:
 
     combined_prompt = "\n\n".join(p for p in [memory_prompt, skill_prompt] if p)
 
-    registry, _ = build_registry(callback, config.user_id, config.prompt)
+    registry, _ = build_registry(callback, config.user_id, config.prompt, mem=mem)
     runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=combined_prompt)
 
     shutdown_task: asyncio.Task[None] | None = None
@@ -119,7 +117,7 @@ async def main() -> None:
     def handle_signal() -> None:
         nonlocal shutdown_task
         if shutdown_task is None or shutdown_task.done():
-            shutdown_task = asyncio.create_task(_shutdown(runtime, stop_event))
+            shutdown_task = asyncio.create_task(_shutdown(runtime, heartbeat_stop))
 
     if sys.platform != "win32":
         loop = asyncio.get_running_loop()
@@ -138,19 +136,15 @@ async def main() -> None:
             except Exception:
                 log.warning("executor_v2.error_callback_failed", exc_info=True)
     finally:
-        stop_event.set()
-        try:
-            await heartbeat_task
-        except Exception:
-            log.warning("heartbeat_task_error", exc_info=True)
+        heartbeat_stop.set()
         await callback.close()
         log.info("executor_v2.stopped")
 
 
-async def _shutdown(runtime: PrismAgentRuntime, stop_event: asyncio.Event) -> None:
+async def _shutdown(runtime: PrismAgentRuntime, heartbeat_stop: "threading.Event") -> None:
     logger.info("executor_v2.shutdown_signal")
     await runtime.interrupt()
-    stop_event.set()
+    heartbeat_stop.set()
 
 
 if __name__ == "__main__":
