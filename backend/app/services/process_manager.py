@@ -204,9 +204,39 @@ class ProcessManager:
         workspace_dir = f"/workspace/{run_row.session_id}"
         os.makedirs(workspace_dir, exist_ok=True)
 
+        # Query user's enabled MCP servers
+        import json
+        from app.models.mcp_server import McpServer, UserMcpInstall
+        mcp_configs = []
+        try:
+            with SessionLocal() as db:
+                mcp_installs = (
+                    db.query(UserMcpInstall)
+                    .join(McpServer, UserMcpInstall.mcp_server_id == McpServer.id)
+                    .filter(
+                        UserMcpInstall.user_id == run_row.user_id,
+                        UserMcpInstall.is_enabled.is_(True),
+                    )
+                    .all()
+                )
+                for install in mcp_installs:
+                    srv = install.mcp_server
+                    mcp_configs.append({
+                        "name": srv.name,
+                        "transport": srv.transport,
+                        "command": srv.command,
+                        "args": srv.args or [],
+                        "url": srv.url,
+                        "env": srv.env or {},
+                    })
+        except Exception as exc:
+            logger.warning("mcp_query_failed", error=str(exc))
+
         # 构造 ADR-066 标准化命令
         cmd = self._build_command(run_row, resume_from_step=resume_from_step)
         env = self._build_env(workspace_dir=workspace_dir)
+        if mcp_configs:
+            env["MCP_SERVERS_JSON"] = json.dumps(mcp_configs)
 
         # 启动子进程
         try:

@@ -125,8 +125,14 @@ async def main() -> None:
     assembler.add_skill(skill_prompt)
     combined_prompt = assembler.assemble()
 
+    import json as _json
+    mcp_servers_raw = os.environ.get("MCP_SERVERS_JSON", "")
+    mcp_servers: list[dict] = _json.loads(mcp_servers_raw) if mcp_servers_raw else []
+    if mcp_servers:
+        log.info("mcp.servers_loaded", count=len(mcp_servers))
+
     registry, _ = build_registry(callback, config.user_id, config.prompt, mem=mem)
-    runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=combined_prompt)
+    runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=combined_prompt, mcp_servers=mcp_servers)
 
     shutdown_task: asyncio.Task[None] | None = None
 
