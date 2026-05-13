@@ -28,7 +28,9 @@ WORKDIR /app/backend
 # Pre-download sentence-transformers embedding model (90MB, cached in image layer)
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
 
-RUN useradd -m -s /bin/bash prism && mkdir -p /workspace && chown prism:prism /workspace
+RUN useradd -m -s /bin/bash prism \
+    && mkdir -p /workspace && chown prism:prism /workspace \
+    && chown -R prism:prism /app/backend /app/data 2>/dev/null; true
 
 EXPOSE 8000
 

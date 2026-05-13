@@ -74,15 +74,12 @@ class MemoryService:
         self._require_enabled()
         mem = _get_memory()
         try:
-            result = await mem.get_all(user_id=user_id)
+            result = await mem.get_all(filters={"user_id": user_id})
             if isinstance(result, dict):
                 return result.get("results", [])
             if isinstance(result, list):
                 return result
             return []
-        except TypeError:
-            results = await mem.search(query="*", filters={"user_id": user_id}, top_k=100)
-            return results.get("results", []) if isinstance(results, dict) else []
         except HTTPException:
             raise
         except Exception as exc:
@@ -108,7 +105,7 @@ class MemoryService:
         self._require_enabled()
         mem = _get_memory()
         try:
-            all_memories = await mem.get_all(user_id=user_id)
+            all_memories = await mem.get_all(filters={"user_id": user_id})
             if isinstance(all_memories, dict):
                 owned_ids = {m.get("id") for m in all_memories.get("results", [])}
             elif isinstance(all_memories, list):
