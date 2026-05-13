@@ -47,6 +47,7 @@ import type {
   HealthDetailed,
   PagedResponse,
   SSETicketResponse,
+  Memory,
 } from './types';
 
 declare global {
@@ -929,6 +930,30 @@ export const auth = {
   phoneLogin,
   googleComplete,
 };
+
+// ---------------------------------------------------------------------------
+// Frontend error reporting (no-auth)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Memory functions
+// ---------------------------------------------------------------------------
+
+export async function listMemories(): Promise<Memory[]> {
+  return request<Memory[]>('GET', '/memories');
+}
+
+export async function searchMemories(q: string, limit = 10): Promise<Memory[]> {
+  return request<Memory[]>('GET', `/memories/search`, { query: { q, limit } });
+}
+
+export async function addMemory(content: string): Promise<Memory> {
+  return request<Memory>('POST', '/memories', { json: { content } });
+}
+
+export async function deleteMemory(memoryId: string): Promise<void> {
+  await request<void>('DELETE', `/memories/${memoryId}`);
+}
 
 // ---------------------------------------------------------------------------
 // Frontend error reporting (no-auth)

@@ -493,3 +493,15 @@ export interface HealthDetailed {
   components: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+// ---------------------------------------------------------------------------
+// Memory types
+// ---------------------------------------------------------------------------
+
+export interface Memory {
+  id: string;
+  memory: string;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: Record<string, unknown>;
+}

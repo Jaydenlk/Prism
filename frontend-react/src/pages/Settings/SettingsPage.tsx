@@ -4,15 +4,17 @@ import { ProvidersTab } from './ProvidersTab';
 import { McpTab } from './McpTab';
 import { ImTab } from './ImTab';
 import { PreferencesTab } from './PreferencesTab';
+import { MemoryTab } from './MemoryTab';
 import styles from './SettingsPage.module.css';
 
-type TabId = 'profile' | 'providers' | 'mcp' | 'im' | 'preferences';
+type TabId = 'profile' | 'providers' | 'mcp' | 'im' | 'memory' | 'preferences';
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'profile', label: '个人资料' },
   { id: 'providers', label: '模型供应商' },
   { id: 'mcp', label: 'MCP 服务' },
   { id: 'im', label: '即时通讯' },
+  { id: 'memory', label: '记忆' },
   { id: 'preferences', label: '偏好设置' },
 ];
 
@@ -37,6 +39,7 @@ export function SettingsPage() {
         {activeTab === 'providers' && <ProvidersTab />}
         {activeTab === 'mcp' && <McpTab />}
         {activeTab === 'im' && <ImTab />}
+        {activeTab === 'memory' && <MemoryTab />}
         {activeTab === 'preferences' && <PreferencesTab />}
       </div>
     </div>
