@@ -35,6 +35,7 @@ from structlog.contextvars import (
     clear_contextvars as _clear_contextvars,
     merge_contextvars,
 )
+from app.observability.masking import structlog_masker
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +194,7 @@ def init_logging(level: str = "INFO", *, dev_mode: bool = False) -> None:
     # Shared processors (applied regardless of renderer)
     shared_processors: list = [
         merge_contextvars,                             # inject bound context vars
+        structlog_masker,                              # redact secrets before rendering
         structlog.stdlib.add_log_level,                # add "level" key
         structlog.processors.TimeStamper(fmt="iso"),   # ISO 8601 timestamp
         structlog.processors.StackInfoRenderer(),      # render stack_info

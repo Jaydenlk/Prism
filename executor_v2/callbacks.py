@@ -8,9 +8,25 @@ import httpx
 import redis.asyncio as aioredis
 import structlog
 
+from executor_v2.masking import mask
+
 logger = structlog.get_logger(__name__)
 
 _RETRY_DELAYS = (0.5, 1.0, 2.0)
+
+
+def _mask_dict(d: dict) -> dict:
+    result = {}
+    for k, v in d.items():
+        if isinstance(v, str):
+            result[k] = mask(v)
+        elif isinstance(v, dict):
+            result[k] = _mask_dict(v)
+        elif isinstance(v, list):
+            result[k] = [_mask_dict(i) if isinstance(i, dict) else mask(i) if isinstance(i, str) else i for i in v]
+        else:
+            result[k] = v
+    return result
 
 
 class BackendCallback:
@@ -52,12 +68,12 @@ class BackendCallback:
             logger.warning("text_delta_publish_failed", error=str(exc))
 
     async def _http_post(self, event_type: str, data: dict) -> None:
-        payload = {
+        payload = _mask_dict({
             "run_id": self._run_id,
             "event_type": event_type,
             "data": data,
             "timestamp": self._now(),
-        }
+        })
         last_exc: Exception | str | None = None
         for attempt, delay in enumerate(_RETRY_DELAYS):
             try:
@@ -157,6 +173,17 @@ class BackendCallback:
         if harness_summary:
             data["harness_summary"] = harness_summary
         await self._http_post("run_complete", data)
+
+    async def permission_ask(self, request_id: str, tool_name: str, tool_input: dict) -> str:
+        await self._http_post("permission_ask", {
+            "request_id": request_id,
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+        })
+        result = await self._redis.blpop(f"perm_answer:{request_id}", timeout=60)
+        if result is None:
+            return "deny"
+        return result[1].decode() if isinstance(result[1], bytes) else str(result[1])
 
     async def run_error(self, error: str) -> None:
         await self._http_post("run_error", {"error": error})

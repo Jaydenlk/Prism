@@ -39,12 +39,14 @@ class PrismAgentRuntime:
         callback: BackendCallback,
         registry: HookRegistry,
         memory_prompt: str = "",
+        mcp_servers: list[dict] | None = None,
     ) -> None:
         self._config = config
         self._callback = callback
         self._registry = registry
         self._bridge = SDKBridge(registry)
         self._memory_prompt = memory_prompt
+        self._mcp_servers = mcp_servers or []
         self._client: ClaudeSDKClient | None = None
         self._last_confidence: str | None = None
         self._last_uncertain_claims: list[str] | None = None
@@ -66,19 +68,31 @@ class PrismAgentRuntime:
                 "append": combined,
             }
 
-        resume_id = self._config.session_id if self._config.resume_from_step is not None else None
+        resume_id = self._config.session_id
+
+        mcp_dict: dict[str, dict] = {}
+        for srv in self._mcp_servers:
+            if srv.get("transport") == "stdio":
+                mcp_dict[srv["name"]] = {
+                    "command": srv["command"],
+                    "args": srv.get("args", []),
+                    "env": srv.get("env", {}),
+                }
+            elif srv.get("transport") in ("sse", "http"):
+                mcp_dict[srv["name"]] = {"url": srv["url"]}
 
         return ClaudeAgentOptions(
             model=self._config.model,
             cwd=self._config.workspace_path,
             system_prompt=system_prompt,
-            permission_mode="acceptEdits",
+            permission_mode="default",
             max_turns=self._config.max_turns,
             allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
             env=env,
             include_partial_messages=True,
             hooks=self._bridge.build_sdk_hooks(),
             resume=resume_id,
+            mcp_servers=mcp_dict if mcp_dict else None,
         )
 
     async def run(self) -> None:

@@ -13,7 +13,7 @@ from executor_v2.config import RunConfig, load_run_config, parse_args
 from executor_v2.heartbeat import start_heartbeat_thread
 from executor_v2.hooks.builtin.guardrail import post_guardrail, pre_guardrail
 from executor_v2.hooks.builtin.observability import observability_handler
-from executor_v2.hooks.builtin.permission import permission_handler
+from executor_v2.hooks.builtin.permission import PermissionController
 from executor_v2.hooks.builtin.safety import safety_handler
 from executor_v2.hooks.memory_hook import MemoryHook
 from executor_v2.hooks.router_hook import RouterHook
@@ -36,7 +36,8 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: Me
     registry = HookRegistry()
     prism = PrismHooks(callback)
 
-    registry.register(PRE_TOOL_USE, HookHandler(callback=permission_handler, priority=10, category="permission"))
+    perm = PermissionController(callback)
+    registry.register(PRE_TOOL_USE, HookHandler(callback=perm.check, priority=10, category="permission"))
     registry.register(PRE_TOOL_USE, HookHandler(callback=pre_guardrail, priority=20, category="guardrail"))
     registry.register(PRE_TOOL_USE, HookHandler(callback=prism.on_pre_tool_use, priority=50, category="observability"))
 
@@ -65,6 +66,15 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: Me
 
 
 async def main() -> None:
+    from executor_v2.masking import structlog_masker
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog_masker,
+            structlog.dev.ConsoleRenderer(),
+        ],
+    )
+
     args = parse_args()
     log = logger.bind(run_id=args.run_id)
     log.info("executor_v2.starting")
@@ -87,7 +97,6 @@ async def main() -> None:
         ttl=int(os.environ.get("HEARTBEAT_TTL_SECONDS", "60")),
     )
 
-    memory_prompt = ""
     memories: list[dict] = []
     mem: MemoryManager | None = None
     try:
@@ -98,7 +107,6 @@ async def main() -> None:
             timeout=30,
         )
         memories = await asyncio.wait_for(mem.recall(config.user_id, config.prompt), timeout=15)
-        memory_prompt = mem.build_prompt_section(memories)
     except Exception as exc:
         log.warning("memory_init_skipped", error=str(exc))
 
@@ -110,10 +118,22 @@ async def main() -> None:
     skill_prompt = getattr(matched_skill, "system_prompt_addition", "")
     log.info("intent.classified", category=intent.category, skill=getattr(matched_skill, "name", ""))
 
-    combined_prompt = "\n\n".join(p for p in [memory_prompt, skill_prompt] if p)
+    from executor_v2.prompt import PromptAssembler
+    assembler = PromptAssembler()
+    assembler.add_base(config.agent_type)
+    assembler.add_workspace(config.workspace_path)
+    assembler.add_memories(memories)
+    assembler.add_skill(skill_prompt)
+    combined_prompt = assembler.assemble()
+
+    import json as _json
+    mcp_servers_raw = os.environ.get("MCP_SERVERS_JSON", "")
+    mcp_servers: list[dict] = _json.loads(mcp_servers_raw) if mcp_servers_raw else []
+    if mcp_servers:
+        log.info("mcp.servers_loaded", count=len(mcp_servers))
 
     registry, _ = build_registry(callback, config.user_id, config.prompt, mem=mem)
-    runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=combined_prompt)
+    runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=combined_prompt, mcp_servers=mcp_servers)
 
     shutdown_task: asyncio.Task[None] | None = None
 

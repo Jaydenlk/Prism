@@ -25,7 +25,7 @@ COPY executor_v2 /app/executor_v2
 ENV PYTHONPATH=/app:/app/backend
 WORKDIR /app/backend
 
-RUN useradd -m -s /bin/bash prism
+RUN useradd -m -s /bin/bash prism && mkdir -p /workspace && chown prism:prism /workspace
 
 EXPOSE 8000
 

@@ -201,9 +201,45 @@ class ProcessManager:
             self._notify_failure(run_id, "Run not found in database")
             return
 
+        workspace_dir = f"/workspace/{run_row.session_id}"
+        try:
+            os.makedirs(workspace_dir, exist_ok=True)
+        except OSError:
+            workspace_dir = "/tmp"
+
+        # Query user's enabled MCP servers
+        import json
+        from app.models.mcp_server import McpServer, UserMcpInstall
+        mcp_configs = []
+        try:
+            with SessionLocal() as db:
+                mcp_installs = (
+                    db.query(UserMcpInstall)
+                    .join(McpServer, UserMcpInstall.mcp_server_id == McpServer.id)
+                    .filter(
+                        UserMcpInstall.user_id == run_row.user_id,
+                        UserMcpInstall.is_enabled.is_(True),
+                    )
+                    .all()
+                )
+                for install in mcp_installs:
+                    srv = install.mcp_server
+                    mcp_configs.append({
+                        "name": srv.name,
+                        "transport": srv.transport,
+                        "command": srv.command,
+                        "args": srv.args or [],
+                        "url": srv.url,
+                        "env": srv.env or {},
+                    })
+        except Exception as exc:
+            logger.warning("mcp_query_failed", error=str(exc))
+
         # 构造 ADR-066 标准化命令
         cmd = self._build_command(run_row, resume_from_step=resume_from_step)
-        env = self._build_env()
+        env = self._build_env(workspace_dir=workspace_dir)
+        if mcp_configs:
+            env["MCP_SERVERS_JSON"] = json.dumps(mcp_configs)
 
         # 启动子进程
         try:
@@ -329,7 +365,7 @@ class ProcessManager:
             cmd.append(f"--otel-trace-id={traceparent}")
         return cmd
 
-    def _build_env(self) -> dict[str, str]:
+    def _build_env(self, workspace_dir: str = "/tmp") -> dict[str, str]:
         """
         ADR-066：传递必要环境变量。
 
@@ -340,6 +376,7 @@ class ProcessManager:
         env["ENCRYPTION_KEY"] = self._settings.ENCRYPTION_KEY
         env["OTEL_EXPORTER_OTLP_ENDPOINT"] = self._settings.OTEL_EXPORTER_OTLP_ENDPOINT or ""
         env["BACKEND_URL"] = self._settings.BACKEND_URL
+        env["WORKSPACE_PATH"] = workspace_dir
         return env
 
     # ------------------------------------------------------------------
