@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
+import re
 from dataclasses import dataclass
 
-import httpx
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -13,64 +12,46 @@ INTENT_CATEGORIES = [
     "writing", "analysis", "meeting", "chat",
 ]
 
+
 @dataclass
 class Intent:
     category: str
     confidence: float
 
+
+_PATTERNS: dict[str, list[str]] = {
+    "memo": ["记一下", "帮我记", "记住", "备忘", "note", "remember this", "save this", "记录"],
+    "reminder": ["提醒", "闹钟", "日程", "remind", "alarm", "schedule", "点.*会", "deadline"],
+    "research": ["调研", "研究", "搜索", "查找", "查一下", "了解", "research", "investigate", "find out", "look up", "search for", "what are", "compare"],
+    "brainstorm": ["讨论", "研讨", "头脑风暴", "brainstorm", "discuss", "debate", "think about", "explore ideas", "分析.*方向", "产品方向"],
+    "writing": ["写", "撰写", "起草", "邮件", "报告", "文案", "周报", "write", "draft", "email", "report", "compose"],
+    "analysis": ["分析", "数据", "统计", "趋势", "excel", "csv", "analyze", "data", "chart", "graph", "计算"],
+    "meeting": ["会议", "纪要", "会议记录", "行动项", "meeting", "minutes", "action items", "attendees"],
+}
+
+_COMPILED: dict[str, re.Pattern[str]] = {
+    cat: re.compile("|".join(re.escape(p) if ".*" not in p else p for p in patterns), re.IGNORECASE)
+    for cat, patterns in _PATTERNS.items()
+}
+
+
 class IntentRouter:
     def __init__(self) -> None:
-        self._api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        self._base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-        self._model = os.environ.get("ROUTER_MODEL", "auto-v2")
-        self._enabled = bool(self._api_key)
+        pass
 
     async def classify(self, message: str, user_memories: list[dict] | None = None) -> Intent:
-        if not self._enabled or len(message.strip()) < 5:
+        if len(message.strip()) < 3:
             return Intent(category="chat", confidence=1.0)
 
-        memory_hint = ""
-        if user_memories:
-            facts = [m.get("memory", "") for m in user_memories[:5] if m.get("memory")]
-            if facts:
-                memory_hint = f"\nUser context: {'; '.join(facts)}"
+        scores: dict[str, int] = {}
+        for cat, pattern in _COMPILED.items():
+            matches = pattern.findall(message)
+            if matches:
+                scores[cat] = len(matches)
 
-        prompt = (
-            f"Classify this message into exactly ONE category: {', '.join(INTENT_CATEGORIES)}\n"
-            f"Message: {message[:500]}{memory_hint}\n"
-            f"Reply with ONLY the category name, nothing else."
-        )
+        if not scores:
+            return Intent(category="chat", confidence=0.7)
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    f"{self._base_url}/v1/messages",
-                    headers={
-                        "x-api-key": self._api_key,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json",
-                    },
-                    json={
-                        "model": self._model,
-                        "max_tokens": 20,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                content = data.get("content", [])
-                raw_text = ""
-                for block in content:
-                    if block.get("type") == "text":
-                        raw_text = block["text"]
-                        break
-                    if block.get("type") == "thinking":
-                        raw_text = block.get("thinking", "")
-                if raw_text:
-                    category = raw_text.strip().lower().split()[-1].strip(".,!?\"'")
-                    if category in INTENT_CATEGORIES:
-                        return Intent(category=category, confidence=0.9)
-        except Exception as exc:
-            logger.warning("router.classify_failed", error=str(exc))
-
-        return Intent(category="chat", confidence=0.5)
+        best = max(scores, key=scores.get)  # type: ignore[arg-type]
+        logger.info("router.classified", category=best, scores=scores)
+        return Intent(category=best, confidence=0.9)
