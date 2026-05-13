@@ -774,6 +774,22 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         clearPollFallback();
         setRunActive(false);
         closeStream();
+        // Attach confidence badge to last agent message
+        const hs = evt.harness_summary || evt.data?.harness_summary;
+        if (hs?.confidence) {
+          setMsgs(prev => {
+            const next = [...prev];
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].role === "agent") {
+                const confLabel = { high: "高置信", medium: "中置信", low: "低置信" }[hs.confidence] || hs.confidence;
+                const claimText = hs.uncertain_claims?.length ? "不确定声明: " + hs.uncertain_claims.join("; ") : "";
+                next[i] = { ...next[i], harness: [{ kind: hs.confidence === "high" ? "muted" : "danger", title: `置信度: ${confLabel}`, detail: claimText || "验证通过" }] };
+                break;
+              }
+            }
+            return next;
+          });
+        }
         // Refresh history from DB to ensure we have the authoritative final state
         window.PrismAPI.sessions.listMessages(sid, { limit: 50 }).then(historyRes => {
           const rawMsgs = Array.isArray(historyRes) ? historyRes : (historyRes?.messages || historyRes?.items || []);
