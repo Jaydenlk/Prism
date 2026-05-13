@@ -202,7 +202,10 @@ class ProcessManager:
             return
 
         workspace_dir = f"/workspace/{run_row.session_id}"
-        os.makedirs(workspace_dir, exist_ok=True)
+        try:
+            os.makedirs(workspace_dir, exist_ok=True)
+        except OSError:
+            workspace_dir = "/tmp"
 
         # Query user's enabled MCP servers
         import json
