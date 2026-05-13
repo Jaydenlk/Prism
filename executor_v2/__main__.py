@@ -90,6 +90,15 @@ async def main() -> None:
 
     memory_prompt = ""
     memories: list[dict] = []
+    try:
+        mem = await asyncio.wait_for(
+            asyncio.to_thread(MemoryManager, api_key=config.api_key, base_url=config.base_url, model=config.model),
+            timeout=20,
+        )
+        memories = await asyncio.wait_for(mem.recall(config.user_id, config.prompt), timeout=15)
+        memory_prompt = mem.build_prompt_section(memories)
+    except Exception as exc:
+        log.warning("memory_init_skipped", error=str(exc))
 
     # Classify intent BEFORE runtime (same pattern as memory recall)
     from executor_v2.userbrain.router import IntentRouter

@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -64,6 +65,7 @@ def create_share(
         "created_by": str(user.id),
     }
     session.config_snapshot = config
+    flag_modified(session, "config_snapshot")
     session.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(session)
@@ -137,6 +139,7 @@ def revoke_share(
 
     del config["share"]
     session.config_snapshot = config
+    flag_modified(session, "config_snapshot")
     session.updated_at = datetime.now(timezone.utc)
     db.commit()
 

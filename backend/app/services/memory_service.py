@@ -74,8 +74,15 @@ class MemoryService:
         self._require_enabled()
         mem = _get_memory()
         try:
-            result = await mem.get_all(filters={"user_id": user_id})
-            return result if isinstance(result, list) else []
+            result = await mem.get_all(user_id=user_id)
+            if isinstance(result, dict):
+                return result.get("results", [])
+            if isinstance(result, list):
+                return result
+            return []
+        except TypeError:
+            results = await mem.search(query="*", filters={"user_id": user_id}, top_k=100)
+            return results.get("results", []) if isinstance(results, dict) else []
         except HTTPException:
             raise
         except Exception as exc:
@@ -101,12 +108,13 @@ class MemoryService:
         self._require_enabled()
         mem = _get_memory()
         try:
-            all_memories = await mem.get_all(filters={"user_id": user_id})
-            owned_ids = set()
-            if isinstance(all_memories, list):
-                owned_ids = {m.get("id") for m in all_memories}
-            elif isinstance(all_memories, dict):
+            all_memories = await mem.get_all(user_id=user_id)
+            if isinstance(all_memories, dict):
                 owned_ids = {m.get("id") for m in all_memories.get("results", [])}
+            elif isinstance(all_memories, list):
+                owned_ids = {m.get("id") for m in all_memories}
+            else:
+                owned_ids = set()
             if memory_id not in owned_ids:
                 raise HTTPException(status_code=404, detail="Memory not found")
             await mem.delete(memory_id=memory_id)

@@ -137,30 +137,31 @@ class VerifyAgent:
         return Confidence.LOW
 
     async def _llm_call(self, prompt: str) -> str:
-        """用小模型做单次评估"""
         try:
+            base = self._base_url.rstrip("/")
+            if "/anthropic" in base:
+                base = base.replace("/anthropic", "")
+            url = f"{base}/v1/chat/completions"
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
-                    f"{self._base_url}/v1/messages",
+                    url,
                     headers={
-                        "x-api-key": self._api_key,
-                        "anthropic-version": "2023-06-01",
+                        "authorization": f"Bearer {self._api_key}",
                         "content-type": "application/json",
                     },
                     json={
                         "model": self._model,
                         "max_tokens": 200,
+                        "temperature": 0.1,
                         "messages": [{"role": "user", "content": prompt}],
                     },
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                content = data.get("content", [])
-                for block in content:
-                    if block.get("type") == "text":
-                        return block["text"]
-                    if block.get("type") == "thinking":
-                        return block.get("thinking", "")
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "")
                 return ""
         except Exception as exc:
             logger.warning("verify.llm_call_failed", error=str(exc))
