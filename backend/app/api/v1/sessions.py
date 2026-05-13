@@ -435,3 +435,58 @@ async def permission_answer(
     )
 
     return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Fork endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{session_id}/fork", response_model=ApiResponse[SessionResponse], status_code=201)
+def fork_session(
+    session_id: str,
+    user: Annotated[User, Depends(get_current_user)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> ApiResponse[SessionResponse]:
+    from app.models.message import Message
+    from app.models.base import generate_uuid
+    from app.models.session import Session as SessionModel
+
+    svc = SessionService(db)
+    source = svc.get_session(user.id, session_id)
+
+    forked = SessionModel(
+        user_id=user.id,
+        title=f"{source.title} (fork)" if source.title else "Forked session",
+        status="idle",
+        config_snapshot=dict(source.config_snapshot or {}),
+        is_pinned=False,
+    )
+    db.add(forked)
+    db.flush()
+
+    source_messages = (
+        db.query(Message)
+        .filter(Message.session_id == source.id)
+        .order_by(Message.sequence_no)
+        .all()
+    )
+    for m in source_messages:
+        db.add(Message(
+            id=generate_uuid(),
+            session_id=forked.id,
+            run_id=None,
+            role=m.role,
+            content=m.content,
+            text_preview=m.text_preview,
+            sequence_no=m.sequence_no,
+            is_skill_context=m.is_skill_context,
+            skill_name=m.skill_name,
+            created_at=m.created_at,
+        ))
+
+    db.commit()
+    db.refresh(forked)
+
+    logger.info("session.forked", source_id=session_id, forked_id=forked.id, user_id=str(user.id))
+    return ApiResponse(data=_build_session_response(svc, forked))
