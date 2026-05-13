@@ -608,6 +608,14 @@
     },
   };
 
+  /* ── Memories ────────────────────────────────────────────────── */
+  const memories = {
+    list() { return request('GET', '/memories'); },
+    search(q) { return request('GET', '/memories/search', { query: { q } }); },
+    add(text) { return request('POST', '/memories', { json: { text } }); },
+    delete(id) { return request('DELETE', `/memories/${id}`); },
+  };
+
   /* ── Harness ──────────────────────────────────────────────────── */
   const harness = {
     config() {
@@ -684,6 +692,7 @@
     marketplaces,
     im,
     harness,
+    memories,
 
     auth: {
       me,
