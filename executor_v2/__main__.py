@@ -77,10 +77,6 @@ async def main() -> None:
         redis_url=config.redis_url,
     )
 
-    mem = MemoryManager(api_key=config.api_key, base_url=config.base_url, model=config.model)
-    memories = await mem.recall(config.user_id, config.prompt)
-    memory_prompt = mem.build_prompt_section(memories)
-
     stop_event = asyncio.Event()
     heartbeat_task = asyncio.create_task(
         run_heartbeat(
@@ -91,6 +87,10 @@ async def main() -> None:
             ttl=int(os.environ.get("HEARTBEAT_TTL_SECONDS", "60")),
         )
     )
+
+    mem = MemoryManager(api_key=config.api_key, base_url=config.base_url, model=config.model)
+    memories = await mem.recall(config.user_id, config.prompt)
+    memory_prompt = mem.build_prompt_section(memories)
 
     # Classify intent BEFORE runtime (same pattern as memory recall)
     from executor_v2.userbrain.router import IntentRouter
