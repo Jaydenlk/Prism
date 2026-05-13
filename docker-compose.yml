@@ -12,6 +12,7 @@ volumes:
   pgdata:
   prism-backend-data:
   redis-data:
+  workspace-data:
 
 services:
 
@@ -115,6 +116,7 @@ services:
       # and any skill installs that landed in plugin_cache, leaving Skills
       # Market install fully broken until next manual sync.
       - prism-backend-data:/app/data
+      - workspace-data:/workspace
     networks:
       - prism-net
     expose:

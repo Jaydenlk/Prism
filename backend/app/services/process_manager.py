@@ -201,9 +201,12 @@ class ProcessManager:
             self._notify_failure(run_id, "Run not found in database")
             return
 
+        workspace_dir = f"/workspace/{run_row.session_id}"
+        os.makedirs(workspace_dir, exist_ok=True)
+
         # 构造 ADR-066 标准化命令
         cmd = self._build_command(run_row, resume_from_step=resume_from_step)
-        env = self._build_env()
+        env = self._build_env(workspace_dir=workspace_dir)
 
         # 启动子进程
         try:
@@ -329,7 +332,7 @@ class ProcessManager:
             cmd.append(f"--otel-trace-id={traceparent}")
         return cmd
 
-    def _build_env(self) -> dict[str, str]:
+    def _build_env(self, workspace_dir: str = "/tmp") -> dict[str, str]:
         """
         ADR-066：传递必要环境变量。
 
@@ -340,6 +343,7 @@ class ProcessManager:
         env["ENCRYPTION_KEY"] = self._settings.ENCRYPTION_KEY
         env["OTEL_EXPORTER_OTLP_ENDPOINT"] = self._settings.OTEL_EXPORTER_OTLP_ENDPOINT or ""
         env["BACKEND_URL"] = self._settings.BACKEND_URL
+        env["WORKSPACE_PATH"] = workspace_dir
         return env
 
     # ------------------------------------------------------------------
