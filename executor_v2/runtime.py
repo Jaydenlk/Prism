@@ -68,7 +68,7 @@ class PrismAgentRuntime:
                 "append": combined,
             }
 
-        resume_id = self._config.session_id
+        resume_id = self._config.session_id if self._config.resume_from_step is not None else None
 
         mcp_dict: dict[str, dict] = {}
         for srv in self._mcp_servers:
@@ -85,7 +85,7 @@ class PrismAgentRuntime:
             model=self._config.model,
             cwd=self._config.workspace_path,
             system_prompt=system_prompt,
-            permission_mode="default",
+            permission_mode="acceptEdits",
             max_turns=self._config.max_turns,
             allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
             env=env,

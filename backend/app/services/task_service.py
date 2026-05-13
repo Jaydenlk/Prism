@@ -28,7 +28,7 @@ from app.services.sequence_service import get_next_queue_sequence_no
 QUEUE_MAX_SIZE: int = 50
 
 # Run 的默认 model（从 session.config_snapshot 读取，不存在则用此值）
-DEFAULT_MODEL: str = "claude-sonnet-4-6-20251101"
+DEFAULT_MODEL: str = "auto-v2"
 
 
 class TaskService:

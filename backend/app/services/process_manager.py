@@ -245,7 +245,7 @@ class ProcessManager:
         try:
             proc = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 env=env,
             )
@@ -272,9 +272,9 @@ class ProcessManager:
             resume_from_step=resume_from_step,
         )
 
-        # 等待完成或超时
+        # Wait for completion — communicate() reads pipes to avoid buffer deadlock
         try:
-            proc.wait(timeout=self._settings.RUN_TIMEOUT_SECONDS)
+            _, stderr_raw = proc.communicate(timeout=self._settings.RUN_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             logger.warning(
                 "process_manager.timeout",
@@ -282,45 +282,29 @@ class ProcessManager:
                 timeout=self._settings.RUN_TIMEOUT_SECONDS,
             )
             proc.kill()
-            proc.wait()
+            proc.communicate()
             self._notify_timeout(run_id)
             return
 
-        # 检查退出码
         returncode = proc.returncode
+        stderr_text = stderr_raw.decode(errors="replace") if stderr_raw else ""
         if returncode not in (0, None):
-            stderr_raw = b""
-            if proc.stderr:
-                try:
-                    stderr_raw = proc.stderr.read()
-                except OSError:
-                    pass
-            stderr_text = stderr_raw.decode(errors="replace")[:500]
             logger.error(
                 "process_manager.subprocess_failed",
                 run_id=run_id,
                 returncode=returncode,
-                stderr_preview=stderr_text,
+                stderr_preview=stderr_text[:500],
             )
             self._notify_failure(
                 run_id,
-                f"Process exited with code {returncode}: {stderr_text}",
+                f"Process exited with code {returncode}: {stderr_text[:500]}",
             )
         else:
-            # Capture a tail of stderr even on success so subprocess structlog
-            # output (which writes to stderr by default) isn't lost — aids
-            # observability for middleware / harness events debugging.
-            stderr_tail = ""
-            if proc.stderr:
-                try:
-                    stderr_tail = proc.stderr.read().decode(errors="replace")[-4000:]
-                except OSError:
-                    pass
             logger.info(
                 "process_manager.subprocess_done",
                 run_id=run_id,
                 returncode=returncode,
-                stderr_tail=stderr_tail,
+                stderr_tail=stderr_text[-4000:],
             )
 
     # ------------------------------------------------------------------

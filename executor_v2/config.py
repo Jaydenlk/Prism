@@ -87,11 +87,11 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
     if row["api_key_encrypted"]:
         api_key = decrypt_api_key(row["api_key_encrypted"], encryption_key)
         base_url = row["base_url"] or ""
-        model = row["model_id"] or row["model"] or "claude-sonnet-4-6-20251101"
+        model = row["model_id"] or row["model"] or "auto-v2"
     else:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-        model = row["model"] or "claude-sonnet-4-6-20251101"
+        model = row["model"] or "auto-v2"
 
     if not api_key:
         raise RuntimeError("No API key: provider has no encrypted key and ANTHROPIC_API_KEY env is unset")
