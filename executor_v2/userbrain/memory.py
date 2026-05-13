@@ -18,9 +18,7 @@ class MemoryManager:
         self._base_url = base_url or os.environ.get("ANTHROPIC_BASE_URL", "")
         self._model = model or os.environ.get("MEM0_MODEL", "auto-v2")
         self._memory: object | None = None
-
-        if self._api_key:
-            self._init_mem0()
+        self._initialized = False
 
     def _init_mem0(self) -> None:
         try:
@@ -63,7 +61,13 @@ class MemoryManager:
             logger.warning("memory.init_failed", error=str(exc))
             self._memory = None
 
+    def _ensure_init(self) -> None:
+        if not self._initialized and self._api_key:
+            self._initialized = True
+            self._init_mem0()
+
     async def recall(self, user_id: str, query: str, limit: int = 10) -> list[dict]:
+        self._ensure_init()
         if self._memory is None:
             return []
         try:
@@ -74,6 +78,7 @@ class MemoryManager:
             return []
 
     async def extract_and_store(self, user_id: str, messages: list[dict]) -> list[dict]:
+        self._ensure_init()
         if self._memory is None or not messages:
             return []
         try:
