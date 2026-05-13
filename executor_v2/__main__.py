@@ -104,7 +104,7 @@ async def main() -> None:
             asyncio.to_thread(
                 lambda: MemoryManager(api_key=config.api_key, base_url=config.base_url, model=config.model).eager_init()
             ),
-            timeout=30,
+            timeout=15,
         )
         memories = await asyncio.wait_for(mem.recall(config.user_id, config.prompt), timeout=15)
     except Exception as exc:
