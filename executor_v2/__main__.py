@@ -49,7 +49,7 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str) -> Hook
     for event in [PRE_TOOL_USE, POST_TOOL_USE, POST_TOOL_USE_FAILURE]:
         registry.register(event, HookHandler(callback=observability_handler, priority=999, category="observability"))
 
-    memory_hook = MemoryHook(MemoryManager(api_key=config.api_key, base_url=config.base_url, model=config.model), user_id)
+    memory_hook = MemoryHook(MemoryManager(), user_id)
     memory_hook.register(registry)
 
     router_hook = RouterHook(prompt=prompt, user_id=user_id)

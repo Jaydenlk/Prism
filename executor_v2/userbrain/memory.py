@@ -14,9 +14,9 @@ class MemoryManager:
         base_url: str = "",
         model: str = "",
     ) -> None:
-        self._api_key = api_key
-        self._base_url = base_url
-        self._model = model
+        self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self._base_url = base_url or os.environ.get("ANTHROPIC_BASE_URL", "")
+        self._model = model or os.environ.get("MEM0_MODEL", "auto-v2")
         self._memory: object | None = None
 
         if self._api_key:
