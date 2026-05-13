@@ -55,7 +55,7 @@ class MemoryManager:
             }
 
             if self._base_url:
-                config["llm"]["config"]["base_url"] = self._base_url
+                os.environ.setdefault("ANTHROPIC_BASE_URL", self._base_url)
 
             self._memory = AsyncMemory.from_config(config)
             logger.info("memory.initialized", model=self._model)

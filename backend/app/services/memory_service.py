@@ -39,9 +39,6 @@ def _build_config() -> dict:
             },
         },
     }
-    base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
-    if base_url:
-        config["llm"]["config"]["base_url"] = base_url
     return config
 
 
