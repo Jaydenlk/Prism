@@ -88,7 +88,7 @@ async def main() -> None:
         )
     )
 
-    mem = MemoryManager(api_key=config.api_key, base_url=config.base_url, model=config.model)
+    mem = await asyncio.to_thread(MemoryManager, api_key=config.api_key, base_url=config.base_url, model=config.model)
     memories = await mem.recall(config.user_id, config.prompt)
     memory_prompt = mem.build_prompt_section(memories)
 
