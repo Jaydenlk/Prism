@@ -22,7 +22,7 @@ class IntentRouter:
     def __init__(self) -> None:
         self._api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self._base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-        self._model = os.environ.get("ROUTER_MODEL", "claude-haiku-4-5-20251001")
+        self._model = os.environ.get("ROUTER_MODEL", "auto-v2")
         self._enabled = bool(self._api_key)
 
     async def classify(self, message: str, user_memories: list[dict] | None = None) -> Intent:
