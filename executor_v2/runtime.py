@@ -64,8 +64,11 @@ class PrismAgentRuntime:
                 "append": combined,
             }
 
+        resume_id = self._config.session_id if self._config.resume_from_step is not None else None
+
         return ClaudeAgentOptions(
             model=self._config.model,
+            cwd=self._config.workspace_path,
             system_prompt=system_prompt,
             permission_mode="acceptEdits",
             max_turns=self._config.max_turns,
@@ -73,6 +76,7 @@ class PrismAgentRuntime:
             env=env,
             include_partial_messages=True,
             hooks=self._bridge.build_sdk_hooks(),
+            resume=resume_id,
         )
 
     async def run(self) -> None:

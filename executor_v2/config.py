@@ -36,6 +36,7 @@ class RunConfig:
     system_prompt: str
     max_turns: int
     resume_from_step: int | None
+    workspace_path: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -102,4 +103,5 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
         system_prompt="",
         max_turns=MAX_TURNS.get(agent_type, MAX_TURNS["chat"]),
         resume_from_step=args.resume_from_step,
+        workspace_path=os.environ.get("WORKSPACE_PATH", "/workspace"),
     )
