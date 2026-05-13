@@ -55,7 +55,7 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: Me
     memory_hook = MemoryHook(shared_mem, user_id)
     memory_hook.register(registry)
 
-    router_hook = RouterHook(prompt=prompt, user_id=user_id, mem=shared_mem)
+    router_hook = RouterHook(prompt=prompt, user_id=user_id)
     router_hook.register(registry)
 
     verify_hook = VerifyHook(prompt=prompt, user_id=user_id, mem=shared_mem)

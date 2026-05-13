@@ -17,6 +17,7 @@ class VerifyHook:
         self._user_id = user_id
         self._verify_agent = None
         self._mem = mem
+        self._cached_memories: list[dict] | None = None
 
     def _get_verify_agent(self):
         if self._verify_agent is None:
@@ -43,16 +44,17 @@ class VerifyHook:
 
         verify_agent = self._get_verify_agent()
 
-        memories: list[dict] = []
-        if self._mem is not None:
-            try:
-                memories = await self._mem.recall(self._user_id, self._prompt)
-            except Exception:
-                pass
+        if self._cached_memories is None:
+            self._cached_memories = []
+            if self._mem is not None:
+                try:
+                    self._cached_memories = await self._mem.recall(self._user_id, self._prompt)
+                except Exception:
+                    pass
         verify_result = await verify_agent.verify(
             task=self._prompt,
             result=result_text,
-            user_memories=memories,
+            user_memories=self._cached_memories,
         )
 
         logger.info(

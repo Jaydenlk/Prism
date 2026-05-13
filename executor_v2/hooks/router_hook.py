@@ -38,37 +38,23 @@ def load_skills() -> dict[str, object]:
 
 
 class RouterHook:
-    def __init__(self, prompt: str, user_id: str, mem: object | None = None) -> None:
+    """Logs session start with skill info injected by __main__.py.
+
+    Intent classification and skill selection happen eagerly in __main__.py
+    before the runtime starts (because skill_prompt must be in the system
+    prompt at SDK connect time). This hook only records the event.
+    """
+
+    def __init__(self, prompt: str, user_id: str) -> None:
         self._prompt = prompt
         self._user_id = user_id
-        self._mem = mem
-        self.matched_skill: object | None = None
 
     async def on_session_start(self, payload: dict) -> dict:
-        from executor_v2.userbrain.router import IntentRouter
-
-        memories: list[dict] = []
-        if self._mem is not None:
-            try:
-                memories = await self._mem.recall(self._user_id, self._prompt)
-            except Exception:
-                pass
-
-        intent = await IntentRouter().classify(self._prompt, memories)
-        skills = load_skills()
-        skill = skills.get(intent.category, skills["chat"])
-        self.matched_skill = skill
-
         logger.info(
-            "router.matched",
-            intent=intent.category,
-            confidence=intent.confidence,
-            skill=getattr(skill, "name", "chat"),
+            "router.session_start",
+            skill=payload.get("_skill_name", ""),
+            user_id=self._user_id,
         )
-
-        payload["_skill_name"] = getattr(skill, "name", "")
-        payload["_skill_prompt"] = getattr(skill, "system_prompt_addition", "")
-
         return {"continue_": True}
 
     def register(self, registry: HookRegistry) -> None:

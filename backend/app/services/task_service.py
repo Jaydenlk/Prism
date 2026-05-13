@@ -106,7 +106,7 @@ class TaskService:
             return pid
         provider = (
             self._db.query(Provider)
-            .filter(Provider.is_healthy.is_(True))
+            .filter(Provider.is_healthy.is_(True), Provider.scope == "system")
             .order_by(Provider.is_default.desc(), Provider.priority.desc(), Provider.created_at.asc())
             .first()
         )

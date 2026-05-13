@@ -93,6 +93,9 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
         base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
         model = row["model"] or "claude-sonnet-4-6-20251101"
 
+    if not api_key:
+        raise RuntimeError("No API key: provider has no encrypted key and ANTHROPIC_API_KEY env is unset")
+
     log = logger.bind(run_id=args.run_id, agent_type=agent_type)
     log.info("run_config_loaded")
 
