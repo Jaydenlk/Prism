@@ -126,10 +126,16 @@ class BackendCallback:
         role: str,
         content: list,
         sequence_no_hint: int | None = None,
+        confidence: str | None = None,
+        uncertain_claims: list[str] | None = None,
     ) -> None:
         data: dict = {"role": role, "content": content}
         if sequence_no_hint is not None:
             data["sequence_no_hint"] = sequence_no_hint
+        if confidence is not None:
+            data["confidence"] = confidence
+        if uncertain_claims:
+            data["uncertain_claims"] = uncertain_claims
         await self._http_post("message_complete", data)
 
     async def run_complete(

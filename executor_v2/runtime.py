@@ -161,8 +161,13 @@ class PrismAgentRuntime:
                     }
                 )
         if blocks:
-            await self._callback.message_complete("assistant", blocks)
-            await self._registry.fire(MESSAGE_COMPLETE, {"role": "assistant", "blocks": blocks})
+            payload = {"role": "assistant", "blocks": blocks}
+            await self._registry.fire(MESSAGE_COMPLETE, payload)
+            await self._callback.message_complete(
+                "assistant", blocks,
+                confidence=payload.get("_confidence"),
+                uncertain_claims=payload.get("_uncertain_claims"),
+            )
 
     async def _on_result(self, msg: ResultMessage) -> None:
         usage = msg.usage or {}
