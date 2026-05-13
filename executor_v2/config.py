@@ -86,8 +86,8 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
 
     if row["api_key_encrypted"]:
         api_key = decrypt_api_key(row["api_key_encrypted"], encryption_key)
-        base_url = row["base_url"]
-        model = row["model_id"] or row["model"]
+        base_url = row["base_url"] or ""
+        model = row["model_id"] or row["model"] or "claude-sonnet-4-6-20251101"
     else:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")

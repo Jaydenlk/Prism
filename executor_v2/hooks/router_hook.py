@@ -10,11 +10,10 @@ from executor_v2.hooks.registry import (
 
 logger = structlog.get_logger(__name__)
 
-# Intent → Skill 映射
 _SKILL_MAP: dict[str, object] = {}
 
 
-def _load_skills() -> dict[str, object]:
+def load_skills() -> dict[str, object]:
     if _SKILL_MAP:
         return _SKILL_MAP
     from executor_v2.skills.chat import CHAT_SKILL
@@ -39,45 +38,36 @@ def _load_skills() -> dict[str, object]:
 
 
 class RouterHook:
-    def __init__(self, prompt: str, user_id: str) -> None:
+    def __init__(self, prompt: str, user_id: str, mem: object | None = None) -> None:
         self._prompt = prompt
         self._user_id = user_id
-        self._router = None
-        self.matched_skill = None  # 供外部读取
-
-    def _get_router(self):
-        if self._router is None:
-            from executor_v2.userbrain.router import IntentRouter
-            self._router = IntentRouter()
-        return self._router
+        self._mem = mem
+        self.matched_skill: object | None = None
 
     async def on_session_start(self, payload: dict) -> dict:
-        router = self._get_router()
+        from executor_v2.userbrain.router import IntentRouter
 
-        # 获取用户记忆做上下文
         memories: list[dict] = []
-        try:
-            from executor_v2.userbrain.memory import MemoryManager
-            mem = MemoryManager()
-            memories = await mem.recall(self._user_id, self._prompt)
-        except Exception:
-            pass
+        if self._mem is not None:
+            try:
+                memories = await self._mem.recall(self._user_id, self._prompt)
+            except Exception:
+                pass
 
-        intent = await router.classify(self._prompt, memories)
-        skills = _load_skills()
+        intent = await IntentRouter().classify(self._prompt, memories)
+        skills = load_skills()
         skill = skills.get(intent.category, skills["chat"])
-
         self.matched_skill = skill
+
         logger.info(
             "router.matched",
             intent=intent.category,
             confidence=intent.confidence,
-            skill=getattr(skill, 'name', 'chat'),
+            skill=getattr(skill, "name", "chat"),
         )
 
-        # 将 skill 信息存到 payload 供下游消费
-        payload["_skill_name"] = getattr(skill, 'name', '')
-        payload["_skill_prompt"] = getattr(skill, 'system_prompt_addition', '')
+        payload["_skill_name"] = getattr(skill, "name", "")
+        payload["_skill_prompt"] = getattr(skill, "system_prompt_addition", "")
 
         return {"continue_": True}
 

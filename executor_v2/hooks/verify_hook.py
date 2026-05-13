@@ -12,23 +12,17 @@ logger = structlog.get_logger(__name__)
 
 
 class VerifyHook:
-    def __init__(self, prompt: str, user_id: str) -> None:
+    def __init__(self, prompt: str, user_id: str, mem: object | None = None) -> None:
         self._prompt = prompt
         self._user_id = user_id
         self._verify_agent = None
-        self._memory_manager = None
+        self._mem = mem
 
     def _get_verify_agent(self):
         if self._verify_agent is None:
             from executor_v2.userbrain.verify import VerifyAgent
             self._verify_agent = VerifyAgent()
         return self._verify_agent
-
-    def _get_memory_manager(self):
-        if self._memory_manager is None:
-            from executor_v2.userbrain.memory import MemoryManager
-            self._memory_manager = MemoryManager()
-        return self._memory_manager
 
     async def on_message_complete(self, payload: dict) -> dict:
         role = payload.get("role", "")
@@ -48,9 +42,13 @@ class VerifyHook:
             return {"continue_": True}
 
         verify_agent = self._get_verify_agent()
-        memory_mgr = self._get_memory_manager()
 
-        memories = await memory_mgr.recall(self._user_id, self._prompt)
+        memories: list[dict] = []
+        if self._mem is not None:
+            try:
+                memories = await self._mem.recall(self._user_id, self._prompt)
+            except Exception:
+                pass
         verify_result = await verify_agent.verify(
             task=self._prompt,
             result=result_text,

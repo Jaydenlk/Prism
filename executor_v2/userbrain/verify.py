@@ -138,10 +138,8 @@ class VerifyAgent:
 
     async def _llm_call(self, prompt: str) -> str:
         try:
-            base = self._base_url.rstrip("/")
-            if "/anthropic" in base:
-                base = base.replace("/anthropic", "")
-            url = f"{base}/v1/chat/completions"
+            from executor_v2.userbrain import normalize_openai_base_url
+            url = f"{normalize_openai_base_url(self._base_url)}/chat/completions"
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(

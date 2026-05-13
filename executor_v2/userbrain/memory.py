@@ -24,10 +24,8 @@ class MemoryManager:
         try:
             from mem0 import AsyncMemory
 
-            base = (self._base_url or "").rstrip("/")
-            if "/anthropic" in base:
-                base = base.replace("/anthropic", "")
-            openai_base = f"{base}/v1" if base else "https://api.anthropic.com/v1"
+            from executor_v2.userbrain import normalize_openai_base_url
+            openai_base = normalize_openai_base_url(self._base_url)
 
             config: dict = {
                 "llm": {
@@ -96,6 +94,7 @@ class MemoryManager:
             return []
 
     async def get_all(self, user_id: str) -> list[dict]:
+        self._ensure_init()
         if self._memory is None:
             return []
         try:
@@ -106,6 +105,7 @@ class MemoryManager:
             return []
 
     async def delete(self, memory_id: str) -> None:
+        self._ensure_init()
         if self._memory is None:
             return
         try:

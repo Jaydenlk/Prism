@@ -4,6 +4,7 @@ import asyncio
 import os
 import signal
 import sys
+import threading
 
 import structlog
 
@@ -31,7 +32,7 @@ from executor_v2.userbrain.memory import MemoryManager
 logger = structlog.get_logger()
 
 
-def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: MemoryManager | None = None) -> HookRegistry:
+def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: MemoryManager | None = None) -> tuple[HookRegistry, RouterHook]:
     registry = HookRegistry()
     prism = PrismHooks(callback)
 
@@ -49,13 +50,15 @@ def build_registry(callback: BackendCallback, user_id: str, prompt: str, mem: Me
     for event in [PRE_TOOL_USE, POST_TOOL_USE, POST_TOOL_USE_FAILURE]:
         registry.register(event, HookHandler(callback=observability_handler, priority=999, category="observability"))
 
-    memory_hook = MemoryHook(mem or MemoryManager(), user_id)
+    shared_mem = mem or MemoryManager()
+
+    memory_hook = MemoryHook(shared_mem, user_id)
     memory_hook.register(registry)
 
-    router_hook = RouterHook(prompt=prompt, user_id=user_id)
+    router_hook = RouterHook(prompt=prompt, user_id=user_id, mem=shared_mem)
     router_hook.register(registry)
 
-    verify_hook = VerifyHook(prompt=prompt, user_id=user_id)
+    verify_hook = VerifyHook(prompt=prompt, user_id=user_id, mem=shared_mem)
     verify_hook.register(registry)
 
     return registry, router_hook
@@ -101,8 +104,8 @@ async def main() -> None:
 
     from executor_v2.userbrain.router import IntentRouter
     intent = await IntentRouter().classify(config.prompt, memories)
-    from executor_v2.hooks.router_hook import _load_skills
-    skills = _load_skills()
+    from executor_v2.hooks.router_hook import load_skills
+    skills = load_skills()
     matched_skill = skills.get(intent.category, skills["chat"])
     skill_prompt = getattr(matched_skill, "system_prompt_addition", "")
     log.info("intent.classified", category=intent.category, skill=getattr(matched_skill, "name", ""))
@@ -141,7 +144,7 @@ async def main() -> None:
         log.info("executor_v2.stopped")
 
 
-async def _shutdown(runtime: PrismAgentRuntime, heartbeat_stop: "threading.Event") -> None:
+async def _shutdown(runtime: PrismAgentRuntime, heartbeat_stop: threading.Event) -> None:
     logger.info("executor_v2.shutdown_signal")
     await runtime.interrupt()
     heartbeat_stop.set()
