@@ -87,7 +87,6 @@ async def main() -> None:
         ttl=int(os.environ.get("HEARTBEAT_TTL_SECONDS", "60")),
     )
 
-    memory_prompt = ""
     memories: list[dict] = []
     mem: MemoryManager | None = None
     try:
@@ -98,7 +97,6 @@ async def main() -> None:
             timeout=30,
         )
         memories = await asyncio.wait_for(mem.recall(config.user_id, config.prompt), timeout=15)
-        memory_prompt = mem.build_prompt_section(memories)
     except Exception as exc:
         log.warning("memory_init_skipped", error=str(exc))
 
@@ -110,7 +108,13 @@ async def main() -> None:
     skill_prompt = getattr(matched_skill, "system_prompt_addition", "")
     log.info("intent.classified", category=intent.category, skill=getattr(matched_skill, "name", ""))
 
-    combined_prompt = "\n\n".join(p for p in [memory_prompt, skill_prompt] if p)
+    from executor_v2.prompt import PromptAssembler
+    assembler = PromptAssembler()
+    assembler.add_base(config.agent_type)
+    assembler.add_workspace(config.workspace_path)
+    assembler.add_memories(memories)
+    assembler.add_skill(skill_prompt)
+    combined_prompt = assembler.assemble()
 
     registry, _ = build_registry(callback, config.user_id, config.prompt, mem=mem)
     runtime = PrismAgentRuntime(config, callback, registry, memory_prompt=combined_prompt)
