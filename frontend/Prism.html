@@ -25,7 +25,7 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/marked@12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/dompurify@3.0.11/dist/purify.min.js" integrity="sha384-Ic7KEGROu37YaruU6NyiYeib7UhjFyDZQ5fzBAji965L75T/4LGk5nzwMEjNGexs" crossorigin="anonymous"></script>
-<script src="apiClient.js?v=20260510"></script>
+<script src="apiClient.js?v=20260513"></script>
 
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -73,6 +73,7 @@ const Icon = ({ name, size = 16, stroke = 1.5, style = {} }) => {
     link: <><path d="M9 7a3 3 0 00-4 0L3 9a3 3 0 004 4l1-1M7 9a3 3 0 004 0l2-2a3 3 0 00-4-4L8 4"/></>,
     menu: <><path d="M2 4h12M2 8h12M2 12h12"/></>,
     sparkle: <><path d="M8 2v4M8 10v4M2 8h4M10 8h4M4 4l2 2M10 10l2 2M4 12l2-2M10 6l2-2"/></>,
+    memory: <><circle cx="8" cy="8" r="5"/><path d="M5.5 8a2.5 2.5 0 005 0M8 5.5v1M8 9.5v1"/></>,
   };
   return <svg viewBox="0 0 16 16" style={{ ...s, ...style }}>{paths[name] || null}</svg>;
 };
@@ -108,7 +109,7 @@ const PrismGlyph = ({ size = 140 }) => (
 const I18N = {
   zh: {
     brand: "Prism 棱镜",
-    nav: { chat: "对话", sessions: "会话", settings: "设置", usage: "用量", skills: "技能市场", plugins: "插件构建", admin: "管理", observability: "可观测性" },
+    nav: { chat: "对话", sessions: "会话", settings: "设置", usage: "用量", skills: "技能市场", plugins: "插件构建", memory: "记忆", admin: "管理", observability: "可观测性" },
     composer_placeholder: "想聊什么…",
     send: "发送", cancel: "取消", allow: "允许", deny: "拒绝",
     newChat: "新对话", searchSession: "搜索会话",
@@ -210,6 +211,7 @@ const NAV = [
   { id: "usage", icon: "usage" },
   { id: "skills", icon: "skills" },
   { id: "plugins", icon: "plugin" },
+  { id: "memory", icon: "memory" },
   { id: "observability", icon: "flow" },
   { id: "settings", icon: "settings" }
 ];
@@ -342,7 +344,7 @@ function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm, session
   const titles = {
     chat: sessionTitle || "对话",
     sessions: t.nav.sessions, usage: t.nav.usage, skills: t.nav.skills,
-    plugins: t.nav.plugins, observability: t.nav.observability, settings: t.nav.settings
+    plugins: t.nav.plugins, memory: t.nav.memory, observability: t.nav.observability, settings: t.nav.settings
   };
   return (
     <div className="topbar">
@@ -3639,6 +3641,93 @@ function PrefsTab({ onToast }) {
   );
 }
 
+function MemoryPage() {
+  const [memories, setMemories] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const load = async (q) => {
+    setLoading(true);
+    try {
+      const res = q
+        ? await window.PrismAPI.memories.search(q)
+        : await window.PrismAPI.memories.list();
+      setMemories(Array.isArray(res) ? res : (res?.items || []));
+    } catch (e) {
+      console.error("memories.load failed", e);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(""); }, []);
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    load(search);
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await window.PrismAPI.memories.delete(id);
+      setMemories(prev => prev.filter(m => m.id !== id));
+    } catch (e) {
+      console.error("memory.delete failed", e);
+    }
+  };
+
+  return (
+    <div style={{ padding: "32px 48px", maxWidth: 800 }}>
+      <h2 style={{ fontFamily: "var(--serif)", fontSize: 28, marginBottom: 8, color: "var(--ink)" }}>记忆</h2>
+      <p style={{ color: "var(--ink-4)", marginBottom: 24, fontSize: 14 }}>Agent 从对话中提取的用户信息，跨会话保留。</p>
+
+      <form onSubmit={handleSearch} style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="搜索记忆..."
+          className="input"
+          style={{ flex: 1 }}
+        />
+        <button type="submit" className="btn primary">搜索</button>
+        {search && (
+          <button type="button" className="btn" onClick={() => { setSearch(""); load(""); }}>清除</button>
+        )}
+      </form>
+
+      {loading
+        ? <p style={{ color: "var(--ink-4)" }}>加载中...</p>
+        : memories.length === 0
+          ? <p style={{ color: "var(--ink-4)", textAlign: "center", padding: 48 }}>
+              {search ? "没有找到匹配的记忆" : "还没有记忆。开始对话后，Agent 会自动提取和保存。"}
+            </p>
+          : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {memories.map(m => (
+                <div key={m.id} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+                  padding: "16px 20px", background: "var(--paper)", border: "1px solid var(--line)", borderRadius: 10,
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: 0, fontSize: 14, color: "var(--ink)", lineHeight: 1.6 }}>{m.memory || m.text || ""}</p>
+                    {m.created_at && (
+                      <span style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 4, display: "block" }}>
+                        {new Date(m.created_at).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDelete(m.id)}
+                    title="删除"
+                    className="icon-btn"
+                    style={{ marginLeft: 12, color: "var(--ink-4)" }}
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+      }
+    </div>
+  );
+}
+
 function SettingsPage({ onToast, initialTab }) {
   const [sec, setSec] = useState(initialTab || "profile");
   const tabs = [
@@ -4492,6 +4581,7 @@ function App() {
           {page === "usage" && <UsagePage/>}
           {page === "skills" && <SkillsPage/>}
           {page === "plugins" && <PluginsPage/>}
+          {page === "memory" && <MemoryPage/>}
           {page === "observability" && <ObsPage/>}
           {page === "settings" && <SettingsPage onToast={addToast} initialTab={settingsInitialTab}/>}
           {page !== "chat" && (
