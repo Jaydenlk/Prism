@@ -58,7 +58,7 @@ class HookRegistry:
             except Exception as exc:
                 logger.warning(
                     "hook_handler_error",
-                    event=event,
+                    hook_event=event,
                     category=handler.category,
                     error=str(exc),
                 )
