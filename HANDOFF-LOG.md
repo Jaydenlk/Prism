@@ -6,6 +6,44 @@
 
 ---
 
+## 🔴🔴🔴 2026-05-14 Stage 3 完成 + 前端 UX + DeepSeek 对比
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop
+
+### 本轮补充交付
+
+| 领域 | 交付 |
+|---|---|
+| Memory Tab 前端 | 搜索/展示/删除 UI 完整实现 |
+| Memory CRUD 修复 | get_all(filters=...) 参数格式、delete 所有权校验 |
+| Skills Market 修复 | prism 用户对 /app/backend 目录写权限 |
+| 思考块折叠 | `<details>` 可折叠，不再 [思考] 内联 |
+| 会话自动命名 | 首条消息发送时自动截取前 30 字为标题 |
+| 置信度徽章 | run_complete SSE → HarnessNotice 渲染 |
+| Docker 优化 | embedding 模型以 prism 用户预缓存 |
+| DeepSeek 对比 | deepseek-chat 调研 10.1s + 分析 7.6s，质量与 auto-v2 可比 |
+
+### E2E Playwright 验证
+
+- 折叠思考块 ▶ 思考过程 ✅ (e2e-33)
+- Python vs Java 表格对比渲染 ✅ (e2e-34)
+- 会话自动命名 "帮我写一个Python冒泡排序" ✅ (e2e-36)
+- Memory Tab 搜索 2 条记忆 ✅ (e2e-26)
+- Skills Market 200 OK ✅ (e2e-31)
+- Settings Provider 8 家供应商 ✅ (e2e-29)
+- 权限弹窗 pip install 审批 ✅ (e2e-18)
+- 移动端 390x844 布局 ✅ (e2e-21/22)
+
+### 遗留
+
+- Memory delete 后端 502（mem0 delete 方法参数问题，需进一步调试）
+- 飞书测试需 FEISHU_ENCRYPT_KEY + VERIFICATION_TOKEN
+- Share 链接验证未做
+- MCP 工具实测需安装真实 MCP server
+
+---
+
 ## 🔴🔴🔴 2026-05-13 Stage 1-2 完成 + 性能修复 + E2E 验证
 
 **模型**: Opus 4.6 (1M context)
