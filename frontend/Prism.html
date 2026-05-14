@@ -2394,6 +2394,9 @@ function PluginsPage() {
   const [builderSessionId, setBuilderSessionId] = useState(null);
   const [builderRunning, setBuilderRunning] = useState(false);
   const [builderProgress, setBuilderProgress] = useState(0); // 0-100
+  const [builderStatus, setBuilderStatus] = useState(""); // realtime status text
+  const [builderStartTime, setBuilderStartTime] = useState(null);
+  const [builderElapsed, setBuilderElapsed] = useState(0);
   const [pendingManifest, setPendingManifest] = useState(null); // { yaml, json, name, version, description } — triggers save modal
 
   // Install consent dialog (ADR-087 Session 4a) — shown before saveModal to
@@ -2530,9 +2533,15 @@ function PluginsPage() {
         break;
       }
       case "run_complete":
+        setBuilderRunning(false);
+        break;
       case "run_crashed":
+        setBuilderRunning(false);
+        addToast("danger", "构建崩溃", evt.reason || "Agent 进程异常终止");
+        break;
       case "run_error":
         setBuilderRunning(false);
+        addToast("danger", "构建失败", evt.error || "运行出错，请重试");
         break;
       default:
         break;
