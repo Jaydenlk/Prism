@@ -1966,7 +1966,7 @@ function SkillsPage() {
                         {isInst && <span className="badge teal" style={{ fontSize: 10 }}>已安装</span>}
                       </div>
                       <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6, fontFamily: "var(--mono)" }}>
-                        {sk.source || "local"}{sk.version ? ` · v${sk.version}` : ""}{sk.author ? ` · ${sk.author}` : ""}
+                        {sk.source || "local"}{sk.stars ? ` · ⭐ ${sk.stars.toLocaleString()}` : ""}{sk.version ? ` · v${sk.version}` : ""}{sk.author ? ` · ${sk.author}` : ""}
                       </div>
                       <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5, fontFamily: "var(--serif)", fontStyle: "italic" }}>
                         {sk.description || "暂无描述"}
