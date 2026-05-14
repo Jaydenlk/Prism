@@ -970,7 +970,7 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
             displayMsgs.push({
               role: "agent",
               at: formatTime(m.created_at),
-              content: text || m.text_preview || "",
+              content: text || ((thinking && thinking.length) || (tools && tools.length) ? "" : (m.text_preview || "")),
               tools,
               thinking,
             });
