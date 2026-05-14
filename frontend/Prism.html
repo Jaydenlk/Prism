@@ -410,16 +410,9 @@ function HarnessNotice({ kind, title, detail }) {
 }
 
 const MarkdownBody = React.memo(function MarkdownBody({ content, streaming }) {
-  if (!content || content === "…") {
-    return (
-      <div className="content md">
-        <div className="skeleton-line" style={{ width: "80%" }}/>
-        <div className="skeleton-line" style={{ width: "60%" }}/>
-        <div className="skeleton-line" style={{ width: "40%" }}/>
-      </div>
-    );
-  }
+  const isEmpty = !content || content === "…";
   const html = useMemo(() => {
+    if (isEmpty) return "";
     try {
       return window.DOMPurify.sanitize(window.marked.parse(content, { gfm: true, breaks: false }));
     } catch (e) {
@@ -428,7 +421,16 @@ const MarkdownBody = React.memo(function MarkdownBody({ content, streaming }) {
       div.textContent = content;
       return div.innerHTML;
     }
-  }, [content]);
+  }, [content, isEmpty]);
+  if (isEmpty) {
+    return (
+      <div className="content md">
+        <div className="skeleton-line" style={{ width: "80%" }}/>
+        <div className="skeleton-line" style={{ width: "60%" }}/>
+        <div className="skeleton-line" style={{ width: "40%" }}/>
+      </div>
+    );
+  }
   return (
     <div className="content md">
       <div dangerouslySetInnerHTML={{ __html: html }}/>
@@ -479,24 +481,55 @@ function Msg({ m, first, onCopy, onRetry, onFork }) {
   );
 }
 
-function Composer({ t, onSend, disabled, onAttach, onSkill, onMcp }) {
+function Composer({ t, onSend, disabled, onSkill, onMcp }) {
   const [v, setV] = useState("");
+  const [attachment, setAttachment] = useState(null);
   const ref = useRef(null);
+  const fileRef = useRef(null);
   useEffect(() => { if (ref.current) { ref.current.style.height = "auto"; ref.current.style.height = Math.min(180, ref.current.scrollHeight) + "px"; } }, [v]);
-  const submit = () => { if (v.trim() && !disabled) { onSend(v); setV(""); } };
+  const submit = () => {
+    if (!v.trim() && !attachment) return;
+    if (disabled) return;
+    let prompt = v.trim();
+    if (attachment) {
+      prompt = `[附件: ${attachment.name}]\n\`\`\`\n${attachment.content}\n\`\`\`\n\n${prompt}`;
+      setAttachment(null);
+    }
+    onSend(prompt);
+    setV("");
+  };
+  function handleFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) { alert("文件过大（最大 1MB）"); return; }
+    const reader = new FileReader();
+    reader.onload = () => { setAttachment({ name: file.name, content: reader.result }); };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
   return (
     <div className="composer-wrap">
+      {attachment && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", fontSize: 12, color: "var(--ink-3)" }}>
+          <Icon name="attach" size={11}/>
+          <span>{attachment.name}</span>
+          <button className="icon-btn" style={{ padding: 2 }} onClick={() => setAttachment(null)}><span style={{ fontSize: 14 }}>✕</span></button>
+        </div>
+      )}
       <div className="composer">
+        <input type="file" ref={fileRef} style={{ display: "none" }}
+          accept=".txt,.csv,.md,.json,.py,.js,.html,.css,.xml,.yaml,.yml,.toml,.sql,.sh"
+          onChange={handleFileSelect}/>
         <textarea ref={ref} placeholder={disabled ? "请稍等…" : t.composer_placeholder} value={v}
           onChange={e => setV(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
           disabled={disabled}/>
         <div className="tools">
-          {onAttach && <button className="icon-btn" title="附件" onClick={onAttach}><Icon name="attach" size={14}/></button>}
+          <button className="icon-btn" title="附件" onClick={() => fileRef.current?.click()}><Icon name="attach" size={14}/></button>
           {onSkill && <button className="icon-btn" title="技能管理" onClick={onSkill}><Icon name="skills" size={14}/></button>}
           {onMcp && <button className="icon-btn" title="我的 MCP" onClick={onMcp}><Icon name="plugin" size={14}/></button>}
           <div style={{ flex: 1 }}/>
-          <button className="btn primary sm" onClick={submit} style={{ padding: "7px 14px", borderRadius: 999 }} disabled={!v.trim() || disabled}>
+          <button className="btn primary sm" onClick={submit} style={{ padding: "7px 14px", borderRadius: 999 }} disabled={(!v.trim() && !attachment) || disabled}>
             <Icon name="arrowUp" size={12}/>
           </button>
         </div>
