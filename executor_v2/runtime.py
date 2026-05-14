@@ -78,7 +78,7 @@ class PrismAgentRuntime:
                     "args": srv.get("args", []),
                     "env": srv.get("env", {}),
                 }
-            elif srv.get("transport") in ("sse", "http"):
+            elif srv.get("transport") in ("sse", "http") and srv.get("url"):
                 mcp_dict[srv["name"]] = {"url": srv["url"]}
 
         return ClaudeAgentOptions(
