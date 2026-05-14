@@ -338,6 +338,8 @@ class CallbackService:
             asyncio.create_task(
                 self._send_im_run_result(run.session_id, reply_text, run_status="completed")
             )
+            # Remove 👀 reaction now that the run is complete
+            asyncio.create_task(self._remove_feishu_reaction(run.id))
 
         return {"promoted_run_id": new_run_id}
 
@@ -367,6 +369,22 @@ class CallbackService:
                 return block.get("text", "")
 
         return ""
+
+    @staticmethod
+    async def _remove_feishu_reaction(run_id: str) -> None:
+        """Remove 👀 reaction from Feishu message when run completes (fire-and-forget)."""
+        try:
+            from app.main import app
+            from app.services.im_feishu import FeishuAdapter
+
+            gateway = getattr(app.state, "im_gateway", None)
+            if gateway is None:
+                return
+            adapter = gateway.get_adapter("feishu")
+            if isinstance(adapter, FeishuAdapter):
+                await adapter.remove_reaction_for_run(run_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("callback.feishu_reaction_remove_failed", run_id=run_id, error=str(exc))
 
     @staticmethod
     async def _send_im_run_result(session_id: str, text: str, run_status: str) -> None:
