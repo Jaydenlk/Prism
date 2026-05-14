@@ -817,7 +817,7 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
                 let toolResults = [];
                 if (i + 1 < rawMsgs.length && rawMsgs[i + 1].role === "tool_result") { toolResults = rawMsgs[i + 1].content || []; }
                 const { text, tools, thinking } = renderContentBlocks(m.content, toolResults);
-                displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || m.text_preview || "", tools, thinking, streaming: false });
+                displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || ((thinking && thinking.length) || (tools && tools.length) ? "" : (m.text_preview || "")), tools, thinking, streaming: false });
                 i++;
                 if (toolResults.length > 0) i++;
               } else { i++; }
@@ -1027,7 +1027,7 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
               let toolResults = [];
               if (i + 1 < rawMsgs.length && rawMsgs[i + 1].role === "tool_result") { toolResults = rawMsgs[i + 1].content || []; }
               const { text, tools, thinking } = renderContentBlocks(m.content, toolResults);
-              displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || m.text_preview || "", tools, thinking, streaming: false });
+              displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || ((thinking && thinking.length) || (tools && tools.length) ? "" : (m.text_preview || "")), tools, thinking, streaming: false });
               i++;
               if (toolResults.length > 0) i++;
             } else { i++; }
