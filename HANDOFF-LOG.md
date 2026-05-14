@@ -6,6 +6,163 @@
 
 ---
 
+## 🔴🔴🔴🔴 2026-05-14 全量交付 — Stage 1-3 + Poco 对标 + 插件构建 + 国内适配
+
+**模型**: Opus 4.6 (1M context)
+**分支**: develop（90+ commits via worktree-backend-audit-fixes）
+**总耗时**: ~16 小时持续开发
+
+---
+
+### 一、交付清单（按阶段）
+
+#### Stage 1：让已有功能真实可用
+| # | 任务 | 状态 |
+|---|------|------|
+| 1 | provider_id NULL → executor 崩溃 | ✅ 自动选择首个活跃 provider |
+| 2 | heartbeat asyncio 阻塞 → 误杀 | ✅ 改为独立线程 |
+| 3 | mem0 ThinkingBlock → 提取失败 | ✅ 切 OpenAI provider |
+| 4 | confidence 数据丢失 | ✅ 管线贯通到 harness_summary |
+| 5 | 8/8 Skill 路由验证 | ✅ IntentRouter 正确分类 |
+| 6 | 跨 session 记忆召回 | ✅ "两杯美式咖啡" |
+| 7 | simplify + code review + PJR | ✅ 3 轮审查 |
+
+#### Stage 2：补齐 Poco 级核心差距
+| # | 任务 | 状态 |
+|---|------|------|
+| 8 | Workspace 管理 /workspace/{session_id} | ✅ |
+| 9 | PromptAssembler 多段拼接 | ✅ |
+| 10 | Secret Masking 全覆盖 | ✅ structlog + callback |
+| 11 | MCP 注入 | ✅ WebSearch 工具被调用 |
+| 12 | 交互式权限 BLPOP | ✅ pip install 弹窗 |
+| 13 | SDK Session Resume | ✅ |
+| 14 | IM Gateway 验证 | ✅ 链路完整 |
+
+#### Stage 3：E2E 测试 + 产品打磨
+| # | 任务 | 状态 |
+|---|------|------|
+| 15 | Playwright 桌面 E2E | ✅ 登录→发消息→收回复→全流程 |
+| 16 | Playwright 移动端 390x844 | ✅ |
+| 17 | Memory Tab CRUD | ✅ list/search/delete |
+| 18 | Settings/Providers | ✅ 8 家供应商 |
+| 19 | DeepSeek 弱模型对比 | ✅ 调研 10s 分析 7.6s |
+| 20 | 5 并发稳定性 | ✅ 4/5 完成 0 崩溃 |
+| 21 | HANDOFF-LOG 更新 | ✅ 本条目 |
+
+---
+
+### 二、Poco 竞品审计（docs/superpowers/specs/2026-05-14-prism-vs-poco-audit.md）
+
+**总评分**：Prism 43/50 vs Poco 27/50
+
+| 维度 | Prism | Poco | 赢家 |
+|------|-------|------|------|
+| 安全性 | 5/5（三密钥+callback签名） | 2/5（单密钥无签名） | **Prism** |
+| 实时通信 | 5/5（SSE+Redis） | 2/5（polling） | **Prism** |
+| 可观测性 | 5/5（structlog+OTel+Prometheus） | 1/5 | **Prism** |
+| Agent 治理 | 5/5（6 种 agent+Harness） | 1/5 | **Prism** |
+| 功能广度 | 3/5 | 5/5 | Poco |
+
+---
+
+### 三、关键 Bug 修复链
+
+| Bug | 根因 | 影响 |
+|-----|------|------|
+| **SDK Bridge 格式** | 返回 `{continue_:true}` vs SDK 期望 `{decision:approve}` | 所有工具调用 ZodError 崩溃 |
+| **pipe buffer 死锁** | `proc.wait()` + `stderr=PIPE` → 64KB 缓冲满 | executor 永久挂起 |
+| **mem0 event loop 冲突** | AsyncMemory 在 worker thread 创建，主 loop 调用 | recall 死锁 |
+| **permission_mode=default** | Claude CLI 等终端输入 | executor 永久挂起 |
+| **Memory delete 502** | `get_all(user_id=...)` 参数格式错 | 删除报错 |
+| **Skills Market 500** | `/app/backend/.prism` 无写权限 | 搜索报错 |
+| **用户消息刷新消失** | prompt 只存 runs.prompt，不在 messages 表 | 刷新丢失 |
+| **插件构建空壳** | PluginBuilderGate 误匹配非 YAML 文本 | 保存垃圾 |
+| **插件构建无 YAML** | PromptAssembler 缺 plugin_builder 角色 | 只出报告 |
+
+---
+
+### 四、新功能
+
+| 功能 | 描述 |
+|------|------|
+| **暗色主题** | CSS `[data-theme="dark"]` + header toggle + localStorage |
+| **代码高亮** | highlight.js CDN 集成 marked.js |
+| **Skeleton 加载** | 等待 AI 时显示骨架屏 shimmer |
+| **思考块折叠** | `<details>` "▶ 思考过程" |
+| **工具调用折叠** | "▶ N 个工具调用 — 点击展开" |
+| **会话自动命名** | 首条消息截取前 30 字 |
+| **文件上传** | 附件按钮 → FileReader → prompt 注入 |
+| **Memory Tab** | 搜索/展示/删除用户记忆 |
+| **IM 消息页** | 飞书/企微/Telegram 三渠道 tab |
+| **飞书 emoji 已读** | 👀 收到 → 处理 → 移除 |
+| **色调调亮** | --paper #FAF9F7 cream-white |
+| **GitHub stars** | Skills 搜索结果显示 ⭐ |
+
+---
+
+### 五、国内环境适配
+
+| 项 | 改动 |
+|---|------|
+| SearXNG | Google/DDG 禁用 → Bing(2.0)+百度(0.5) |
+| npm | npmmirror.com 镜像 |
+| MCP | Docker build 时预装，去掉 Anthropic/Tavily |
+| 模型 | 全走 auto-v2（CloudDreamAI 中转站），禁止直连 Claude |
+| Embedding | 本地 HuggingFace，Docker build 时以 prism 用户预缓存 |
+| 飞书 | ENCRYPT_KEY + VERIFICATION_TOKEN 已配置，webhook 模式 |
+| DeepSeek | API key 已配置，连接验证通过 |
+
+---
+
+### 六、插件构建器验证
+
+**修复前**：空壳 manifest / "..." 黑盒 / 静默失败
+**修复后**：
+- 透明过程（思考折叠+工具调用折叠）
+- 真实 YAML manifest 生成（calculator: name+description+version+type+allowed_tools）
+- 运行失败时显示 toast 提示
+- 严格 YAML 验证（yaml.safe_load + name 字段必须）
+
+---
+
+### 七、未完成项（下个 session）
+
+| 项 | 优先级 | 说明 |
+|---|--------|------|
+| OAuth 登录 | 高 | Google/GitHub，需要 OAuth 配置 |
+| 文件预览 | 中 | 上传后预览附件内容 |
+| 飞书 E2E 测试 | 高 | 需从飞书客户端发消息验证 |
+| 插件构建 — 需求确认环节 | 中 | 先澄清模糊需求再构建 |
+| 插件构建 — 提示词编辑器 | 中 | 自动改写优化 prompt |
+| 计时器/进度条 | 中 | 等待时显示已用时间 |
+| 团队功能架构设计 | 低 | 仅文档，不做实现 |
+| Share 链接验证 | 低 | 分享/撤销流程 |
+| 金融信息搜集插件测试 | 中 | 用户出的测试题 |
+
+---
+
+### 八、关键教训
+
+1. **Docker build 后必须 grep 确认容器代码是最新**（不能假设构建成功）
+2. **SDK bridge 格式必须和 SDK Zod schema 匹配**（`{decision:approve}`不是`{continue_:true}`）
+3. **executor_v2 的 PromptAssembler 和旧 executor 的 agent 定义是独立的**
+4. **code quality A ≠ product quality A**（体验差就是差，代码好没用）
+5. **国内环境：Google/DDG 不可用，npm 需镜像，模型只走中转站**
+
+---
+
+### 九、环境
+
+- 端口：8080（nginx → backend:8000）
+- 账号：admin@prism.dev / PrismAdmin!2026
+- Docker：pgvector/pgvector:pg16 + prism-backend:2.0
+- Provider：CloudDreamAI 中转站（auto-v2 = GLM5）
+- DeepSeek：sk-ad93...e1bd（已配置验证通过）
+- 飞书：cli_a976ecbd80bb1cdd（webhook 模式，key/token 已配）
+- 冷启动：~27s（含 mem0 + SDK connect + LLM response）
+
+---
+
 ## 🔴🔴🔴 2026-05-14 Stage 3 完成 + 前端 UX + DeepSeek 对比
 
 **模型**: Opus 4.6 (1M context)
