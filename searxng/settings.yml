@@ -11,16 +11,17 @@ search:
     - json
 
 engines:
-  # 国内可用搜索引擎
+  # Bing 为主力（国内可用，质量好）
   - name: bing
     engine: bing
     disabled: false
-    weight: 1.5
+    weight: 2.0
+  # 百度降权兜底（广告多，仅在 Bing 无结果时补充）
   - name: baidu
     engine: baidu
     disabled: false
-    weight: 1.0
-  # 国内不可用，禁用
+    weight: 0.5
+  # 国内不可用
   - name: google
     engine: google
     disabled: true
