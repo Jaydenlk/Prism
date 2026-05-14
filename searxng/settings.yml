@@ -11,12 +11,19 @@ search:
     - json
 
 engines:
-  - name: google
-    engine: google
-    disabled: false
+  # 国内可用搜索引擎
   - name: bing
     engine: bing
     disabled: false
+    weight: 1.5
+  - name: baidu
+    engine: baidu
+    disabled: false
+    weight: 1.0
+  # 国内不可用，禁用
+  - name: google
+    engine: google
+    disabled: true
   - name: duckduckgo
     engine: duckduckgo
-    disabled: false
+    disabled: true
