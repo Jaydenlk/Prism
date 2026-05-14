@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     FEISHU_APP_SECRET: str = ""
     FEISHU_ENCRYPT_KEY: str = ""
     FEISHU_VERIFICATION_TOKEN: str = ""
-    FEISHU_MODE: str = "websocket"  # "websocket" or "webhook"
+    FEISHU_MODE: str = "webhook"  # "websocket" or "webhook"
 
     # --- Slack IM Bot (DOC-IM2 I2, ADR-088) -------------------------------
     # Create app at https://api.slack.com/apps; Signing Secret from Basic

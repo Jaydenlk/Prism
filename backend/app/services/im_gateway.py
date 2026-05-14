@@ -219,6 +219,14 @@ class IMGateway:
             )
 
         # ---- 6. 事务提交后启动子进程 ----
+        # Add 👀 reaction for Feishu messages to signal "received, processing"
+        if msg.channel == "feishu" and result.run_id:
+            import asyncio as _asyncio
+            from app.services.im_feishu import FeishuAdapter as _FeishuAdapter
+            _adapter = self._adapters.get("feishu")
+            if isinstance(_adapter, _FeishuAdapter):
+                _asyncio.create_task(_adapter.add_reaction_for_run(msg.msg_id, result.run_id))
+
         if result.accepted_type == "immediate" and result.run_id:
             self._start_run(result.run_id)
         elif result.accepted_type == "queued_query":

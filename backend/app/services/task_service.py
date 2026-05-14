@@ -18,11 +18,12 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.models.message import Message
 from app.models.provider import Provider
 from app.models.run import Run
 from app.models.session import Session as SessionModel, SessionQueueItem
 from app.schemas.task import SubmitTaskRequest, SubmitTaskResponse
-from app.services.sequence_service import get_next_queue_sequence_no
+from app.services.sequence_service import get_next_message_sequence_no, get_next_queue_sequence_no
 
 # 队列最大长度保护（防止恶意爆填）
 QUEUE_MAX_SIZE: int = 50
@@ -145,8 +146,20 @@ class TaskService:
         user_id: str,
         data: SubmitTaskRequest,
     ) -> SubmitTaskResponse:
-        """Session 空闲：创建 Run + 阻塞 Session。"""
+        """Session 空闲：创建 Run + 用户 Message + 阻塞 Session。"""
         run = self._create_run(session, user_id, data, schedule_mode="immediate")
+
+        seq_no = get_next_message_sequence_no(self._db, session.id)
+        user_msg = Message(
+            session_id=session.id,
+            run_id=run.id,
+            role="user",
+            content=[{"type": "text", "text": data.prompt}],
+            text_preview=data.prompt[:100],
+            sequence_no=seq_no,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._db.add(user_msg)
 
         session.blocking_run_id = run.id
         session.status = "running"

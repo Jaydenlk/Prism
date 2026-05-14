@@ -630,6 +630,80 @@ class FeishuAdapter(IMAdapter):
             logger.error("feishu.ws.connection_failed", error=str(exc))
 
     # ------------------------------------------------------------------
+    # Emoji reactions
+    # ------------------------------------------------------------------
+
+    async def add_reaction(self, message_id: str, emoji_type: str = "EYES") -> str | None:
+        """Add emoji reaction to a message. Returns reaction_id for later removal."""
+        token = await self._ensure_token()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{FEISHU_API_BASE}/open-apis/im/v1/messages/{message_id}/reactions",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"reaction_type": {"emoji_type": emoji_type}},
+                )
+            data = resp.json()
+            if data.get("code") == 0:
+                return data.get("data", {}).get("reaction_id")
+            logger.warning(
+                "feishu.reaction.add_failed",
+                message_id=message_id,
+                code=data.get("code"),
+                msg=data.get("msg"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("feishu.reaction.add_error", message_id=message_id, error=str(exc))
+        return None
+
+    async def remove_reaction(self, message_id: str, reaction_id: str) -> None:
+        """Remove an emoji reaction from a message."""
+        token = await self._ensure_token()
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.delete(
+                    f"{FEISHU_API_BASE}/open-apis/im/v1/messages/{message_id}/reactions/{reaction_id}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "feishu.reaction.remove_error",
+                message_id=message_id,
+                reaction_id=reaction_id,
+                error=str(exc),
+            )
+
+    async def add_reaction_for_run(self, message_id: str, run_id: str) -> None:
+        """Add 👀 reaction and store reaction_id in Redis keyed by run_id (TTL 600s)."""
+        reaction_id = await self.add_reaction(message_id)
+        if reaction_id and self._redis is not None:
+            try:
+                await self._redis.setex(
+                    f"feishu:reaction:{run_id}", 600, f"{message_id}:{reaction_id}"
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("feishu.reaction.redis_write_failed", run_id=run_id, error=str(exc))
+
+    async def remove_reaction_for_run(self, run_id: str) -> None:
+        """Remove 👀 reaction stored for a run_id, then delete the Redis key."""
+        if self._redis is None:
+            return
+        try:
+            reaction_data = await self._redis.get(f"feishu:reaction:{run_id}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("feishu.reaction.redis_read_failed", run_id=run_id, error=str(exc))
+            return
+        if not reaction_data:
+            return
+        raw = reaction_data.decode() if isinstance(reaction_data, bytes) else reaction_data
+        message_id, reaction_id = raw.split(":", 1)
+        await self.remove_reaction(message_id, reaction_id)
+        try:
+            await self._redis.delete(f"feishu:reaction:{run_id}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("feishu.reaction.redis_delete_failed", run_id=run_id, error=str(exc))
+
+    # ------------------------------------------------------------------
     # Token management (Redis-backed with in-memory fallback)
     # ------------------------------------------------------------------
 

@@ -121,7 +121,7 @@ const PrismGlyph = ({ size = 140 }) => (
 const I18N = {
   zh: {
     brand: "Prism 棱镜",
-    nav: { chat: "对话", sessions: "会话", settings: "设置", usage: "用量", skills: "技能市场", plugins: "插件构建", memory: "记忆", admin: "管理", observability: "可观测性" },
+    nav: { chat: "对话", sessions: "会话", im: "消息", settings: "设置", usage: "用量", skills: "技能市场", plugins: "插件构建", memory: "记忆", admin: "管理", observability: "可观测性" },
     composer_placeholder: "想聊什么…",
     send: "发送", cancel: "取消", allow: "允许", deny: "拒绝",
     newChat: "新对话", searchSession: "搜索会话",
@@ -220,6 +220,7 @@ function renderContentBlocks(blocks, toolResults) {
 const NAV = [
   { id: "chat", icon: "chat" },
   { id: "sessions", icon: "sessions" },
+  { id: "im", icon: "chat" },
   { id: "usage", icon: "usage" },
   { id: "skills", icon: "skills" },
   { id: "plugins", icon: "plugin" },
@@ -291,7 +292,7 @@ function Sidebar({ page, setPage: rawSetPage, t, currentSessionId, setCurrentSes
         </div>
       </div>
       <nav style={{ padding: "2px 10px 4px" }}>
-        {NAV.slice(0, 3).map(it => (
+        {NAV.slice(0, 4).map(it => (
           <div key={it.id} className={`nav-item ${page === it.id ? "active" : ""}`} onClick={() => setPage(it.id)}>
             <Icon name={it.icon} size={13}/><span>{t.nav[it.id]}</span>
           </div>
@@ -332,7 +333,7 @@ function Sidebar({ page, setPage: rawSetPage, t, currentSessionId, setCurrentSes
         ))}
       </div>
       <div style={{ padding: "8px 10px", borderTop: "1px solid var(--line)" }}>
-        {NAV.slice(3).map(it => (
+        {NAV.slice(4).map(it => (
           <div key={it.id} className={`nav-item ${page === it.id ? "active" : ""}`} onClick={() => setPage(it.id)}>
             <Icon name={it.icon} size={13}/><span>{t.nav[it.id]}</span>
           </div>
@@ -358,6 +359,13 @@ function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm, session
     sessions: t.nav.sessions, usage: t.nav.usage, skills: t.nav.skills,
     plugins: t.nav.plugins, memory: t.nav.memory, observability: t.nav.observability, settings: t.nav.settings
   };
+  const [isDark, setIsDark] = useState(() => document.documentElement.getAttribute("data-theme") === "dark");
+  function toggleTheme() {
+    const next = isDark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("prism_theme", next); } catch (_) {}
+    setIsDark(!isDark);
+  }
   return (
     <div className="topbar">
       {onMenuToggle && <button className="icon-btn mobile-menu-btn" onClick={onMenuToggle}><Icon name="menu" size={16}/></button>}
@@ -370,6 +378,12 @@ function Topbar({ page, t, showPlan, setShowPlan, lang, setLang, onPerm, session
       <button className="icon-btn" onClick={onPerm} title="权限请求"><Icon name="shield" size={14}/></button>
       {page === "chat" && <button className="icon-btn" onClick={() => setShowPlan(!showPlan)} title="计划面板" style={{ background: showPlan ? "var(--panel)" : "" }}><Icon name="layers" size={14}/></button>}
       <button className="icon-btn" onClick={() => setLang(lang === "zh" ? "en" : "zh")}><Icon name="globe" size={14}/></button>
+      <button className="icon-btn" onClick={toggleTheme} title={isDark ? "切换浅色" : "切换深色"}>
+        {isDark
+          ? <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="3.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M3.1 12.9l1.4-1.4M11.5 4.5l1.4-1.4"/></svg>
+          : <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 9.5A6 6 0 016.5 3a6 6 0 100 10 6 6 0 006.5-3.5z"/></svg>
+        }
+      </button>
       <button className="icon-btn"><Icon name="more" size={14}/></button>
     </div>
   );
@@ -1278,6 +1292,79 @@ function EmptyChat({ t, onPick }) {
   );
 }
 
+/* ============ IM MESSAGES PAGE ============ */
+function IMPage({ setPage, setCurrentSession }) {
+  const { PrismAPI } = window;
+  const [channel, setChannel] = useState("feishu");
+  const [sessions, setSessions] = useState(null);  // null = loading
+  const [err, setErr] = useState("");
+
+  const channels = [
+    { id: "feishu", label: "飞书" },
+    { id: "wecom", label: "企业微信" },
+    { id: "telegram", label: "Telegram" },
+  ];
+
+  useEffect(() => {
+    let cancelled = false;
+    setSessions(null);
+    setErr("");
+    (async () => {
+      try {
+        const res = await PrismAPI.sessions.list({ im_channel: channel });
+        if (cancelled) return;
+        const items = Array.isArray(res) ? res : (res?.items || []);
+        setSessions(items);
+      } catch (e) {
+        if (!cancelled) setErr(e.message || String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [channel]);
+
+  const channelLabel = channels.find(c => c.id === channel)?.label || channel;
+
+  return (
+    <div className="page" style={{ padding: 0, display: "flex", flex: 1, overflow: "hidden" }}>
+      <div style={{ width: 180, padding: "28px 0 20px", flexShrink: 0, borderRight: "1px solid var(--line)" }}>
+        <div className="eyebrow" style={{ padding: "0 20px 10px" }}>IM 渠道</div>
+        {channels.map(ch => (
+          <div key={ch.id} className={`nav-item ${channel === ch.id ? "active" : ""}`}
+            onClick={() => setChannel(ch.id)} style={{ margin: "0 12px" }}>
+            <Icon name="chat" size={13}/>{ch.label}
+          </div>
+        ))}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "24px 40px 50px" }}>
+        <div className="page-head">
+          <div className="page-title">{channelLabel} 消息</div>
+          <div className="page-sub">来自 {channelLabel} 渠道的 IM 对话,点击行可进入对话。</div>
+        </div>
+        {err && <div className="harness-notice danger" style={{ marginBottom: 14 }}>加载失败: {err}</div>}
+        {sessions === null ? (
+          <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>正在加载…</div>
+        ) : sessions.length === 0 ? (
+          <div style={{ color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", padding: 40 }}>暂无 {channelLabel} 消息。</div>
+        ) : (
+          <table className="table">
+            <thead><tr><th>标题</th><th>最近一条</th><th>更新时间</th></tr></thead>
+            <tbody>
+              {sessions.map(s => (
+                <tr key={s.id} style={{ cursor: "pointer" }}
+                    onClick={() => { setCurrentSession && setCurrentSession(s.id); setPage && setPage("chat"); }}>
+                  <td style={{ color: "var(--ink)", fontWeight: 500 }}>{s.title || "(未命名)"}</td>
+                  <td style={{ color: "var(--ink-3)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.last_message_preview || ""}</td>
+                  <td className="mono" style={{ color: "var(--ink-3)" }}>{s.updated_at?.slice(0, 16).replace("T", " ") || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ============ SECONDARY PAGES — LIVE DATA ============ */
 function SessionsPage({ setPage, setCurrentSession }) {
   const { PrismAPI } = window;
@@ -1966,7 +2053,7 @@ function SkillsPage() {
                         {isInst && <span className="badge teal" style={{ fontSize: 10 }}>已安装</span>}
                       </div>
                       <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6, fontFamily: "var(--mono)" }}>
-                        {sk.source || "local"}{sk.version ? ` · v${sk.version}` : ""}{sk.author ? ` · ${sk.author}` : ""}
+                        {sk.source || "local"}{sk.stars ? ` · ⭐ ${sk.stars.toLocaleString()}` : ""}{sk.version ? ` · v${sk.version}` : ""}{sk.author ? ` · ${sk.author}` : ""}
                       </div>
                       <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5, fontFamily: "var(--serif)", fontStyle: "italic" }}>
                         {sk.description || "暂无描述"}
@@ -2400,10 +2487,12 @@ function PluginsPage() {
       }
       case "message_complete": {
         const blocks = Array.isArray(evt.content) ? evt.content : [];
-        const text = blocks.filter(b => b.type === "text").map(b => b.text).join("\n");
+        const { text, tools, thinking } = renderContentBlocks(blocks, []);
         setBuilderMsgs(prev => {
           const next = prev.filter(m => !m.streaming);
-          next.push({ role: "agent", at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), content: text || "…", streaming: false });
+          if (text || (thinking && thinking.length) || (tools && tools.length)) {
+            next.push({ role: "agent", at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), content: text, tools, thinking, streaming: false });
+          }
           return next;
         });
         for (const k of Object.keys(streamBuf.current)) streamBuf.current[k].finalized = true;
@@ -2787,15 +2876,31 @@ function PluginsPage() {
                     maxWidth: "80%",
                     padding: "10px 14px",
                     borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                    background: msg.role === "user" ? "var(--amber-light, #f5e6c8)" : "var(--bg)",
+                    background: msg.role === "user" ? "var(--bubble-user, #f5e6c8)" : "var(--bg)",
                     border: msg.role === "user" ? "none" : "1px solid var(--line)",
                     fontSize: 13.5,
                     lineHeight: 1.55,
-                    color: "var(--ink)",
+                    color: msg.role === "user" ? "var(--bubble-user-text, #1C1B18)" : "var(--ink)",
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
                   }}>
-                    <div dangerouslySetInnerHTML={{ __html: window.DOMPurify.sanitize(window.marked.parse(msg.content || "")) }} />
+                    {msg.thinking && msg.thinking.length > 0 && (
+                      <details className="thinking-block" style={{ marginBottom: 8 }}>
+                        <summary>思考过程</summary>
+                        <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--muted)", whiteSpace: "pre-wrap" }}>{msg.thinking.join("\n\n")}</div>
+                      </details>
+                    )}
+                    {msg.content && <div dangerouslySetInnerHTML={{ __html: window.DOMPurify.sanitize(window.marked.parse(msg.content)) }} />}
+                    {msg.tools && msg.tools.length > 0 && (
+                      <details style={{ marginTop: 6 }}>
+                        <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--muted)" }}>
+                          {msg.tools.length} 个工具调用 — 点击展开
+                        </summary>
+                        <div style={{ marginTop: 6 }}>
+                          {msg.tools.map((tool, ti) => <ToolCard key={tool.id || ti} tool={tool} initOpen={false}/>)}
+                        </div>
+                      </details>
+                    )}
                     {msg.streaming && <span style={{ display: "inline-block", width: 6, height: 14, background: "var(--amber)", borderRadius: 2, marginLeft: 2, animation: "blink 1s infinite" }} />}
                   </div>
                 ))}
@@ -4691,6 +4796,7 @@ function App() {
             />
           )}
           {page === "sessions" && <SessionsPage setPage={setPage} setCurrentSession={setCurrentSessionId}/>}
+          {page === "im" && <IMPage setPage={setPage} setCurrentSession={setCurrentSessionId}/>}
           {page === "usage" && <UsagePage/>}
           {page === "skills" && <SkillsPage/>}
           {page === "plugins" && <PluginsPage/>}
