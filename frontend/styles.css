@@ -10,8 +10,8 @@
 /* ── Design tokens ────────────────────────────────────────── */
 :root {
   /* Palette */
-  --paper:          #F5F1EA;
-  --bg:             #EDE6D6;
+  --paper:          #FAF9F7;
+  --bg:             #F5F3EF;
   --ink:            #1C1B18;
   --ink-2:          #3A3832;
   --ink-3:          #6B675E;
@@ -38,7 +38,7 @@
   --shadow-3:       0 4px 18px rgba(28,27,24,0.12), 0 2px 4px rgba(28,27,24,0.08);
 
   /* Panel */
-  --panel:          #EEEAE0;
+  --panel:          #F0EEEA;
 
   /* Bubble radius (overridden by JS Tweaks) */
   --bubble-radius:  18px 18px 6px 18px;
