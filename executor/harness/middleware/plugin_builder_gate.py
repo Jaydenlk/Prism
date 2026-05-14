@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 
+import yaml
 import structlog
 
 from executor.harness.middleware.base import Middleware, MiddlewareContext
@@ -61,6 +62,13 @@ class PluginBuilderGate(Middleware):
 
         manifest_yaml = _extract_yaml_manifest(ctx.messages)
         if not manifest_yaml:
+            return
+
+        try:
+            parsed = yaml.safe_load(manifest_yaml)
+            if not isinstance(parsed, dict) or "name" not in parsed:
+                return
+        except Exception:
             return
 
         try:
