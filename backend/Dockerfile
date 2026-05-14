@@ -2,12 +2,19 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps (git required for Session 4c SourceResolver 3/4 — git clone + sparse-checkout)
-# nodejs+npm required for npx-based MCP servers (brave-search, tavily)
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget git \
     nodejs npm \
     && rm -rf /var/lib/apt/lists/*
+
+# npm 使用国内镜像（npmmirror.com）避免国内下载超时
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
+
+# Pre-install MCP server packages (build time, not runtime)
+RUN npx -y mcp-searxng --help 2>/dev/null; \
+    npx -y @modelcontextprotocol/server-filesystem --help 2>/dev/null; \
+    true
 
 # Python deps (build context = repo root so we can COPY executor/)
 COPY backend/requirements.txt /app/requirements.txt

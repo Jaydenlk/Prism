@@ -77,31 +77,18 @@ logger = structlog.get_logger()
 
 _BUILTIN_MCP_SERVERS: list[dict] = [
     {
-        "name": "web_search",
-        "description": "网页搜索 — Anthropic MCP Web Search",
-        "command": "npx",
-        "args": ["-y", "@anthropic/mcp-web-search"],
-    },
-    {
-        "name": "filesystem",
-        "description": "文件系统访问 — 读写本地文件",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
-    },
-    {
         "name": "searxng",
-        "description": "SearXNG 自托管 metasearch (聚合 Google/Bing/DDG, 隐私优先, 无配额)",
+        "description": "SearXNG 搜索 — 自托管聚合搜索（Bing + 百度，国内可用，无配额）",
         "command": "npx",
         "args": ["-y", "mcp-searxng"],
         "env_var": None,
         "extra_env": {"SEARXNG_URL": "http://searxng:8080"},
     },
     {
-        "name": "tavily",
-        "description": "Tavily AI Search MCP — agentic search with 1000 free queries/month.",
+        "name": "filesystem",
+        "description": "文件系统 — 读写工作区文件",
         "command": "npx",
-        "args": ["-y", "tavily-mcp@latest"],
-        "env_var": "TAVILY_API_KEY",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
     },
     {
         "name": "exa",
