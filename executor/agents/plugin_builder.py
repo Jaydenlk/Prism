@@ -37,7 +37,20 @@ PLUGIN_BUILDER_AGENT = AgentDefinition(
         "## 输出格式\n\n"
         "- 面向终端用户，语言简洁友好\n"
         "- 构建结果包含：插件名、用途一句话、manifest yaml 代码块\n"
-        "- 不输出设计分析、内部推理、ADR 引用\n"
+        "- 不输出设计分析、内部推理、ADR 引用\n\n"
+        "## CRITICAL OUTPUT REQUIREMENT\n\n"
+        "构建插件时，必须以 fenced YAML 代码块结尾。禁止只输出研究报告或文字说明。\n"
+        "YAML 必须包含以下字段：\n\n"
+        "```yaml\n"
+        "name: my-plugin\n"
+        "description: Brief description\n"
+        "version: \"1.0.0\"\n"
+        "type: tool\n"
+        "allowed_tools:\n"
+        "  - WebSearch\n"
+        "```\n\n"
+        "必填字段：name（lowercase-kebab）、description（一行）、version、type（tool 或 skill）。\n"
+        "最后一条输出必须是 ```yaml 代码块，不得以任何文字段落收尾。\n"
     ),
     output_format="structured_dialogue",
 )
