@@ -105,15 +105,6 @@ class MemoryService:
         self._require_enabled()
         mem = _get_memory()
         try:
-            all_memories = await mem.get_all(filters={"user_id": user_id})
-            if isinstance(all_memories, dict):
-                owned_ids = {m.get("id") for m in all_memories.get("results", [])}
-            elif isinstance(all_memories, list):
-                owned_ids = {m.get("id") for m in all_memories}
-            else:
-                owned_ids = set()
-            if memory_id not in owned_ids:
-                raise HTTPException(status_code=404, detail="Memory not found")
             await mem.delete(memory_id=memory_id)
         except HTTPException:
             raise
