@@ -1242,7 +1242,6 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         t={t}
         onSend={handleSend}
         disabled={runActive}
-        onAttach={() => addToast({ id: Date.now(), title: "附件功能开发中", body: "可粘贴文本或在 prompt 里描述代替；上传 API 计划在 DOC-11 实施" })}
         onSkill={() => { if (setSettingsInitialTab) setSettingsInitialTab("skills"); if (setPage) setPage("settings"); }}
         onMcp={() => { if (setSettingsInitialTab) setSettingsInitialTab("mcp"); if (setPage) setPage("settings"); }}
       />
