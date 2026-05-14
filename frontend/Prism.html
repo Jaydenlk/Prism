@@ -171,9 +171,10 @@ function formatTime(isoStr) {
  * Returns { text, tools }
  */
 function renderContentBlocks(blocks, toolResults) {
-  if (!Array.isArray(blocks)) return { text: "", tools: [] };
+  if (!Array.isArray(blocks)) return { text: "", tools: [], thinking: [] };
   const texts = [];
   const tools = [];
+  const thinking = [];
   // Build a map of tool_result by tool_use_id
   const resultMap = {};
   if (Array.isArray(toolResults)) {
@@ -185,8 +186,7 @@ function renderContentBlocks(blocks, toolResults) {
     if (block.type === "text") {
       texts.push(block.text);
     } else if (block.type === "thinking") {
-      // Show thinking in muted style
-      texts.push(`[思考] ${block.thinking}`);
+      thinking.push(block.thinking || "");
     } else if (block.type === "tool_use") {
       const result = resultMap[block.id];
       tools.push({
@@ -201,7 +201,7 @@ function renderContentBlocks(blocks, toolResults) {
       });
     }
   }
-  return { text: texts.join("\n"), tools };
+  return { text: texts.join("\n"), tools, thinking };
 }
 
 /* ============ SHELL ============ */
@@ -434,7 +434,15 @@ function Msg({ m, first, onCopy, onRetry, onFork }) {
           {isUser ? (
             <div className="bubble">{m.content}</div>
           ) : (
-            <MarkdownBody content={m.content} streaming={m.streaming}/>
+            <>
+              {m.thinking?.length > 0 && (
+                <details className="thinking-block">
+                  <summary>思考过程</summary>
+                  <div>{m.thinking.join("\n\n")}</div>
+                </details>
+              )}
+              <MarkdownBody content={m.content} streaming={m.streaming}/>
+            </>
           )}
           {m.harness?.map((h, i) => <HarnessNotice key={i} {...h}/>)}
           {m.tools?.map((tool, i) => <ToolCard key={tool.id || i} tool={tool} initOpen={tool.initOpen}/>)}
@@ -743,7 +751,7 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         const content = evt.content || [];
         const mid = content.find ? content.find(b => b.type === "text")?.text || "" : "";
         // Build tools from tool_use blocks paired with tool_result blocks
-        const { text, tools: parsedTools } = renderContentBlocks(content, []);
+        const { text, tools: parsedTools, thinking: parsedThinking } = renderContentBlocks(content, []);
         setMsgs(prev => {
           const next = [...prev];
           // Find streaming placeholder
@@ -753,6 +761,7 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
             at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
             content: text || mid,
             tools: parsedTools,
+            thinking: parsedThinking,
             streaming: false,
           };
           if (idx >= 0) {
@@ -805,8 +814,8 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
               } else if (m.role === "assistant") {
                 let toolResults = [];
                 if (i + 1 < rawMsgs.length && rawMsgs[i + 1].role === "tool_result") { toolResults = rawMsgs[i + 1].content || []; }
-                const { text, tools } = renderContentBlocks(m.content, toolResults);
-                displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || m.text_preview || "", tools, streaming: false });
+                const { text, tools, thinking } = renderContentBlocks(m.content, toolResults);
+                displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || m.text_preview || "", tools, thinking, streaming: false });
                 i++;
                 if (toolResults.length > 0) i++;
               } else { i++; }
@@ -825,6 +834,22 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
             });
             streamBuf.current = {};
             scrollToBottom();
+            // Auto-name session if still using default title
+            if (sessionMeta && (sessionMeta.title === "新对话" || !sessionMeta.title)) {
+              const firstUserMsg = rawMsgs.find(m => m.role === "user");
+              if (firstUserMsg) {
+                const userText = (firstUserMsg.content || [])
+                  .filter(b => b.type === "text")
+                  .map(b => b.text)
+                  .join("")
+                  .trim()
+                  .substring(0, 30);
+                if (userText) {
+                  window.PrismAPI.sessions.update(sid, { title: userText }).catch(() => {});
+                  setSessionMeta(prev => prev ? { ...prev, title: userText } : prev);
+                }
+              }
+            }
           }
         }).catch(err => console.warn("[ChatPage] post-run history refresh failed:", err));
         break;
@@ -937,12 +962,13 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
               toolResults = trMsg.content || [];
               // skip tool_result message since we'll embed it
             }
-            const { text, tools } = renderContentBlocks(m.content, toolResults);
+            const { text, tools, thinking } = renderContentBlocks(m.content, toolResults);
             displayMsgs.push({
               role: "agent",
               at: formatTime(m.created_at),
               content: text || m.text_preview || "",
               tools,
+              thinking,
             });
             i++;
             // Skip next message only if we consumed it as toolResults
@@ -994,8 +1020,8 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
             } else if (m.role === "assistant") {
               let toolResults = [];
               if (i + 1 < rawMsgs.length && rawMsgs[i + 1].role === "tool_result") { toolResults = rawMsgs[i + 1].content || []; }
-              const { text, tools } = renderContentBlocks(m.content, toolResults);
-              displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || m.text_preview || "", tools, streaming: false });
+              const { text, tools, thinking } = renderContentBlocks(m.content, toolResults);
+              displayMsgs.push({ role: "agent", at: formatTime(m.created_at), content: text || m.text_preview || "", tools, thinking, streaming: false });
               i++;
               if (toolResults.length > 0) i++;
             } else { i++; }

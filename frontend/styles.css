@@ -641,6 +641,31 @@ html, body {
 .tool-status.ok    { color: var(--teal); }
 .tool-status.running { color: var(--amber); }
 
+/* ── Thinking blocks ─────────────────────────────────────── */
+.thinking-block {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0;
+}
+
+.thinking-block summary {
+  cursor: pointer;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--ink-3);
+  font-style: italic;
+  user-select: none;
+}
+
+.thinking-block > div {
+  padding: 0 14px 12px;
+  font-size: 13px;
+  color: var(--ink-3);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 /* ── Harness notices ──────────────────────────────────────── */
 .harness-notice {
   display: flex;
