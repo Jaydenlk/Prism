@@ -441,7 +441,7 @@ function Msg({ m, first, onCopy, onRetry, onFork }) {
                   <div>{m.thinking.join("\n\n")}</div>
                 </details>
               )}
-              <MarkdownBody content={m.content} streaming={m.streaming}/>
+              {m.content && m.content.trim() && <MarkdownBody content={m.content} streaming={m.streaming}/>}
             </>
           )}
           {m.harness?.map((h, i) => <HarnessNotice key={i} {...h}/>)}
@@ -808,6 +808,8 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
             while (i < rawMsgs.length) {
               const m = rawMsgs[i];
               if (m.role === "user") {
+                const hasToolResult = (m.content || []).some(b => b.type === "tool_result");
+                if (hasToolResult) { i++; continue; }
                 const textBlocks = (m.content || []).filter(b => b.type === "text");
                 displayMsgs.push({ role: "user", at: formatTime(m.created_at), content: textBlocks.map(b => b.text).join("\n") || m.text_preview || "" });
                 i++;
@@ -946,6 +948,8 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         while (i < rawMsgs.length) {
           const m = rawMsgs[i];
           if (m.role === "user") {
+            const hasToolResult = (m.content || []).some(b => b.type === "tool_result");
+            if (hasToolResult) { i++; continue; }
             const textBlocks = (m.content || []).filter(b => b.type === "text");
             const text = textBlocks.map(b => b.text).join("\n");
             displayMsgs.push({
@@ -1014,6 +1018,8 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
           while (i < rawMsgs.length) {
             const m = rawMsgs[i];
             if (m.role === "user") {
+              const hasToolResult = (m.content || []).some(b => b.type === "tool_result");
+              if (hasToolResult) { i++; continue; }
               const textBlocks = (m.content || []).filter(b => b.type === "text");
               displayMsgs.push({ role: "user", at: formatTime(m.created_at), content: textBlocks.map(b => b.text).join("\n") || m.text_preview || "" });
               i++;
@@ -4637,7 +4643,7 @@ function App() {
           {page !== "chat" && (
             <div className="statusbar">
               <div className="kv"><span>provider</span> <b>anthropic</b></div>
-              <div className="kv"><span>模型</span> <b>sonnet-4-5</b></div>
+              <div className="kv"><span>模型</span> <b>auto-v2</b></div>
               <div className="kv"><span>缓存</span> <b style={{ color: "var(--teal)" }}>72%</b></div>
               <div style={{ flex: 1 }}/>
               <div className="kv"><span>harness</span> <b style={{ color: "var(--teal)" }}>● active</b></div>
