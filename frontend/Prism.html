@@ -1089,10 +1089,18 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
 
   async function handleSend(prompt) {
     if (!sessionId) return;
+    // Auto-name session on first message
+    if (sessionMeta && (!sessionMeta.title || sessionMeta.title === "新对话")) {
+      const autoTitle = prompt.trim().substring(0, 30);
+      if (autoTitle) {
+        window.PrismAPI.sessions.update(sessionId, { title: autoTitle }).catch(() => {});
+        setSessionMeta(prev => prev ? { ...prev, title: autoTitle } : prev);
+      }
+    }
     // Optimistic: push user message immediately
     const optMsg = { role: "user", at: "now", content: prompt };
     setMsgs(prev => [...prev, optMsg]);
-    setRunActive(true); // show "thinking" state immediately
+    setRunActive(true);
     scrollToBottom();
 
     // PRE-SUBSCRIBE SSE before submitting task (fixes race condition where
