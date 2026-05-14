@@ -2487,10 +2487,12 @@ function PluginsPage() {
       }
       case "message_complete": {
         const blocks = Array.isArray(evt.content) ? evt.content : [];
-        const text = blocks.filter(b => b.type === "text").map(b => b.text).join("\n");
+        const { text, tools, thinking } = renderContentBlocks(blocks, []);
         setBuilderMsgs(prev => {
           const next = prev.filter(m => !m.streaming);
-          next.push({ role: "agent", at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), content: text || "…", streaming: false });
+          if (text || (thinking && thinking.length) || (tools && tools.length)) {
+            next.push({ role: "agent", at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }), content: text, tools, thinking, streaming: false });
+          }
           return next;
         });
         for (const k of Object.keys(streamBuf.current)) streamBuf.current[k].finalized = true;
@@ -2882,7 +2884,14 @@ function PluginsPage() {
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
                   }}>
-                    <div dangerouslySetInnerHTML={{ __html: window.DOMPurify.sanitize(window.marked.parse(msg.content || "")) }} />
+                    {msg.thinking && msg.thinking.length > 0 && (
+                      <details className="thinking-block" style={{ marginBottom: 8 }}>
+                        <summary>思考过程</summary>
+                        <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--muted)", whiteSpace: "pre-wrap" }}>{msg.thinking.join("\n\n")}</div>
+                      </details>
+                    )}
+                    {msg.content && <div dangerouslySetInnerHTML={{ __html: window.DOMPurify.sanitize(window.marked.parse(msg.content)) }} />}
+                    {msg.tools && msg.tools.map((tool, ti) => <ToolCard key={tool.id || ti} tool={tool} initOpen={false}/>)}
                     {msg.streaming && <span style={{ display: "inline-block", width: 6, height: 14, background: "var(--amber)", borderRadius: 2, marginLeft: 2, animation: "blink 1s infinite" }} />}
                   </div>
                 ))}
