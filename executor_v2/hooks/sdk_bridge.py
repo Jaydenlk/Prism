@@ -56,10 +56,10 @@ class SDKBridge:
                 results = await self._registry.fire(_event, payload)
                 for r in results:
                     if r.get("decision") == "block":
-                        return r
+                        return {"decision": "block", "reason": r.get("reason", "")}
                     if r.get("continue_") is False:
-                        return r
-                return {"continue_": True}
+                        return {"decision": "block", "reason": r.get("reason", "Denied by hook")}
+                return {"decision": "approve"}
 
             result[event] = [HookMatcher(matcher=None, hooks=[_callback])]
         return result
