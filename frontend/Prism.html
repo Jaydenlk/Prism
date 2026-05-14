@@ -2876,11 +2876,11 @@ function PluginsPage() {
                     maxWidth: "80%",
                     padding: "10px 14px",
                     borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                    background: msg.role === "user" ? "var(--amber-light, #f5e6c8)" : "var(--bg)",
+                    background: msg.role === "user" ? "var(--bubble-user, #f5e6c8)" : "var(--bg)",
                     border: msg.role === "user" ? "none" : "1px solid var(--line)",
                     fontSize: 13.5,
                     lineHeight: 1.55,
-                    color: "var(--ink)",
+                    color: msg.role === "user" ? "var(--bubble-user-text, #1C1B18)" : "var(--ink)",
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
                   }}>
@@ -2891,7 +2891,16 @@ function PluginsPage() {
                       </details>
                     )}
                     {msg.content && <div dangerouslySetInnerHTML={{ __html: window.DOMPurify.sanitize(window.marked.parse(msg.content)) }} />}
-                    {msg.tools && msg.tools.map((tool, ti) => <ToolCard key={tool.id || ti} tool={tool} initOpen={false}/>)}
+                    {msg.tools && msg.tools.length > 0 && (
+                      <details style={{ marginTop: 6 }}>
+                        <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--muted)" }}>
+                          {msg.tools.length} 个工具调用 — 点击展开
+                        </summary>
+                        <div style={{ marginTop: 6 }}>
+                          {msg.tools.map((tool, ti) => <ToolCard key={tool.id || ti} tool={tool} initOpen={false}/>)}
+                        </div>
+                      </details>
+                    )}
                     {msg.streaming && <span style={{ display: "inline-block", width: 6, height: 14, background: "var(--amber)", borderRadius: 2, marginLeft: 2, animation: "blink 1s infinite" }} />}
                   </div>
                 ))}
