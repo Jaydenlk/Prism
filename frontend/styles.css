@@ -1296,16 +1296,20 @@ html, body {
   border-radius: 4px;
 }
 .content.md pre {
-  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 12px 14px;
   margin: 12px 0;
   overflow-x: auto;
-  font-family: var(--mono);
   font-size: 0.9em;
   line-height: 1.55;
-  color: var(--ink);
+}
+.content.md pre code.hljs {
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: inherit;
+  line-height: inherit;
 }
 .content.md pre code {
   background: transparent;

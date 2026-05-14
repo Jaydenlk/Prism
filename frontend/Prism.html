@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Prism · Agent Operating System</title>
 <link rel="stylesheet" href="styles.css?v=20260509"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
 <script>
   // Hydrate theme from localStorage before the React app mounts so that
   // refresh keeps the user's choice (otherwise data-theme="light" hardcoded
@@ -24,6 +25,17 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/marked@12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+<script>
+window.marked.setOptions({
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  }
+});
+</script>
 <script src="https://unpkg.com/dompurify@3.0.11/dist/purify.min.js" integrity="sha384-Ic7KEGROu37YaruU6NyiYeib7UhjFyDZQ5fzBAji965L75T/4LGk5nzwMEjNGexs" crossorigin="anonymous"></script>
 <script src="apiClient.js?v=20260513"></script>
 
@@ -398,8 +410,16 @@ function HarnessNotice({ kind, title, detail }) {
 }
 
 const MarkdownBody = React.memo(function MarkdownBody({ content, streaming }) {
+  if (!content || content === "…") {
+    return (
+      <div className="content md">
+        <div className="skeleton-line" style={{ width: "80%" }}/>
+        <div className="skeleton-line" style={{ width: "60%" }}/>
+        <div className="skeleton-line" style={{ width: "40%" }}/>
+      </div>
+    );
+  }
   const html = useMemo(() => {
-    if (!content) return "";
     try {
       return window.DOMPurify.sanitize(window.marked.parse(content, { gfm: true, breaks: false }));
     } catch (e) {
@@ -1173,9 +1193,14 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
         })}
         {/* "Agent thinking" placeholder when run is active but no streaming yet */}
         {runActive && !msgs.some(m => m.streaming) && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", color: "var(--ink-4)", fontFamily: "var(--serif)", fontStyle: "italic", fontSize: 13 }}>
-            <PrismMark size={14}/>
-            <span>Agent 在思考…</span>
+          <div className="thinking-indicator">
+            <span className="mk"><PrismMark size={14}/></span>
+            <span className="thinking-dots">
+              <span>·</span><span>·</span><span>·</span>
+            </span>
+            <span style={{ color: "var(--ink-3)", fontStyle: "italic", fontFamily: "var(--serif)", fontSize: 13 }}>
+              正在思考
+            </span>
           </div>
         )}
         <div ref={bottomRef}/>
