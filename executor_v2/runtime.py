@@ -7,6 +7,7 @@ from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from claude_agent_sdk.types import (
     AssistantMessage,
     ResultMessage,
+    SdkPluginConfig,
     StreamEvent,
     TextBlock,
     ThinkingBlock,
@@ -81,6 +82,11 @@ class PrismAgentRuntime:
             elif srv.get("transport") in ("sse", "http") and srv.get("url"):
                 mcp_dict[srv["name"]] = {"url": srv["url"]}
 
+        plugins: list[SdkPluginConfig] = [
+            {"type": "local", "path": path}
+            for path in self._config.installed_skill_paths
+        ]
+
         return ClaudeAgentOptions(
             model=self._config.model,
             cwd=self._config.workspace_path,
@@ -93,6 +99,7 @@ class PrismAgentRuntime:
             hooks=self._bridge.build_sdk_hooks(),
             resume=resume_id,
             mcp_servers=mcp_dict if mcp_dict else None,
+            plugins=plugins,
         )
 
     async def run(self) -> None:
