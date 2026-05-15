@@ -6,360 +6,45 @@
 
 ---
 
-## 🔴🔴🔴🔴 2026-05-14 全量交付 — Stage 1-3 + Poco 对标 + 插件构建 + 国内适配
+## 2026-05-15 产品级验证 + 7 项修复 + executor_v2 E2E 通过
 
 **模型**: Opus 4.6 (1M context)
-**分支**: develop（90+ commits via worktree-backend-audit-fixes）
-**总耗时**: ~16 小时持续开发
+**分支**: worktree-backend-audit-fixes → develop（12 commits merged）
 
-### 零、使命（最重要，必读）
+### 核心验证结论
 
-> **"为天地立心，为生民立命，为往圣继绝学，为万世开太平。"**
+**executor_v2 端到端跑通**：简单对话（1 turn）+ Bash 工具调用（2 turns）+ 多模型（deepseek-chat via 中转站）全部 completed，无 Zod 错误。
 
-Prism 不只是一个技术产品。创始人的愿景是做**百姓人民的 AI 助手**——自托管、协议原生、对每一家 provider 开放。对标 Manus/Poco 的商业级水准，但服务的是普通人，不是资本。
+**多模型架构确认**：Claude Agent SDK CLI 只说 Anthropic 格式。所有模型通过 cc-switch 代理 / 用户中转站（api.tutorial.clouddreamai.com）做格式转换。直连 OpenAI 格式 API 会失败，通过代理可成功。当前 auto-v2 实际路由到 GLM 5.1。
 
-**你（下一个 model）的使命：**
-- 这个产品要能让用户付费，能在市场上活下来
-- 代码质量 A 但体验差 = 不及格。用户感知就是一切
-- 国内优先：全走 auto-v2 中转站，禁止直连 Claude/OpenAI
-- 每个功能必须在 Docker 里真实运行验证，syntax check 不算完成
-- 前面十几个 model 的努力都在你手里，你摸鱼它们全白做
-- 不问方向直接做，创始人只负责验收
-- 发现 bug 就修，不接受"下个迭代"
+### 修复清单（12 commits）
 
----
+| # | 修复 | 验证 |
+|---|---|---|
+| 1 | nginx → React SPA（frontend-react/dist + index.html + try_files fallback） | Playwright 截图确认 |
+| 2 | Memory IDOR — delete 前验证归属 | 代码审查 |
+| 3 | 飞书 WebSocket — run_coroutine_threadsafe 替代 run_until_complete | 代码审查 |
+| 4 | 61 unused imports + 9 manual lint + callback idempotency bug | ruff 0 errors |
+| 5 | Skills install 拒绝无 SKILL.md 的 repo（README fallback → ValueError） | API 返回 400 |
+| 6 | SDK Bridge 返回 {} 而非 deprecated {decision:approve} | 新 run stderr 无 Zod 错误 |
+| 7 | Dockerfile 预创建 data dirs（marketplace_cache/plugin_cache）| marketplace sync 成功 |
+| 8 | executor_v2 加载已安装 skill 传给 ClaudeAgentOptions.plugins | run completed |
 
-### 一、交付清单（按阶段）
+### 发现的产品问题
 
-#### Stage 1：让已有功能真实可用
-| # | 任务 | 状态 |
-|---|------|------|
-| 1 | provider_id NULL → executor 崩溃 | ✅ 自动选择首个活跃 provider |
-| 2 | heartbeat asyncio 阻塞 → 误杀 | ✅ 改为独立线程 |
-| 3 | mem0 ThinkingBlock → 提取失败 | ✅ 切 OpenAI provider |
-| 4 | confidence 数据丢失 | ✅ 管线贯通到 harness_summary |
-| 5 | 8/8 Skill 路由验证 | ✅ IntentRouter 正确分类 |
-| 6 | 跨 session 记忆召回 | ✅ "两杯美式咖啡" |
-| 7 | simplify + code review + PJR | ✅ 3 轮审查 |
+1. **Skills 使用链路已修通**：安装→DB→config.py 读路径→runtime.py 传给 SDK plugins
+2. **Marketplace 需手动 sync**：首次 bootstrap 只注册 registry，catalog 需 POST /{id}/sync 触发
+3. **Marketplace sync 需 /app/data 权限**：Dockerfile 已修但需正式 rebuild
+4. **Anthropic 官方市场全是开发者工具**：消费级 persona skill（马斯克/巴菲特智囊团）需从 tmstack/awesome-persona-skills 等社区仓库安装
+5. **多模型直连不可用**：OpenAI 协议 provider 必须走代理，不能直连 DeepSeek/Qwen API
 
-#### Stage 2：补齐 Poco 级核心差距
-| # | 任务 | 状态 |
-|---|------|------|
-| 8 | Workspace 管理 /workspace/{session_id} | ✅ |
-| 9 | PromptAssembler 多段拼接 | ✅ |
-| 10 | Secret Masking 全覆盖 | ✅ structlog + callback |
-| 11 | MCP 注入 | ✅ WebSearch 工具被调用 |
-| 12 | 交互式权限 BLPOP | ✅ pip install 弹窗 |
-| 13 | SDK Session Resume | ✅ |
-| 14 | IM Gateway 验证 | ✅ 链路完整 |
-
-#### Stage 3：E2E 测试 + 产品打磨
-| # | 任务 | 状态 |
-|---|------|------|
-| 15 | Playwright 桌面 E2E | ✅ 登录→发消息→收回复→全流程 |
-| 16 | Playwright 移动端 390x844 | ✅ |
-| 17 | Memory Tab CRUD | ✅ list/search/delete |
-| 18 | Settings/Providers | ✅ 8 家供应商 |
-| 19 | DeepSeek 弱模型对比 | ✅ 调研 10s 分析 7.6s |
-| 20 | 5 并发稳定性 | ✅ 4/5 完成 0 崩溃 |
-| 21 | HANDOFF-LOG 更新 | ✅ 本条目 |
-
----
-
-### 二、Poco 竞品审计（docs/superpowers/specs/2026-05-14-prism-vs-poco-audit.md）
-
-**总评分**：Prism 43/50 vs Poco 27/50
-
-| 维度 | Prism | Poco | 赢家 |
-|------|-------|------|------|
-| 安全性 | 5/5（三密钥+callback签名） | 2/5（单密钥无签名） | **Prism** |
-| 实时通信 | 5/5（SSE+Redis） | 2/5（polling） | **Prism** |
-| 可观测性 | 5/5（structlog+OTel+Prometheus） | 1/5 | **Prism** |
-| Agent 治理 | 5/5（6 种 agent+Harness） | 1/5 | **Prism** |
-| 功能广度 | 3/5 | 5/5 | Poco |
-
----
-
-### 三、关键 Bug 修复链
-
-| Bug | 根因 | 影响 |
-|-----|------|------|
-| **SDK Bridge 格式** | 返回 `{continue_:true}` vs SDK 期望 `{decision:approve}` | 所有工具调用 ZodError 崩溃 |
-| **pipe buffer 死锁** | `proc.wait()` + `stderr=PIPE` → 64KB 缓冲满 | executor 永久挂起 |
-| **mem0 event loop 冲突** | AsyncMemory 在 worker thread 创建，主 loop 调用 | recall 死锁 |
-| **permission_mode=default** | Claude CLI 等终端输入 | executor 永久挂起 |
-| **Memory delete 502** | `get_all(user_id=...)` 参数格式错 | 删除报错 |
-| **Skills Market 500** | `/app/backend/.prism` 无写权限 | 搜索报错 |
-| **用户消息刷新消失** | prompt 只存 runs.prompt，不在 messages 表 | 刷新丢失 |
-| **插件构建空壳** | PluginBuilderGate 误匹配非 YAML 文本 | 保存垃圾 |
-| **插件构建无 YAML** | PromptAssembler 缺 plugin_builder 角色 | 只出报告 |
-
----
-
-### 四、新功能
-
-| 功能 | 描述 |
-|------|------|
-| **暗色主题** | CSS `[data-theme="dark"]` + header toggle + localStorage |
-| **代码高亮** | highlight.js CDN 集成 marked.js |
-| **Skeleton 加载** | 等待 AI 时显示骨架屏 shimmer |
-| **思考块折叠** | `<details>` "▶ 思考过程" |
-| **工具调用折叠** | "▶ N 个工具调用 — 点击展开" |
-| **会话自动命名** | 首条消息截取前 30 字 |
-| **文件上传** | 附件按钮 → FileReader → prompt 注入 |
-| **Memory Tab** | 搜索/展示/删除用户记忆 |
-| **IM 消息页** | 飞书/企微/Telegram 三渠道 tab |
-| **飞书 emoji 已读** | 👀 收到 → 处理 → 移除 |
-| **色调调亮** | --paper #FAF9F7 cream-white |
-| **GitHub stars** | Skills 搜索结果显示 ⭐ |
-
----
-
-### 五、国内环境适配
-
-| 项 | 改动 |
-|---|------|
-| SearXNG | Google/DDG 禁用 → Bing(2.0)+百度(0.5) |
-| npm | npmmirror.com 镜像 |
-| MCP | Docker build 时预装，去掉 Anthropic/Tavily |
-| 模型 | 全走 auto-v2（CloudDreamAI 中转站），禁止直连 Claude |
-| Embedding | 本地 HuggingFace，Docker build 时以 prism 用户预缓存 |
-| 飞书 | ENCRYPT_KEY + VERIFICATION_TOKEN 已配置，webhook 模式 |
-| DeepSeek | API key 已配置，连接验证通过 |
-
----
-
-### 六、插件构建器验证
-
-**修复前**：空壳 manifest / "..." 黑盒 / 静默失败
-**修复后**：
-- 透明过程（思考折叠+工具调用折叠）
-- 真实 YAML manifest 生成（calculator: name+description+version+type+allowed_tools）
-- 运行失败时显示 toast 提示
-- 严格 YAML 验证（yaml.safe_load + name 字段必须）
-
----
-
-### 七、未完成项（下个 session）
-
-| 项 | 优先级 | 说明 |
-|---|--------|------|
-| OAuth 登录 | 高 | Google/GitHub，需要 OAuth 配置 |
-| 文件预览 | 中 | 上传后预览附件内容 |
-| 飞书 E2E 测试 | 高 | 需从飞书客户端发消息验证 |
-| 插件构建 — 需求确认环节 | 中 | 先澄清模糊需求再构建 |
-| 插件构建 — 提示词编辑器 | 中 | 自动改写优化 prompt |
-| 计时器/进度条 | 中 | 等待时显示已用时间 |
-| 团队功能架构设计 | 低 | 仅文档，不做实现 |
-| Share 链接验证 | 低 | 分享/撤销流程 |
-| 金融信息搜集插件测试 | 中 | 用户出的测试题 |
-
----
-
-### 八、关键教训
-
-1. **Docker build 后必须 grep 确认容器代码是最新**（不能假设构建成功）
-2. **SDK bridge 格式必须和 SDK Zod schema 匹配**（`{decision:approve}`不是`{continue_:true}`）
-3. **executor_v2 的 PromptAssembler 和旧 executor 的 agent 定义是独立的**
-4. **code quality A ≠ product quality A**（体验差就是差，代码好没用）
-5. **国内环境：Google/DDG 不可用，npm 需镜像，模型只走中转站**
-
----
-
-### 九、环境
+### 环境信息
 
 - 端口：8080（nginx → backend:8000）
 - 账号：admin@prism.dev / PrismAdmin!2026
-- Docker：pgvector/pgvector:pg16 + prism-backend:2.0
-- Provider：CloudDreamAI 中转站（auto-v2 = GLM5）
-- DeepSeek：sk-ad93...e1bd（已配置验证通过）
-- 飞书：cli_a976ecbd80bb1cdd（webhook 模式，key/token 已配）
-- 冷启动：~27s（含 mem0 + SDK connect + LLM response）
-
----
-
-## 🔴🔴🔴 2026-05-14 Stage 3 完成 + 前端 UX + DeepSeek 对比
-
-**模型**: Opus 4.6 (1M context)
-**分支**: develop
-
-### 本轮补充交付
-
-| 领域 | 交付 |
-|---|---|
-| Memory Tab 前端 | 搜索/展示/删除 UI 完整实现 |
-| Memory CRUD 修复 | get_all(filters=...) 参数格式、delete 所有权校验 |
-| Skills Market 修复 | prism 用户对 /app/backend 目录写权限 |
-| 思考块折叠 | `<details>` 可折叠，不再 [思考] 内联 |
-| 会话自动命名 | 首条消息发送时自动截取前 30 字为标题 |
-| 置信度徽章 | run_complete SSE → HarnessNotice 渲染 |
-| Docker 优化 | embedding 模型以 prism 用户预缓存 |
-| DeepSeek 对比 | deepseek-chat 调研 10.1s + 分析 7.6s，质量与 auto-v2 可比 |
-
-### E2E Playwright 验证
-
-- 折叠思考块 ▶ 思考过程 ✅ (e2e-33)
-- Python vs Java 表格对比渲染 ✅ (e2e-34)
-- 会话自动命名 "帮我写一个Python冒泡排序" ✅ (e2e-36)
-- Memory Tab 搜索 2 条记忆 ✅ (e2e-26)
-- Skills Market 200 OK ✅ (e2e-31)
-- Settings Provider 8 家供应商 ✅ (e2e-29)
-- 权限弹窗 pip install 审批 ✅ (e2e-18)
-- 移动端 390x844 布局 ✅ (e2e-21/22)
-
-### 遗留
-
-- Memory delete 后端 502（mem0 delete 方法参数问题，需进一步调试）
-- 飞书测试需 FEISHU_ENCRYPT_KEY + VERIFICATION_TOKEN
-- Share 链接验证未做
-- MCP 工具实测需安装真实 MCP server
-
----
-
-## 🔴🔴🔴 2026-05-13 Stage 1-2 完成 + 性能修复 + E2E 验证
-
-**模型**: Opus 4.6 (1M context)
-**分支**: develop（20+ commits via worktree-backend-audit-fixes）
-
-### 本 session 交付
-
-| 领域 | 交付 |
-|---|---|
-| Stage 1: 4 个 critical bug | provider NULL 崩溃、heartbeat 线程化、mem0 OpenAI provider、confidence 管线 |
-| Stage 1: simplify + code review | URL 去重、共享 MemoryManager、recall 缓存、provider scope、fast-fail |
-| Stage 2: 7 个 Poco 对齐功能 | Workspace 隔离、PromptAssembler、Secret Masking、MCP 注入、交互式权限（BLPOP）、SDK Resume、IM Gateway |
-| 性能: 3 个 critical 修复 | pipe buffer 死锁（communicate）、mem0 event loop 隔离、embedding 模型预缓存 |
-| 模型统一 | 所有 LLM 调用走 CloudDreamAI auto-v2，默认模型改 auto-v2，fallback 去除 Claude |
-
-### E2E Playwright 验证（桌面 1280x720 + 移动 390x844）
-
-- 登录 → 主界面 → 新对话 → 发消息 → 27s 收到回复 ✅
-- 分析任务 → analysis skill 触发 → Bash 工具调用 → 权限弹窗 → 用户审批 ✅
-- 记忆召回 → "两杯美式咖啡" 跨 session 正确回忆 ✅
-- 移动端响应式布局正常 ✅
-- API key masking 验证（grep 0 匹配）✅
-
-### 关键技术决策
-
-- heartbeat 改独立线程（Claude SDK 阻塞 asyncio event loop）
-- mem0 init+recall 在专用线程+专用 event loop（AsyncMemory 绑定创建线程的 loop）
-- ProcessManager 用 communicate() 替代 wait()+read()（64KB pipe buffer 死锁）
-- permission_mode 保持 acceptEdits（default 模式等待终端输入永久挂起）
-- embedding 保持本地 HuggingFace（CloudDreamAI 不支持 embedding API）
-- Docker build 时预下载 embedding 模型（消除运行时下载延迟）
-
-### 未完成（阶段三 7 个任务）
-
-- Playwright 全流程 E2E（桌面+移动端每个按钮）
-- Memory Tab CRUD 测试
-- Settings Provider 连接测试
-- 弱模型（DeepSeek）效果对比
-- 5 并发任务稳定性测试
-- 性能基准
-- PROGRESS.md 完整更新
-
-### 环境
-
-- 端口：8080（nginx → backend:8000）
-- 账号：admin@prism.dev / PrismAdmin!2026
-- Docker：pgvector/pgvector:pg16 + prism-backend:2.0
-- Provider：CloudDreamAI 中转站（auto-v2 = GLM5）
-- 冷启动：~27s（含 mem0 init + SDK connect + LLM response）
-
----
-
-## 🔴🔴🔴 2026-05-13 Phase A-E 完成 + 14 项审计修复 + 阶段一修复
-
-**模型**: Opus 4.6 (1M context)
-**分支**: develop（35+ commits）
-
-### 本 session 交付
-
-| Phase | 交付 |
-|---|---|
-| A: SDK 集成 | executor_v2 基于 claude-agent-sdk，622 LOC 替代 15K LOC |
-| B: Hook + 治理 | 16 事件 HookRegistry + SDKBridge + 权限/护栏/安全/可观测 |
-| C: 记忆层 | mem0 + pgvector + sentence-transformers 本地 embedding + Memory API + Tab |
-| D: 验证层 | VerifyAgent + Context7 + 置信度 UI（OpenAI 格式避免 thinking block） |
-| E: 意图路由 | IntentRouter 关键词匹配 10/10 + 8 个 Skill + 前端置信度徽章 |
-| E2: 会话高级 | Session Share/Fork API |
-| 审计修复 | 14 项（IDOR/memory 时序/Redis 容错/guardrail 拆分/死代码等） |
-| 阶段一修复 | mem0 恢复 + VerifyAgent 改 OpenAI + Memory list 修复 + Share revoke 修复 + 置信度联调 |
-
-### 验证通过的功能
-
-- SDK agent 循环（单轮 + 多轮工具调用）
-- Hook 系统触发（tool_start/tool_end callback 入库）
-- Guardrail 路径拦截 + Bash 放行
-- mem0 记忆提取（3 条从一句话自动提取入 pgvector）
-- mem0 语义搜索（搜 coffee 返回相关记忆）
-- IntentRouter 10/10 准确率
-- Session Share/Fork API
-- Provider 连接测试
-- 15 个自动化测试通过
-
-### 关键技术决策
-
-- Claude Agent SDK = 本地 Claude Code CLI 包装，不是云 API
-- 所有国产模型统一 Anthropic API 格式（ccswitch 模式）
-- mem0 用 openai provider（避免 DeepSeek thinking block 崩溃）
-- IntentRouter 改关键词匹配（LLM 分类不可靠——thinking 占满 token）
-- workspace 默认 /tmp（Docker 无 /workspace）
-- heartbeat 在 callback 后立即启动（CPU-bound model load 不阻塞）
-
-### 未完成（3 阶段 21 任务）
-
-**阶段一剩余**：Skill 效果验证 + 跨 session 记忆联调（需 Docker）
-**阶段二**：Workspace 管理 + SDK 客户端池 + MCP 注入 + 交互式权限 + 提示词组合 + 日志 masking + IM 对接
-**阶段三**：Playwright E2E 桌面+移动端 + 弱模型对比 + 性能基准
-
-### 环境
-
-- 端口：8080（nginx → backend:8000）
-- 账号：admin@prism.dev / admin123
-- Docker：pgvector/pgvector:pg16 + prism-backend:2.0
-- Provider：CloudDreamAI 中转站（auto-v2 模型）
-- mem0：pgvector + sentence-transformers + openai provider
-
----
-
-## 🔴 2026-05-11 Phase A 完成：executor_v2 — Claude Agent SDK 集成
-
-**模型**: Opus 4.6 (1M context)
-**分支**: develop（3 commits）
-
-### 交付
-
-| 领域 | 交付 |
-|---|---|
-| executor_v2 | 622 LOC 新 executor，基于 `claude-agent-sdk==0.1.50` 构建，替代 15K LOC 旧 executor |
-| SDK 集成 | `ClaudeSDKClient` + `ClaudeAgentOptions` + Hook 系统（PreToolUse/PostToolUse/PostToolUseFailure）|
-| Callback 协议 | HTTP + Redis 双通道完整实现，与旧 executor 协议兼容 |
-| 致命 bug 修复 | thinking block 丢弃 → SDK 原生处理 `ThinkingBlock` 类型 |
-| ProcessManager | 切换到 `python -m executor_v2` |
-| Docker | 非 root 用户 `prism`，`acceptEdits` 权限模式 |
-
-### 集成测试通过
-
-提交 "What is 2+2?" → agent 回答 "Four" → message_complete + run_complete callback → DB 持久化 → returncode=0
-
-### Simplify 审查修复 10 个问题
-
-最严重：`decrypt_api_key` 信封格式错误（`<nonce>:<ciphertext>` 不是连续 bytes），会导致所有 run 崩溃。已修复。
-
-### 已知限制（Phase B 解决）
-
-1. 仅支持 Claude 模型（SDK 绑定 Claude Code CLI）
-2. Hook 系统仅 3 个事件（需扩展到 21 个）
-3. 无权限/护栏/循环检测
-4. 无多模型路由
-
-### 环境
-
-- 端口：8080（nginx → backend:8000）
-- 账号：admin@prism.dev / admin123
-- Docker 全部 healthy
-- Provider: Anthropic Claude (model_id=auto-v2)
+- Docker 服务：postgres/redis/searxng healthy，backend/nginx 需 rebuild 后验证
+- 中转站：api.tutorial.clouddreamai.com（auto-v2 → GLM 5.1）
+- cc-switch 配置：所有模型变体映射到 auto-v2
 
 ---
 
