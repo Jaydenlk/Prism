@@ -4,7 +4,7 @@ import type { Message, SSEEvent } from '@/api/types';
 import { useSSE } from '@/hooks/useSSE';
 import { useSessions } from '@/hooks/useSessions';
 import { useToast } from '@/components/Toast/ToastContext';
-import { PrismMark } from '@/components/Icon/Icon';
+import { PrismMark, PrismGlyph } from '@/components/Icon/Icon';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
 import type { ToolState } from './MessageBubble';
@@ -300,6 +300,50 @@ export function ChatPage() {
 
   function handleSelectExample(text: string) {
     handleSend(text);
+  }
+
+  const isEmpty = !currentSessionId || (messages.length === 0 && !isRunning);
+
+  if (isEmpty) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.welcomeLayout}>
+          <div className={styles.welcomeContent}>
+            <PrismGlyph size={48} />
+            <h2 className={styles.welcomeTitle}>随便聊点什么。</h2>
+            <p className={styles.welcomeSubtitle}>
+              我会把你的问题分派给对的 Agent —— 研究、规划、执行或验证。
+            </p>
+          </div>
+          <div className={styles.welcomeComposer}>
+            <Composer
+              onSend={handleSend}
+              onStop={handleStop}
+              isRunning={isRunning}
+            />
+          </div>
+          <div className={styles.welcomeExamples}>
+            <span className={styles.welcomeExamplesLabel}>或者从这里开始</span>
+            <div className={styles.welcomeExampleGrid}>
+              {['读一下 executor/,帮我理解 TAOR 主循环是怎么转的',
+                '上周的 runs 表现如何?哪里花钱最多?',
+                '写一份 2026 年 Harness Engineering 的内部简报',
+                '帮我搞一个只读 shell 的 Skill,就叫 readonly-shell',
+              ].map((ex, i) => (
+                <button
+                  key={i}
+                  className={styles.welcomeExampleBtn}
+                  onClick={() => handleSend(ex)}
+                  style={{ animationDelay: `${i * 80}ms` }}
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -39,3 +39,102 @@
 .retryBtn:hover {
   background: var(--bg);
 }
+
+.welcomeLayout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: clamp(24px, 5vh, 60px) clamp(16px, 4vw, 40px);
+  gap: 24px;
+}
+
+.welcomeContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  color: var(--ink-3);
+}
+
+.welcomeTitle {
+  font-family: var(--serif);
+  font-size: clamp(18px, 2.5vw, 24px);
+  color: var(--ink);
+  font-weight: 500;
+  margin: 0;
+}
+
+.welcomeSubtitle {
+  font-size: clamp(13px, 1.5vw, 15px);
+  color: var(--ink-3);
+  max-width: 420px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.welcomeComposer {
+  width: 100%;
+  max-width: min(90vw, 640px);
+}
+
+.welcomeExamples {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: min(90vw, 640px);
+}
+
+.welcomeExamplesLabel {
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+.welcomeExampleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .welcomeExampleGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.welcomeExampleBtn {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  background: transparent;
+  font-size: 13px;
+  color: var(--ink-2);
+  text-align: left;
+  font-family: var(--serif);
+  font-style: italic;
+  line-height: 1.5;
+  transition: background 0.15s, transform 0.15s;
+  animation: messageIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.welcomeExampleBtn:hover {
+  background: var(--bg);
+  transform: translateY(-1px);
+}
+
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
