@@ -37,6 +37,11 @@ class RunConfig:
     max_turns: int
     resume_from_step: int | None
     workspace_path: str
+    installed_skill_paths: list[str] = None
+
+    def __post_init__(self):
+        if self.installed_skill_paths is None:
+            self.installed_skill_paths = []
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,8 +101,30 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
     if not api_key:
         raise RuntimeError("No API key: provider has no encrypted key and ANTHROPIC_API_KEY env is unset")
 
+    # Load installed skill paths for this user
+    installed_skill_paths: list[str] = []
+    try:
+        _engine = create_engine(db_url, pool_size=1, max_overflow=0)
+        try:
+            with _engine.connect() as conn:
+                rows = conn.execute(
+                    text("""
+                        SELECT metadata->>'install_path' AS install_path
+                          FROM skill_installs
+                         WHERE user_id = :user_id
+                           AND metadata->>'status' = 'installed'
+                           AND metadata->>'install_path' IS NOT NULL
+                    """),
+                    {"user_id": args.user_id},
+                ).mappings().all()
+                installed_skill_paths = [r["install_path"] for r in rows if r["install_path"]]
+        finally:
+            _engine.dispose()
+    except Exception as exc:
+        logger.warning("skill_paths_load_failed", error=str(exc))
+
     log = logger.bind(run_id=args.run_id, agent_type=agent_type)
-    log.info("run_config_loaded")
+    log.info("run_config_loaded", installed_skills=len(installed_skill_paths))
 
     return RunConfig(
         run_id=args.run_id,
@@ -115,4 +142,5 @@ def load_run_config(args: argparse.Namespace) -> RunConfig:
         max_turns=MAX_TURNS.get(agent_type, MAX_TURNS["chat"]),
         resume_from_step=args.resume_from_step,
         workspace_path=os.environ.get("WORKSPACE_PATH", "/tmp"),
+        installed_skill_paths=installed_skill_paths,
     )
