@@ -149,6 +149,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             message="Marketplace bootstrap failed (DB may not be ready).",
         )
 
+    # 5c. Auto-sync marketplace catalogs that have never been synced
+    try:
+        from app.core.database import SessionLocal
+        from app.services.marketplace_service import MarketplaceService
+
+        with SessionLocal() as db:
+            svc = MarketplaceService(db)
+            marketplaces = svc.list_marketplaces()
+            for mp in marketplaces:
+                if mp.catalog_json is None:
+                    try:
+                        svc.sync(mp.id)
+                        db.commit()
+                        logger.info("prism.marketplace_synced", name=mp.name)
+                    except Exception as exc:
+                        logger.warning("prism.marketplace_sync_failed", name=mp.name, error=str(exc))
+    except Exception as exc:
+        logger.warning("prism.marketplace_autosync_failed", error=str(exc))
+
     # 6. Initialize ProcessManager singleton (ADR-066 subprocess scheduler)
     try:
         from app.services.process_manager import ProcessManager
