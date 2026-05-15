@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { PageTransition } from '@/components/PageTransition/PageTransition';
 import styles from './AppLayout.module.css';
 
 const PAGE_TITLES: Record<string, string> = {
@@ -39,7 +40,9 @@ export function AppLayout() {
       <div className={styles.main}>
         <Topbar title={title} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
         <div id="main" className={styles.content}>
-          <Outlet />
+          <PageTransition key={location.pathname}>
+            <Outlet />
+          </PageTransition>
         </div>
       </div>
     </div>
