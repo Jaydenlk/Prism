@@ -59,6 +59,20 @@
   font-family: var(--mono);
 }
 
+.expandWrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease-out;
+}
+
+.expandWrapper.open {
+  grid-template-rows: 1fr;
+}
+
+.expandInner {
+  overflow: hidden;
+}
+
 .body {
   padding: 0 12px 12px;
   border-top: 1px solid var(--line);

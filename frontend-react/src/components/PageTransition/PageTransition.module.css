@@ -1,0 +1,9 @@
+.page {
+  animation: pageIn 0.25s ease-out;
+  height: 100%;
+}
+
+@keyframes pageIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

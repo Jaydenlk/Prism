@@ -81,7 +81,11 @@ export function MessageList({
           ) : isRunning ? (
             <div className={styles.thinkingRow}>
               <PrismMark size={14} />
-              <span>Agent 在思考…</span>
+              <div className={styles.typingDots}>
+                <span className={styles.dot} />
+                <span className={styles.dot} />
+                <span className={styles.dot} />
+              </div>
             </div>
           ) : null}
         </>

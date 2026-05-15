@@ -1,4 +1,5 @@
 import { PrismGlyph } from '@/components/Icon/Icon';
+import styles from './EmptyState.module.css';
 
 interface EmptyStateProps {
   onSelectExample: (text: string) => void;
@@ -51,6 +52,7 @@ export function EmptyState({ onSelectExample }: EmptyStateProps) {
           <button
             key={i}
             onClick={() => onSelectExample(ex)}
+            className={styles.exampleItem}
             style={{
               padding: '10px 16px',
               border: '1px solid var(--line)',
@@ -67,6 +69,7 @@ export function EmptyState({ onSelectExample }: EmptyStateProps) {
               maxWidth: 360,
               alignSelf: 'center',
               width: '100%',
+              animationDelay: `${i * 80}ms`,
             }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
