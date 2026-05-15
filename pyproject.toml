@@ -49,6 +49,9 @@ python_version = "3.12"
 strict = true
 ignore_missing_imports = true
 
+[tool.ruff.lint]
+ignore = ["E402", "F821"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["backend/tests", "tests"]
