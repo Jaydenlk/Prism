@@ -74,7 +74,6 @@ class BackendCallback:
             "data": data,
             "timestamp": self._now(),
         })
-        last_exc: Exception | str | None = None
         for attempt, delay in enumerate(_RETRY_DELAYS):
             try:
                 resp = await self._http.post(self._callback_url, json=payload)
@@ -86,7 +85,6 @@ class BackendCallback:
                             status=resp.status_code,
                         )
                     return
-                last_exc = f"HTTP {resp.status_code}"
                 logger.warning(
                     "callback_5xx",
                     event_type=event_type,
@@ -94,7 +92,6 @@ class BackendCallback:
                     attempt=attempt,
                 )
             except Exception as exc:
-                last_exc = exc
                 logger.warning(
                     "callback_network_error",
                     event_type=event_type,

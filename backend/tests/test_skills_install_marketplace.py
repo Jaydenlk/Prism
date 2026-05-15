@@ -34,7 +34,6 @@ def test_install_with_marketplace_id_persists_to_db(db):
     db.flush()
 
     svc = SkillInstallService(db=db)
-    now = datetime.now(timezone.utc)
     record = svc.install(
         user_id=user.id,
         skill_name="git-tool",

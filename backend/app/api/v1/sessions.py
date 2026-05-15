@@ -31,7 +31,6 @@ Ownership:
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -379,7 +378,7 @@ async def permission_answer(
 
     # 校验 session 归属（铁律 4）
     svc = SessionService(db)
-    session = svc.get_session(user.id, session_id)
+    svc.get_session(user.id, session_id)
 
     # 查找 permission_request（校验归属）
     req: PermissionRequest | None = (
