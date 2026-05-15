@@ -18,7 +18,7 @@
   to   { transform: translateX(0);    opacity: 1; }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .panel {
     width: 100%;
     border-left: none;
