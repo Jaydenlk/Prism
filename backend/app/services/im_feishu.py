@@ -572,6 +572,8 @@ class FeishuAdapter(IMAdapter):
             logger.error("feishu.ws.sdk_missing", message="lark-oapi not installed, falling back to webhook mode")
             return
 
+        main_loop = asyncio.get_running_loop()
+
         def _on_message(data: "P2ImMessageReceiveV1") -> None:
             event = data.event
             if event is None:
@@ -605,12 +607,7 @@ class FeishuAdapter(IMAdapter):
             )
 
             if self._message_handler:
-                import asyncio as _aio
-                loop = _aio.get_event_loop()
-                if loop.is_running():
-                    _aio.ensure_future(self._message_handler(incoming))
-                else:
-                    loop.run_until_complete(self._message_handler(incoming))
+                asyncio.run_coroutine_threadsafe(self._message_handler(incoming), main_loop)
 
         event_handler = lark.EventDispatcherHandler.builder("", "") \
             .register_p2_im_message_receive_v1(_on_message) \
