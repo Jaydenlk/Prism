@@ -33,8 +33,8 @@ ENV PYTHONPATH=/app:/app/backend
 WORKDIR /app/backend
 
 RUN useradd -m -s /bin/bash prism \
-    && mkdir -p /workspace && chown prism:prism /workspace \
-    && chown -R prism:prism /app/backend /app/data 2>/dev/null; true
+    && mkdir -p /workspace /app/data/marketplace_cache /app/data/plugin_cache \
+    && chown -R prism:prism /workspace /app/backend /app/data
 
 # Pre-download embedding model as prism user (cached in /home/prism/.cache)
 USER prism
