@@ -1,50 +1,29 @@
 import { useState } from 'react';
 import { Icon } from '@/components/Icon/Icon';
+import styles from './ThinkingBlock.module.css';
 
 interface ThinkingBlockProps {
   content: string;
 }
 
-const containerStyle: React.CSSProperties = {
-  borderLeft: '2px solid var(--ink-4)',
-  paddingLeft: 12,
-  color: 'var(--ink-3)',
-  fontSize: 13,
-  margin: '8px 0',
-};
-
-const triggerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  cursor: 'pointer',
-  userSelect: 'none',
-  fontStyle: 'italic',
-};
-
-const contentStyle: React.CSSProperties = {
-  marginTop: 8,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-  lineHeight: 1.55,
-};
-
 export function ThinkingBlock({ content }: ThinkingBlockProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div style={containerStyle}>
-      <div style={triggerStyle} onClick={() => setOpen(o => !o)}>
+    <div className={styles.container}>
+      <div className={styles.trigger} onClick={() => setOpen(o => !o)}>
         <Icon
           name="chevron"
           size={11}
-          style={{ transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : '' }}
+          className={`${styles.chevron}${open ? ` ${styles.chevronOpen}` : ''}`}
         />
         思考过程
       </div>
-      {open && (
-        <div style={contentStyle}>{content}</div>
-      )}
+      <div className={`${styles.expandWrapper}${open ? ` ${styles.open}` : ''}`}>
+        <div className={styles.expandInner}>
+          <div className={styles.content}>{content}</div>
+        </div>
+      </div>
     </div>
   );
 }

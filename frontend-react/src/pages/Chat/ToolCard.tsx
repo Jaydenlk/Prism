@@ -46,20 +46,24 @@ export function ToolCard({ name, status, input, output, duration, isError }: Too
         </div>
       </div>
 
-      {open && hasBody && (
-        <div className={styles.body}>
-          {input && (
-            <>
-              <div className={styles.sectionLabel}>输入</div>
-              <CodeBlock code={input} language="json" />
-            </>
-          )}
-          {output && (
-            <>
-              <div className={styles.sectionLabel}>输出</div>
-              <pre className={styles.outputPre}>{output}</pre>
-            </>
-          )}
+      {hasBody && (
+        <div className={`${styles.expandWrapper}${open ? ` ${styles.open}` : ''}`}>
+          <div className={styles.expandInner}>
+            <div className={styles.body}>
+              {input && (
+                <>
+                  <div className={styles.sectionLabel}>输入</div>
+                  <CodeBlock code={input} language="json" />
+                </>
+              )}
+              {output && (
+                <>
+                  <div className={styles.sectionLabel}>输出</div>
+                  <pre className={styles.outputPre}>{output}</pre>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
