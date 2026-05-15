@@ -104,12 +104,16 @@ class MemoryService:
     async def delete_memory(self, user_id: str, memory_id: str) -> None:
         self._require_enabled()
         mem = _get_memory()
+        owned = await self.list_memories(user_id)
+        owned_ids = {m.get("id") for m in owned}
+        if memory_id not in owned_ids:
+            raise HTTPException(status_code=404, detail="Memory not found")
         try:
             await mem.delete(memory_id=memory_id)
         except HTTPException:
             raise
         except Exception as exc:
-            logger.error("memory.delete_error", error=str(exc))
+            logger.error("memory.delete_error", memory_id=memory_id, error=str(exc))
             raise HTTPException(status_code=502, detail="Memory delete failed")
 
     async def search_memories(self, user_id: str, query: str, limit: int = 10) -> list[dict]:
