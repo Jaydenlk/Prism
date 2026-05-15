@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-05-15 产品级验证 + 7 项修复 + executor_v2 E2E 通过
+
+**模型**: Opus 4.6 (1M context)
+**分支**: worktree-backend-audit-fixes → develop（12 commits merged）
+
+### 核心验证结论
+
+**executor_v2 端到端跑通**：简单对话（1 turn）+ Bash 工具调用（2 turns）+ 多模型（deepseek-chat via 中转站）全部 completed，无 Zod 错误。
+
+**多模型架构确认**：Claude Agent SDK CLI 只说 Anthropic 格式。所有模型通过 cc-switch 代理 / 用户中转站（api.tutorial.clouddreamai.com）做格式转换。直连 OpenAI 格式 API 会失败，通过代理可成功。当前 auto-v2 实际路由到 GLM 5.1。
+
+### 修复清单（12 commits）
+
+| # | 修复 | 验证 |
+|---|---|---|
+| 1 | nginx → React SPA（frontend-react/dist + index.html + try_files fallback） | Playwright 截图确认 |
+| 2 | Memory IDOR — delete 前验证归属 | 代码审查 |
+| 3 | 飞书 WebSocket — run_coroutine_threadsafe 替代 run_until_complete | 代码审查 |
+| 4 | 61 unused imports + 9 manual lint + callback idempotency bug | ruff 0 errors |
+| 5 | Skills install 拒绝无 SKILL.md 的 repo（README fallback → ValueError） | API 返回 400 |
+| 6 | SDK Bridge 返回 {} 而非 deprecated {decision:approve} | 新 run stderr 无 Zod 错误 |
+| 7 | Dockerfile 预创建 data dirs（marketplace_cache/plugin_cache）| marketplace sync 成功 |
+| 8 | executor_v2 加载已安装 skill 传给 ClaudeAgentOptions.plugins | run completed |
+
+### 发现的产品问题
+
+1. **Skills 使用链路已修通**：安装→DB→config.py 读路径→runtime.py 传给 SDK plugins
+2. **Marketplace 需手动 sync**：首次 bootstrap 只注册 registry，catalog 需 POST /{id}/sync 触发
+3. **Marketplace sync 需 /app/data 权限**：Dockerfile 已修但需正式 rebuild
+4. **Anthropic 官方市场全是开发者工具**：消费级 persona skill（马斯克/巴菲特智囊团）需从 tmstack/awesome-persona-skills 等社区仓库安装
+5. **多模型直连不可用**：OpenAI 协议 provider 必须走代理，不能直连 DeepSeek/Qwen API
+
+### 环境信息
+
+- 端口：8080（nginx → backend:8000）
+- 账号：admin@prism.dev / PrismAdmin!2026
+- Docker 服务：postgres/redis/searxng healthy，backend/nginx 需 rebuild 后验证
+- 中转站：api.tutorial.clouddreamai.com（auto-v2 → GLM 5.1）
+- cc-switch 配置：所有模型变体映射到 auto-v2
+
+---
+
 ## 🔴🔴🔴 2026-05-09 Session 尾声：产品方向定调 + Executor 根因定位 + 架构重构决策
 
 **模型**: Opus 4.6 (1M context)
