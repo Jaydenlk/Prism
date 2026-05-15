@@ -30,9 +30,7 @@ ThresholdCalibrator（ADR-113）：
 
 from __future__ import annotations
 
-import logging
 import os
-import statistics
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 

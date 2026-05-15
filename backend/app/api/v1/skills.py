@@ -994,7 +994,19 @@ async def _download_github_skill(source_url: str, skill_name: str, workspace: st
                     continue
 
     if not downloaded:
-        raise ValueError(f"{owner_repo} 中未找到任何 skill 文件（SKILL.md / plugin.json / README.md）")
+        raise ValueError(f"{owner_repo} 中未找到任何文件")
+
+    has_skill_content = any(
+        f == "SKILL.md" or f == "plugin.json" or f == "marketplace.json" or f.endswith("/SKILL.md")
+        for f in downloaded
+    )
+    if not has_skill_content:
+        import shutil
+        shutil.rmtree(install_dir, ignore_errors=True)
+        raise ValueError(
+            f"{owner_repo} 不是有效的 Skill 仓库（未找到 SKILL.md 或 plugin.json）。"
+            f"仅有: {', '.join(downloaded)}"
+        )
 
     logger.info(
         "skills_api.install.github_downloaded",

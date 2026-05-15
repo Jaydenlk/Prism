@@ -1,6 +1,5 @@
 """Tests for marketplace bootstrap on startup."""
 from __future__ import annotations
-import pytest
 from app.services.marketplace_service import MarketplaceService
 
 _SYSTEM_USER = "00000000-0000-0000-0000-000000000001"
@@ -9,7 +8,8 @@ _SYSTEM_USER = "00000000-0000-0000-0000-000000000001"
 def test_bootstrap_default_when_empty(db):
     """Empty marketplace_registry → default registered."""
     from app.models.marketplace import MarketplaceRegistry
-    db.query(MarketplaceRegistry).delete(); db.commit()
+    db.query(MarketplaceRegistry).delete()
+    db.commit()
     svc = MarketplaceService(db)
     svc.bootstrap_default_marketplace(_SYSTEM_USER)
     rows = db.query(MarketplaceRegistry).all()

@@ -14,8 +14,6 @@ Backend 侧可以 import executor.plugins.skills_registry（executor 侧不 impo
 
 from __future__ import annotations
 
-import json
-import os
 from datetime import datetime, timezone
 from typing import Any
 

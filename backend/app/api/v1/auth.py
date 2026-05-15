@@ -1007,8 +1007,6 @@ async def google_callback(
             detail="CSRF 校验失败：state 无效或已过期",
         )
 
-    next_url = state_payload.get("next", "")
-
     # Exchange authorization code for id_token + claims
     try:
         google_info = await google_svc.exchange_code(code)

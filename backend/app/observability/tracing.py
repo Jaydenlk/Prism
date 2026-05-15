@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING
 from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.propagate import extract, inject
-from opentelemetry.propagators.textmap import CarrierT
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor

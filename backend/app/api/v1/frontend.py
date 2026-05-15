@@ -24,7 +24,6 @@ Frontend integration (NOT in scope for this Task):
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 
 import structlog

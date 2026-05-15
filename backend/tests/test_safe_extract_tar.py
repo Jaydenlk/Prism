@@ -1,5 +1,4 @@
 """Tests for _safe_extract_tar — CVE-2025-4517 defense (filter='data' + realpath check)."""
-from pathlib import Path
 import io
 import tarfile
 import pytest

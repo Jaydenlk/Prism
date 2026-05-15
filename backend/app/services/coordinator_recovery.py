@@ -16,7 +16,6 @@ POST /runs/{id}/resume 流程：
 """
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status

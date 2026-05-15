@@ -27,7 +27,7 @@ import os
 from typing import Annotated, Any, Literal, Union
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from sqlalchemy.orm import Session
@@ -278,7 +278,6 @@ async def validate_plugin(
         CCPluginAdapter,
         PluginFormatError,
         PluginSchemaError,
-        PluginYamlSchema,
     )
 
     plugin_dir = body.plugin_dir

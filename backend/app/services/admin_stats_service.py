@@ -12,7 +12,6 @@ Cache savings estimate: cache_hit_tokens * $0.30 / 1 000 000 * 90%
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 

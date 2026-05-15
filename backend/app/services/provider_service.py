@@ -15,8 +15,6 @@ Bootstrap: bootstrap_presets() 幂等注册 scope='system' 内置预设
 """
 from __future__ import annotations
 
-import logging
-from typing import Optional
 
 import structlog
 
@@ -241,10 +239,8 @@ class ProviderService:
           2. 发送最小请求探测连通性 + prompt_cache 支持
           3. 返回 detected_capabilities 供用户参考
         """
-        import asyncio
         import time
 
-        import httpx
 
         provider = db.get(Provider, provider_id)
         if provider is None:

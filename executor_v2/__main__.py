@@ -9,7 +9,7 @@ import threading
 import structlog
 
 from executor_v2.callbacks import BackendCallback
-from executor_v2.config import RunConfig, load_run_config, parse_args
+from executor_v2.config import load_run_config, parse_args
 from executor_v2.heartbeat import start_heartbeat_thread
 from executor_v2.hooks.builtin.guardrail import post_guardrail, pre_guardrail
 from executor_v2.hooks.builtin.observability import observability_handler

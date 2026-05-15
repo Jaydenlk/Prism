@@ -24,14 +24,12 @@ ADR-065 严格执行：scan_interval=10, stale_threshold=30（可通过构造函
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from typing import TYPE_CHECKING
 
 import structlog
 
 if TYPE_CHECKING:
-    from typing import Any
 
     from app.services.alert_dispatcher import AlertDispatcher
     from app.services.run_lifecycle import RunLifecycle
@@ -214,7 +212,6 @@ class HeartbeatMonitor:
         # Prometheus（容忍 ImportError，metrics 在 DOC-12 完整实现）
         try:
             from app.observability.metrics import REGISTRY
-            from prometheus_client import Counter
 
             # 懒加载计数器（避免在 DOC-12 前要求 metrics 完整存在）
             _stale_counter = _get_or_create_counter(

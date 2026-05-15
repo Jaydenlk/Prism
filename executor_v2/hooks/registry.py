@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import structlog
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
 
 logger = structlog.get_logger(__name__)

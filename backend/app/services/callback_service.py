@@ -23,7 +23,6 @@ Prism v2 — Callback Service (DOC-07 Task 7.3, ADR-063)
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -144,6 +143,8 @@ class CallbackService:
         )
         # 简单幂等：仅在 no prior execution found 时创建
         # （完整幂等需在 ToolExecution 追加 tool_use_id 字段，暂用 tool_name+run_id）
+        if existing:
+            return
 
         te = ToolExecution(
             session_id=run.session_id,

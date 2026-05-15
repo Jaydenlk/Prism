@@ -16,8 +16,6 @@ v4 扩展：聚合结果含 cache_stats（hit_tokens / miss_tokens / creation_to
 
 from __future__ import annotations
 
-import logging
-import os
 import statistics
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
