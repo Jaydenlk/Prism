@@ -206,7 +206,7 @@
   color: var(--rust);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .page {
     padding: 20px 16px;
   }

@@ -35,7 +35,7 @@ pre, code {
   display: none;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   /* Form inputs: full width on mobile */
   input[type="text"],
   input[type="email"],
