@@ -30,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.dependencies import get_current_user, get_db, require_admin
+from app.core.dependencies import get_current_user, get_db
 from app.core.security import decrypt_value
 from app.models.provider import Provider
 from app.models.user import User

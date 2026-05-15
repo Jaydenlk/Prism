@@ -21,7 +21,6 @@ POST /api/v1/internal/run-crashed (v4 新增)
 """
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status

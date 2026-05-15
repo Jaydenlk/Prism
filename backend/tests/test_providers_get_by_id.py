@@ -89,7 +89,6 @@ def test_get_provider_404(provider_client):
 
 
 def test_get_provider_200(provider_client):
-    import json
     from app.models.provider import Provider
     from app.core.security import encrypt_value
     from app.core.config import settings

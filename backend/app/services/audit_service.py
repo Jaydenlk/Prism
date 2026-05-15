@@ -16,14 +16,13 @@ from __future__ import annotations
 import csv
 import io
 import json
-import logging
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
-from app.schemas.audit import AuditLogQuery, AuditLogResponse
+from app.schemas.audit import AuditLogQuery
 
 if TYPE_CHECKING:
     pass

@@ -27,7 +27,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 import structlog
-from fastapi import Depends, FastAPI, Response
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest

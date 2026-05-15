@@ -6,7 +6,6 @@ ADR-085: admin_stats_service returns SystemStatsResponse.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel
 

@@ -17,7 +17,6 @@ ADR-110/111 范围：路由分析为 TokenEstimator/ResourceMonitor 的辅助统
 
 from __future__ import annotations
 
-import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 

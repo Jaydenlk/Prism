@@ -30,7 +30,6 @@ ADR-120: AlertDispatcher severity routing; admin configures ALERT_IM_CHANNEL / A
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal, Optional
 
@@ -41,9 +40,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_redis, get_settings_dep, require_admin
-from app.models.audit import AuditLog
 from app.models.run import Run
-from app.models.user import User, InviteCode
+from app.models.user import User
 from app.schemas.admin import SystemStatsResponse
 from app.schemas.audit import AuditLogQuery, AuditLogResponse
 from app.schemas.common import ApiResponse, PagedResponse

@@ -28,7 +28,6 @@ API 文档参考：https://core.telegram.org/bots/api
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from typing import Any
 
 import httpx

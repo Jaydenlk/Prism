@@ -12,7 +12,6 @@ ADR-082: GET /providers/usage 返回 cache tokens 三字段 + cache_hit_ratio +
 """
 from __future__ import annotations
 
-import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 

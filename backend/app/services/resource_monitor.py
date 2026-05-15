@@ -22,7 +22,6 @@ v4 核心修订：按百分比阈值而非绝对值（70% warn / 85% critical）
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 

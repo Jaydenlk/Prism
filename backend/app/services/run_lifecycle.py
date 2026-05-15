@@ -26,7 +26,6 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.run import Run

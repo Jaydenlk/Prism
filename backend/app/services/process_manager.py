@@ -32,7 +32,6 @@ ADR-066 subprocess 启动参数规范（来自 DOC-01 v4 §9.1）：
 """
 from __future__ import annotations
 
-import logging
 import os
 import subprocess
 import threading
@@ -331,7 +330,7 @@ class ProcessManager:
             f"--run-id={run.id}",
             f"--session-id={run.session_id}",
             f"--user-id={run.user_id}",
-            f"--callback-url=http://backend:8000/api/v1/internal/callbacks",
+            "--callback-url=http://backend:8000/api/v1/internal/callbacks",
             f"--callback-secret={self._settings.CALLBACK_SECRET}",
             f"--redis-url={self._settings.REDIS_URL}",
         ]

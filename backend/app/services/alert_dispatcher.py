@@ -29,7 +29,6 @@ Email 告警（Phase 1 SMTP）：
 """
 from __future__ import annotations
 
-import logging
 import smtplib
 import textwrap
 from datetime import datetime, timezone

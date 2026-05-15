@@ -21,7 +21,6 @@ ADR-010 pattern (from Task 2.3):
 """
 from __future__ import annotations
 
-import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status

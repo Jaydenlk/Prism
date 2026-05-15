@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.models.mcp_server import McpServer
-from app.models.skill_install import SkillInstall
 
 
 def test_installed_skills_unauthorized_without_secret(client: TestClient):

@@ -23,7 +23,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # Import all models to populate Base.metadata
 # (all 19 tables — order is intentional to load FK targets before dependents)
 from app.models import Base  # noqa: E402, F401
-import app.models  # noqa: E402 — triggers all model imports via __init__.py
 
 # ---------------------------------------------------------------------------
 # Alembic Config

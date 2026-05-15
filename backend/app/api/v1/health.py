@@ -20,7 +20,7 @@ from typing import Any
 
 import redis as redis_sync
 import sqlalchemy
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
