@@ -35,7 +35,7 @@
   --bubble-radius:  18px 18px 6px 18px;
 
   /* Layout constants */
-  --sidebar-w:      240px;
+  --sidebar-w:      clamp(200px, 22vw, 260px);
   --topbar-h:       48px;
   --statusbar-h:    32px;
 }

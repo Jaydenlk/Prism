@@ -47,7 +47,7 @@ export function EmptyState({ onSelectExample }: EmptyStateProps) {
       <div style={{ fontSize: 13, color: 'var(--ink-4)', marginBottom: 14 }}>
         或者从这里开始
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 480 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 'min(90vw, 500px)' }}>
         {EXAMPLES.map((ex, i) => (
           <button
             key={i}
@@ -66,7 +66,7 @@ export function EmptyState({ onSelectExample }: EmptyStateProps) {
               fontStyle: 'italic',
               lineHeight: 1.5,
               transition: 'background 0.15s',
-              maxWidth: 360,
+              maxWidth: 'min(90vw, 360px)',
               alignSelf: 'center',
               width: '100%',
               animationDelay: `${i * 80}ms`,
