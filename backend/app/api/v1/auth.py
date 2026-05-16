@@ -218,7 +218,7 @@ def logout(
     """Log out the current user: delete refresh cookie and blacklist access token."""
     import time
 
-    import redis as _redis_lib
+    from app.core.dependencies import _get_sync_redis
 
     response.delete_cookie(key=_REFRESH_COOKIE, path=_REFRESH_COOKIE_PATH)
 
@@ -231,8 +231,7 @@ def logout(
             exp = payload.get("exp", 0)
             if jti:
                 ttl = max(1, int(exp - time.time()))
-                rc = _redis_lib.from_url(settings.REDIS_URL, decode_responses=False)
-                rc.setex(f"blacklist:{jti}", ttl, "1")
+                _get_sync_redis().setex(f"blacklist:{jti}", ttl, "1")
         except Exception:
             pass
 

@@ -80,6 +80,17 @@ async def get_redis():
 # Authentication
 # ---------------------------------------------------------------------------
 
+_sync_redis = None
+
+
+def _get_sync_redis():
+    global _sync_redis
+    if _sync_redis is None:
+        import redis as _redis_lib
+        _sync_redis = _redis_lib.from_url(get_settings().REDIS_URL, decode_responses=False)
+    return _sync_redis
+
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
@@ -113,14 +124,11 @@ def get_current_user(
         raise credentials_exc
 
     # Check token blacklist (logout revocation)
-    import redis as _redis_lib
-    from app.core.config import settings as _settings
     jti: str | None = payload.get("jti")
     if jti:
         _blacklisted = False
         try:
-            _rc = _redis_lib.from_url(_settings.REDIS_URL, decode_responses=False)
-            _blacklisted = bool(_rc.get(f"blacklist:{jti}"))
+            _blacklisted = bool(_get_sync_redis().get(f"blacklist:{jti}"))
         except Exception:
             pass
         if _blacklisted:
