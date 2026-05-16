@@ -487,6 +487,10 @@ class SkillsRegistry:
         merged: dict[str, SkillPackage] = {}
         for pkgs in source_results:
             for pkg in pkgs:
+                # 非空查询时，score=0 的结果表示不相关，跳过
+                if query and pkg.score == 0:
+                    continue
+
                 # 标记 installed 状态
                 if pkg.name in installed:
                     pkg.installed = True
