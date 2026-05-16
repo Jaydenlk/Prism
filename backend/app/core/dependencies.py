@@ -80,6 +80,17 @@ async def get_redis():
 # Authentication
 # ---------------------------------------------------------------------------
 
+_sync_redis = None
+
+
+def _get_sync_redis():
+    global _sync_redis
+    if _sync_redis is None:
+        import redis as _redis_lib
+        _sync_redis = _redis_lib.from_url(get_settings().REDIS_URL, decode_responses=False)
+    return _sync_redis
+
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
@@ -112,9 +123,25 @@ def get_current_user(
     except Exception:
         raise credentials_exc
 
+    # Check token blacklist (logout revocation)
+    jti: str | None = payload.get("jti")
+    if jti:
+        _blacklisted = False
+        try:
+            _blacklisted = bool(_get_sync_redis().get(f"blacklist:{jti}"))
+        except Exception:
+            pass
+        if _blacklisted:
+            raise credentials_exc
+
     user: User | None = db.get(User, user_id)
     if user is None:
         raise credentials_exc
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is disabled",
+        )
     return user
 
 

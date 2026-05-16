@@ -230,13 +230,6 @@ class UserResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class DevDefaultAdmin(BaseModel):
-    """Bootstrap admin credentials, only exposed when PRISM_ENV != 'production'."""
-
-    email: str
-    password: str
-
-
 class AuthProvidersResponse(BaseModel):
     """GET /auth/providers — which login methods are enabled."""
 
@@ -245,8 +238,6 @@ class AuthProvidersResponse(BaseModel):
     email_otp: bool = True
     phone_password: bool = False
     google: bool = False
-    # Dev convenience: default admin creds for one-click fill (None in production).
-    dev_default_admin: Optional[DevDefaultAdmin] = None
 
 
 # ---------------------------------------------------------------------------

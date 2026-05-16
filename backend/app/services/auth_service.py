@@ -208,6 +208,11 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User no longer exists",
             )
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account is disabled",
+            )
 
         return create_access_token(user.id)
 
