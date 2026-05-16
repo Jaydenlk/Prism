@@ -4015,7 +4015,7 @@ function LoginLeft() {
           把大模型变成可靠、可治理、可扩展的协作者。自托管,协议原生,对每一家 provider 开放。
         </p>
         <div style={{ display: "flex", gap: 30, marginTop: 40 }}>
-          {[["412", "每月 runs"], ["72%", "缓存命中"], ["18k", "每天审计事件"]].map(([k, v]) => (
+          {[["—", "每月 runs"], ["—", "缓存命中"], ["—", "每天审计事件"]].map(([k, v]) => (
             <div key={k}>
               <div style={{ fontFamily: "var(--serif)", fontSize: 28, color: "var(--paper)" }}>{k}</div>
               <div style={{ fontSize: 11, color: "rgba(232,228,219,0.55)", textTransform: "uppercase", letterSpacing: "0.14em", marginTop: 3 }}>{v}</div>
@@ -4814,9 +4814,8 @@ function App() {
           {page === "settings" && <SettingsPage onToast={addToast} initialTab={settingsInitialTab}/>}
           {page !== "chat" && (
             <div className="statusbar">
-              <div className="kv"><span>provider</span> <b>anthropic</b></div>
-              <div className="kv"><span>模型</span> <b>auto-v2</b></div>
-              <div className="kv"><span>缓存</span> <b style={{ color: "var(--teal)" }}>72%</b></div>
+              <div className="kv"><span>provider</span> <b>—</b></div>
+              <div className="kv"><span>模型</span> <b>—</b></div>
               <div style={{ flex: 1 }}/>
               <div className="kv"><span>harness</span> <b style={{ color: "var(--teal)" }}>● active</b></div>
             </div>
