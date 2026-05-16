@@ -83,6 +83,9 @@ class TelegramAdapter(IMAdapter):
     def channel_name(self) -> str:
         return "telegram"
 
+    def is_configured(self) -> bool:
+        return bool(self._bot_token)
+
     async def start(self) -> None:
         """
         启动 Telegram Long Polling 后台任务。

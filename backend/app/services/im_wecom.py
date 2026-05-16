@@ -94,6 +94,9 @@ class WeComAdapter(IMAdapter):
     def channel_name(self) -> str:
         return "wecom"
 
+    def is_configured(self) -> bool:
+        return bool(self._corp_id and self._token and self._encoding_aes_key)
+
     async def start(self) -> None:
         """
         启动企业微信适配器。
@@ -221,8 +224,8 @@ class WeComAdapter(IMAdapter):
 
         参考：https://developer.work.weixin.qq.com/document/path/90968
         """
-        if not self._token:
-            return True
+        if not self._token or not self._encoding_aes_key:
+            return False
 
         parts = sorted([self._token, timestamp, nonce, encrypt])
         s = "".join(parts)
