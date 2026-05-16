@@ -552,6 +552,31 @@ async def install_skill_by_url(
     normalized_url = f"{parts[0]}/{parts[1]}"
     mp_name = request.name or normalized_url
 
+    # 验证 GitHub 仓库是否存在（公开 API，无需 token）
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            gh_resp = await client.get(
+                f"https://api.github.com/repos/{normalized_url}",
+                headers={"Accept": "application/vnd.github.v3+json"},
+            )
+        if gh_resp.status_code == 404:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"GitHub 仓库不存在: '{normalized_url}'",
+            )
+        if gh_resp.status_code not in (200, 301, 302):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"无法验证 GitHub 仓库 '{normalized_url}': HTTP {gh_resp.status_code}",
+            )
+    except HTTPException:
+        raise
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"GitHub 连接失败: {exc}",
+        )
+
     try:
         mp_svc = MarketplaceService(db=db)
         mp = mp_svc.create(
@@ -755,19 +780,46 @@ async def get_skill_readme(
             content = skill_md_path.read_text(encoding="utf-8")
             return ApiResponse(data={"skill_name": skill_name, "content": content, "source": "local"})
 
-    # (b) source_url 含 github.com → 拉取 raw（优先 SKILL.md，fallback README.md）
+    # (b) source_url → 拉取 raw（支持 github.com URL 和 marketplace:// 内部 scheme）
     effective_url = source_url or (install.source_url if install else None)
-    if effective_url and "github.com" in effective_url:
+    raw_candidates: list[str] = []
+
+    if effective_url and effective_url.startswith("marketplace://"):
+        # marketplace://{mp_name}/{plugin_name} → 通过 catalog_json 查找 GitHub 原始 URL
+        mp_path = effective_url[len("marketplace://"):]
+        mp_parts = mp_path.split("/", 1)
+        if len(mp_parts) == 2:
+            mp_name_part, plugin_name_part = mp_parts
+            from app.models.marketplace import MarketplaceRegistry as _MPReg
+            mp_row = db.query(_MPReg).filter_by(name=mp_name_part).first()
+            if mp_row and mp_row.url:
+                catalog = mp_row.catalog_json or {}
+                plugins_list = catalog.get("plugins") or []
+                source_path = plugin_name_part  # fallback: plugin name as path
+                for entry in plugins_list:
+                    if isinstance(entry, dict) and entry.get("name") == plugin_name_part:
+                        entry_src = entry.get("source")
+                        if isinstance(entry_src, dict):
+                            source_path = entry_src.get("path", plugin_name_part)
+                        elif isinstance(entry_src, str):
+                            source_path = entry_src
+                        break
+                base_raw = f"https://raw.githubusercontent.com/{mp_row.url}/HEAD"
+                raw_candidates = [f"{base_raw}/{source_path.rstrip('/')}/SKILL.md"]
+
+    elif effective_url and "github.com" in effective_url:
         raw_base = effective_url.replace("github.com", "raw.githubusercontent.com").rstrip("/")
-        candidates = [
+        raw_candidates = [
             f"{raw_base}/main/SKILL.md",
             f"{raw_base}/master/SKILL.md",
             f"{raw_base}/main/README.md",
             f"{raw_base}/master/README.md",
         ]
+
+    if raw_candidates:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                for url in candidates:
+                for url in raw_candidates:
                     resp = await client.get(url)
                     if resp.status_code == 200:
                         return ApiResponse(data={"skill_name": skill_name, "content": resp.text, "source": "github"})
