@@ -112,9 +112,28 @@ def get_current_user(
     except Exception:
         raise credentials_exc
 
+    # Check token blacklist (logout revocation)
+    import redis as _redis_lib
+    from app.core.config import settings as _settings
+    jti: str | None = payload.get("jti")
+    if jti:
+        _blacklisted = False
+        try:
+            _rc = _redis_lib.from_url(_settings.REDIS_URL, decode_responses=False)
+            _blacklisted = bool(_rc.get(f"blacklist:{jti}"))
+        except Exception:
+            pass
+        if _blacklisted:
+            raise credentials_exc
+
     user: User | None = db.get(User, user_id)
     if user is None:
         raise credentials_exc
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is disabled",
+        )
     return user
 
 

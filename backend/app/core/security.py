@@ -14,6 +14,7 @@ This module provides:
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -198,6 +199,7 @@ def create_access_token(user_id: str) -> str:
     payload: dict[str, Any] = {
         "sub": user_id,
         "type": "access",
+        "jti": str(uuid.uuid4()),
         "exp": datetime.now(tz=timezone.utc)
         + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
     }

@@ -94,7 +94,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         key=_REFRESH_COOKIE,
         value=token,
         httponly=True,
-        secure=True,
+        secure=settings.PRISM_ENV == "production",
         samesite="lax",
         max_age=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
         path=_REFRESH_COOKIE_PATH,
@@ -211,15 +211,31 @@ def refresh(
 
 @router.post("/logout")
 def logout(
+    request: Request,
     response: Response,
     _user: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[dict]:
-    """Log out the current user by deleting the refresh_token cookie.
+    """Log out the current user: delete refresh cookie and blacklist access token."""
+    import time
 
-    Phase 1 does not implement a token blacklist — the access_token remains
-    valid until its short TTL (15 min default) expires.
-    """
+    import redis as _redis_lib
+
     response.delete_cookie(key=_REFRESH_COOKIE, path=_REFRESH_COOKIE_PATH)
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            from app.core.security import decode_token
+            payload = decode_token(auth_header[7:])
+            jti = payload.get("jti")
+            exp = payload.get("exp", 0)
+            if jti:
+                ttl = max(1, int(exp - time.time()))
+                rc = _redis_lib.from_url(settings.REDIS_URL, decode_responses=False)
+                rc.setex(f"blacklist:{jti}", ttl, "1")
+        except Exception:
+            pass
+
     return ApiResponse(data={"message": "logged out"})
 
 
@@ -393,14 +409,6 @@ def get_providers(
     # Google OAuth availability: both client_id AND client_secret must be set
     google_svc = GoogleOAuthService(settings, redis_client=None)
     google_enabled = google_svc.is_configured()
-    # Dev-only: surface default admin creds to enable one-click fill on LoginScreen.
-    # PRISM_ENV defaults to "development"; production deployments must set "production".
-    dev_admin = None
-    if settings.PRISM_ENV != "production":
-        from app.schemas.auth import DevDefaultAdmin
-        dev_admin = DevDefaultAdmin(
-            email=settings.ADMIN_EMAIL, password=settings.ADMIN_PASSWORD
-        )
     return ApiResponse(
         data=AuthProvidersResponse(
             email_password=True,
@@ -408,7 +416,6 @@ def get_providers(
             email_otp=True,
             phone_password=phone_enabled,
             google=google_enabled,
-            dev_default_admin=dev_admin,
         )
     )
 
