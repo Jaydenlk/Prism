@@ -1103,6 +1103,63 @@ html, body {
   font-style: italic;
 }
 
+/* ── Welcome capability matrix ───────────────────────────── */
+.welcome-subtitle {
+  font-size: 13px;
+  color: var(--amber);
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  font-style: normal;
+  margin-bottom: 6px;
+}
+
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  max-width: 680px;
+  width: 100%;
+  margin: 20px 0 28px;
+}
+
+.capability-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.capability-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.capability-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+  font-family: var(--serif);
+}
+
+.capability-desc {
+  font-size: 11px;
+  color: var(--ink-4);
+  line-height: 1.45;
+  font-family: var(--serif);
+  font-style: italic;
+}
+
+@media (max-width: 600px) {
+  .capability-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 /* ── Toasts ───────────────────────────────────────────────── */
 .toast-stack {
   position: fixed;
