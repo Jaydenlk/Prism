@@ -132,9 +132,16 @@ const I18N = {
     loginTitle: "回到 Prism",
     loginSub: "让大模型变得可靠、可治理、可扩展 —— 而不是只会幻觉的聊天框。",
     email: "邮箱", password: "密码", signIn: "登录", signUp: "创建账号",
-    emptyTitle: "随便聊点什么。",
-    emptyBody: "我会把你的问题分派给对的 Agent —— 研究、规划、执行或验证。不用想太多。",
+    emptyTitle: "Prism 棱镜",
+    emptySubtitle: "你的私有 AI Agent 操作系统",
+    emptyBody: "把任务交给我，我会分派给对的 Agent —— 研究、规划、执行或验证。",
     tryExample: "或者从这里开始",
+    capabilities: [
+      { icon: "🔍", title: "研究分析", desc: "深度调研、对比方案" },
+      { icon: "📋", title: "规划执行", desc: "拆解任务、逐步实施" },
+      { icon: "🛡️", title: "安全护栏", desc: "权限控制、操作审批" },
+      { icon: "🧩", title: "技能扩展", desc: "安装插件、自定义工作流" }
+    ],
     examples: [
       "读一下 executor/,帮我理解 TAOR 主循环是怎么转的",
       "上周的 runs 表现如何?哪里花钱最多?",
@@ -1263,12 +1270,30 @@ function ChatPage({ t, sessionId, addToast, setPermRequest, setPerm, setPlanStat
   );
 }
 
+function WelcomeHero({ t }) {
+  return (
+    <>
+      <div style={{ color: "var(--ink-3)" }}><PrismGlyph size={150}/></div>
+      <h3 style={{ marginBottom: 4 }}>{t.emptyTitle}</h3>
+      <p className="welcome-subtitle">{t.emptySubtitle}</p>
+      <p>{t.emptyBody}</p>
+      <div className="capability-grid">
+        {t.capabilities.map((cap, i) => (
+          <div key={i} className="capability-card">
+            <span className="capability-icon">{cap.icon}</span>
+            <span className="capability-title">{cap.title}</span>
+            <span className="capability-desc">{cap.desc}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function EmptyNoSession({ t }) {
   return (
     <div className="empty">
-      <div style={{ color: "var(--ink-3)" }}><PrismGlyph size={150}/></div>
-      <h3>{t.emptyTitle}</h3>
-      <p>{t.emptyBody}</p>
+      <WelcomeHero t={t} />
     </div>
   );
 }
@@ -1276,9 +1301,7 @@ function EmptyNoSession({ t }) {
 function EmptyChat({ t, onPick }) {
   return (
     <div className="empty">
-      <div style={{ color: "var(--ink-3)" }}><PrismGlyph size={150}/></div>
-      <h3>{t.emptyTitle}</h3>
-      <p>{t.emptyBody}</p>
+      <WelcomeHero t={t} />
       <div className="eyebrow" style={{ marginBottom: 14, marginTop: 4 }}>{t.tryExample}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, maxWidth: 680, width: "100%" }}>
         {t.examples.map((ex, i) => (
