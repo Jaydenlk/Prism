@@ -2,6 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# China mirrors for apt (Tsinghua) — domestic servers can't reach deb.debian.org
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
+
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget git \
@@ -18,7 +21,7 @@ RUN npx -y mcp-searxng --help 2>/dev/null; \
 
 # Python deps (build context = repo root so we can COPY executor/)
 COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple/ --trusted-host pypi.tuna.tsinghua.edu.cn --no-cache-dir -r requirements.txt
 
 # Copy backend package + executor package so subprocess can import executor
 COPY backend /app/backend
