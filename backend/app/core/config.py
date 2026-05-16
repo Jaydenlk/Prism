@@ -126,6 +126,16 @@ class Settings(BaseSettings):
     DISCORD_APP_ID: str = ""
     DISCORD_BOT_TOKEN: str = ""
 
+    # --- WeCom / 企业微信 IM Bot (DOC-IM2) --------------------------------
+    WECOM_CORP_ID: str = ""
+    WECOM_TOKEN: str = ""
+    WECOM_ENCODING_AES_KEY: str = ""
+    WECOM_AGENT_ID: str = ""
+    WECOM_SECRET: str = ""
+
+    # --- Telegram Bot (DOC-IM2) -------------------------------------------
+    TELEGRAM_BOT_TOKEN: str = ""
+
     # --- Alert Dispatcher (ADR-120) ---------------------------------------
     # IM 群告警：格式 "{platform}:{chat_id}"，如 "feishu:oc_xxx"
     ALERT_IM_CHANNEL: str = ""

@@ -222,7 +222,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 logger.warning("im.configs_load_failed", error=str(exc))
                 return {ch: {} for ch in channels}
 
-        im_configs = _load_all_im_configs(("feishu", "slack", "discord"))
+        im_configs = _load_all_im_configs(("feishu", "slack", "discord", "wecom", "telegram"))
         _redis_for_im = _aioredis.from_url(settings.REDIS_URL, decode_responses=False)
         feishu_adapter = FeishuAdapter(
             config=im_configs["feishu"],
@@ -232,18 +232,45 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         slack_adapter = SlackAdapter(config=im_configs["slack"], settings=settings)
         discord_adapter = DiscordAdapter(config=im_configs["discord"], settings=settings)
 
+        from app.services.im_wecom import WeComAdapter
+        from app.services.im_telegram import TelegramAdapter
+
+        wecom_cfg = im_configs["wecom"] or (
+            {
+                "corp_id": settings.WECOM_CORP_ID,
+                "token": settings.WECOM_TOKEN,
+                "encoding_aes_key": settings.WECOM_ENCODING_AES_KEY,
+                "agent_id": settings.WECOM_AGENT_ID,
+                "secret": settings.WECOM_SECRET,
+            }
+            if settings.WECOM_CORP_ID
+            else {}
+        )
+        wecom_adapter = WeComAdapter(config=wecom_cfg)
+
+        tg_cfg = im_configs["telegram"] or (
+            {"bot_token": settings.TELEGRAM_BOT_TOKEN}
+            if settings.TELEGRAM_BOT_TOKEN
+            else {}
+        )
+        tg_adapter = TelegramAdapter(config=tg_cfg)
+
         im_gateway = IMGateway(settings)
         im_gateway.register_adapter(feishu_adapter)
         im_gateway.register_adapter(slack_adapter)
         im_gateway.register_adapter(discord_adapter)
+        im_gateway.register_adapter(wecom_adapter)
+        im_gateway.register_adapter(tg_adapter)
         app.state.im_gateway = im_gateway
         await im_gateway.start_all()
         logger.info(
             "prism.im_gateway_started",
-            message="IMGateway initialized with Feishu + Slack + Discord adapters (DOC-IM2).",
+            message="IMGateway initialized with Feishu + Slack + Discord + WeCom + Telegram adapters (DOC-IM2).",
             feishu_configured=feishu_adapter.is_configured(),
             slack_configured=slack_adapter.is_configured(),
             discord_configured=discord_adapter.is_configured(),
+            wecom_configured=wecom_adapter.is_configured(),
+            telegram_configured=tg_adapter.is_configured(),
         )
     except Exception as exc:
         app.state.im_gateway = None
