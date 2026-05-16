@@ -86,6 +86,7 @@ def _repo_to_package(repo: dict) -> SkillPackage:
     desc = repo.get("description") or ""
     ptype = _infer_type(topics, name, desc)
     tags = [ptype] + topics[:5] if ptype not in topics else topics[:6]
+    stars = repo.get("stargazers_count", 0)
     return SkillPackage(
         name=name,
         description=desc,
@@ -94,7 +95,8 @@ def _repo_to_package(repo: dict) -> SkillPackage:
         source_url=repo.get("html_url", ""),
         author=repo.get("owner", {}).get("login"),
         tags=tags,
-        stars=repo.get("stargazers_count", 0),
+        stars=stars,
+        score=min(1.0, stars / 1000) if stars > 0 else 0.1,
     )
 
 
