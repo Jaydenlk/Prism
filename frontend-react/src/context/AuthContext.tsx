@@ -6,6 +6,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (accessToken: string) => Promise<void>;
   register: (params: { email: string; username: string; password: string; invite_code?: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -32,6 +33,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(result.user);
   }, []);
 
+  const loginWithToken = useCallback(async (_accessToken: string) => {
+    const u = await api.me();
+    setUser(u);
+  }, []);
+
   const register = useCallback(async (params: { email: string; username: string; password: string; invite_code?: string }) => {
     await api.register(params);
   }, []);
@@ -42,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout: logoutFn }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithToken, register, logout: logoutFn }}>
       {children}
     </AuthContext.Provider>
   );

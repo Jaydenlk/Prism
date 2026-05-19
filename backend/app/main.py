@@ -130,6 +130,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             message="Admin bootstrap failed (DB may not be ready). Will retry on next startup.",
         )
 
+    # 5a. Seed initial invite code (idempotent)
+    try:
+        from app.core.database import SessionLocal
+        from app.models.user import InviteCode, User
+        from app.services.invite_service import InviteService
+        from app.models.base import generate_uuid
+        from datetime import datetime, timezone
+
+        with SessionLocal() as db:
+            code_str = settings.INITIAL_INVITE_CODE
+            exists = db.query(InviteCode).filter(InviteCode.code == code_str).first()
+            if not exists:
+                admin = db.query(User).filter(User.email == settings.ADMIN_EMAIL).first()
+                invite = InviteCode(
+                    id=generate_uuid(),
+                    code=code_str,
+                    created_by=admin.id if admin else None,
+                    max_uses=100,
+                    created_at=datetime.now(timezone.utc),
+                )
+                db.add(invite)
+                db.commit()
+                logger.info("prism.invite_seed", code=code_str, max_uses=100)
+            else:
+                logger.debug("prism.invite_seed.skipped", code=code_str)
+    except Exception as exc:
+        logger.warning("prism.invite_seed_failed", error=str(exc))
+
     # 5b. Bootstrap default marketplace (idempotent, requires admin to exist)
     try:
         from app.core.database import SessionLocal

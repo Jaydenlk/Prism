@@ -147,6 +147,10 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = "noreply@prism.local"
+    # Resend HTTP API（优先于 SMTP，国内 SMTP 端口常被封）
+    RESEND_API_KEY: str = ""
+    # 初始邀请码（首次启动时自动创建，max_uses=100，永不过期）
+    INITIAL_INVITE_CODE: str = "PRISM-WELCOME"
     # 告警详情页 base URL（用于 IM 消息链接）
     PRISM_BASE_URL: str = ""
 
