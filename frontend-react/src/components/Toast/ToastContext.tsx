@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from 'react';
+import { uuid } from '@/utils/cn';
 import type { ReactNode } from 'react';
 
 export interface ToastItem {
@@ -19,7 +20,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   function addToast(message: string, variant: ToastItem['variant'] = 'info') {
-    const id = crypto.randomUUID();
+    const id = uuid();
     setToasts((prev) => [...prev, { id, message, variant }]);
     setTimeout(() => removeToast(id), 6000);
   }

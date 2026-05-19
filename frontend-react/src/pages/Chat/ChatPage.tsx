@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { uuid } from '@/utils/cn';
 import * as api from '@/api/client';
 import type { Message, SSEEvent } from '@/api/types';
 import { useSSE } from '@/hooks/useSSE';
@@ -119,7 +120,7 @@ export function ChatPage() {
           .join('\n');
 
         const finalMsg: Message = {
-          id: crypto.randomUUID(),
+          id: uuid(),
           run_id: null,
           role,
           content: rawContent,
@@ -228,7 +229,7 @@ export function ChatPage() {
 
     // Optimistic user message
     const userMsg: Message = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       run_id: null,
       role: 'user',
       content: [{ type: 'text', text }],
