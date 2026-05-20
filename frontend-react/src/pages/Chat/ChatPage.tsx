@@ -245,12 +245,33 @@ export function ChatPage() {
 
     if (!sessionId) {
       try {
-        const session = await createSession();
+        const configSnapshot = thinkTankConfig
+          ? {
+              mode: 'think_tank' as const,
+              think_tank_config: {
+                sub_mode: thinkTankConfig.mode,
+                personas: thinkTankConfig.personas.map(p => p.slug),
+              },
+            }
+          : undefined;
+        const session = await createSession(configSnapshot ? { config_snapshot: configSnapshot } : undefined);
         sessionId = session.id;
       } catch {
         addToast('创建会话失败', 'error');
         return;
       }
+    } else if (thinkTankConfig) {
+      try {
+        await api.sessions.update(sessionId, {
+          config_snapshot: {
+            mode: 'think_tank',
+            think_tank_config: {
+              sub_mode: thinkTankConfig.mode,
+              personas: thinkTankConfig.personas.map(p => p.slug),
+            },
+          },
+        });
+      } catch { /* best effort */ }
     }
 
     // If think tank mode is active, wrap the prompt

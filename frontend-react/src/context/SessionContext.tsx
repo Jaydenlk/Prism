@@ -8,7 +8,7 @@ interface SessionState {
   currentSessionId: string | null;
   loading: boolean;
   setCurrentSessionId: (id: string | null) => void;
-  createSession: () => Promise<Session>;
+  createSession: (opts?: Record<string, unknown>) => Promise<Session>;
   deleteSession: (id: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
 }
@@ -36,8 +36,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (user) refreshSessions();
   }, [user, refreshSessions]);
 
-  const createSession = useCallback(async () => {
-    const session = await api.sessions.create({});
+  const createSession = useCallback(async (opts?: Record<string, unknown>) => {
+    const session = await api.sessions.create(opts ?? {});
     setSessions((prev) => [
       { id: session.id, title: session.title, status: session.status, is_pinned: session.is_pinned, last_message_preview: session.last_message_preview, updated_at: session.updated_at },
       ...prev,

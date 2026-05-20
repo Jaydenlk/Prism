@@ -88,6 +88,54 @@
   color: white;
 }
 
+.presetSection {
+  padding: 0 20px 8px;
+  flex-shrink: 0;
+}
+
+.presetLabel {
+  font-size: 12px;
+  color: var(--ink-4);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.presetGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.presetBtn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.presetBtn:hover {
+  background: var(--bg);
+  border-color: var(--amber);
+}
+
+.presetName {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.presetDesc {
+  font-size: 10px;
+  color: var(--ink-4);
+  line-height: 1.3;
+}
+
 .hint {
   font-size: 12px;
   color: var(--ink-4);
