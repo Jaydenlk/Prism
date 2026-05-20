@@ -958,18 +958,15 @@ import re as _re
 
 
 async def _download_github_skill(source_url: str, skill_name: str, workspace: str) -> str:
-    """Download skill files from a GitHub repo. Returns the install_path directory.
+    """Download skill files from a GitHub repo via git clone --depth 1.
 
-    Fetches top-level files (SKILL.md, README.md, .claude-plugin/marketplace.json,
-    .claude-plugin/plugin.json) and, when marketplace.json is present, also fetches
-    each plugin's SKILL.md into a sub-directory named after the plugin.
-
-    This supports single-skill repos (SKILL.md at root) and multi-skill plugin
-    repos (marketplace.json listing N plugins, each with its own SKILL.md).
+    Returns the install_path directory. Clones the full repo structure so nested
+    skill directories (e.g. skills/brainstorming/) are preserved.
 
     Raises ValueError for bad URLs or when no skill files are found.
     """
-    import json as _json
+    import asyncio as _asyncio
+    import shutil as _shutil
 
     match = _re.match(r"https?://github\.com/([^/]+/[^/?#]+)", source_url)
     if not match:
@@ -980,91 +977,48 @@ async def _download_github_skill(source_url: str, skill_name: str, workspace: st
         owner_repo = owner_repo[:-4]
 
     install_dir = os.path.join(workspace, ".prism", "skills", "@github", skill_name)
-    os.makedirs(install_dir, exist_ok=True)
 
-    base_raw = f"https://raw.githubusercontent.com/{owner_repo}/HEAD"
-    top_level_files = [
-        ("SKILL.md", f"{base_raw}/SKILL.md"),
-        ("plugin.json", f"{base_raw}/.claude-plugin/plugin.json"),
-        ("marketplace.json", f"{base_raw}/.claude-plugin/marketplace.json"),
-        ("README.md", f"{base_raw}/README.md"),
-    ]
+    if os.path.isdir(install_dir):
+        _shutil.rmtree(install_dir)
 
-    downloaded: list[str] = []
-    marketplace_json: dict | None = None
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-        for filename, url in top_level_files:
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    file_path = os.path.join(install_dir, filename)
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        f.write(resp.text)
-                    downloaded.append(filename)
-                    if filename == "marketplace.json":
-                        try:
-                            marketplace_json = _json.loads(resp.text)
-                        except Exception:
-                            marketplace_json = None
-            except Exception:
-                continue
-
-        # For multi-skill plugin repos: fetch each plugin's SKILL.md
-        if marketplace_json and isinstance(marketplace_json.get("plugins"), list):
-            for plugin in marketplace_json["plugins"]:
-                if not isinstance(plugin, dict):
-                    continue
-                plugin_name = plugin.get("name", "")
-                source = plugin.get("source", "")
-                # source may be a string path or a dict with a "path" key
-                if isinstance(source, dict):
-                    source_path = source.get("path", "")
-                elif isinstance(source, str):
-                    source_path = source
-                else:
-                    continue
-                if not plugin_name or not source_path:
-                    continue
-                # source_path is relative to repo root (e.g. "skills/brainstorming")
-                skill_md_url = f"{base_raw}/{source_path.rstrip('/')}/SKILL.md"
-                sub_dir = os.path.join(install_dir, "skills", plugin_name)
-                os.makedirs(sub_dir, exist_ok=True)
-                try:
-                    resp = await client.get(skill_md_url)
-                    if resp.status_code == 200:
-                        with open(os.path.join(sub_dir, "SKILL.md"), "w", encoding="utf-8") as f:
-                            f.write(resp.text)
-                        downloaded.append(f"skills/{plugin_name}/SKILL.md")
-                        logger.info(
-                            "skills_api.install.sub_skill_downloaded",
-                            owner_repo=owner_repo,
-                            plugin_name=plugin_name,
-                            skill_md_url=skill_md_url,
-                        )
-                except Exception:
-                    continue
-
-    if not downloaded:
-        raise ValueError(f"{owner_repo} 中未找到任何文件")
-
-    has_skill_content = any(
-        f == "SKILL.md" or f == "plugin.json" or f == "marketplace.json" or f.endswith("/SKILL.md")
-        for f in downloaded
+    clone_url = f"https://github.com/{owner_repo}.git"
+    proc = await _asyncio.create_subprocess_exec(
+        "git", "clone", "--depth", "1", clone_url, install_dir,
+        stdout=_asyncio.subprocess.PIPE,
+        stderr=_asyncio.subprocess.PIPE,
     )
-    if not has_skill_content:
-        import shutil
-        shutil.rmtree(install_dir, ignore_errors=True)
+    _, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
         raise ValueError(
-            f"{owner_repo} 不是有效的 Skill 仓库（未找到 SKILL.md 或 plugin.json）。"
-            f"仅有: {', '.join(downloaded)}"
+            f"git clone 失败 ({owner_repo}): {stderr.decode(errors='replace').strip()}"
         )
 
+    git_dir = os.path.join(install_dir, ".git")
+    if os.path.isdir(git_dir):
+        _shutil.rmtree(git_dir)
+
+    has_skill = (
+        os.path.isfile(os.path.join(install_dir, "SKILL.md"))
+        or os.path.isfile(os.path.join(install_dir, "plugin.json"))
+        or os.path.isfile(os.path.join(install_dir, ".claude-plugin", "marketplace.json"))
+    )
+    if not has_skill:
+        skill_md_count = sum(
+            1 for root, _, files in os.walk(install_dir) if "SKILL.md" in files
+        )
+        if skill_md_count == 0:
+            _shutil.rmtree(install_dir, ignore_errors=True)
+            raise ValueError(
+                f"{owner_repo} 不是有效的 Skill 仓库（未找到 SKILL.md 或 plugin.json）"
+            )
+
+    file_count = sum(1 for _, _, files in os.walk(install_dir) for _ in files)
     logger.info(
-        "skills_api.install.github_downloaded",
+        "skills_api.install.github_cloned",
         owner_repo=owner_repo,
         skill_name=skill_name,
-        files=downloaded,
+        file_count=file_count,
         install_dir=install_dir,
     )
     return install_dir
