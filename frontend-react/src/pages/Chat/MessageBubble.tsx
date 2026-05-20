@@ -5,8 +5,7 @@ import { Icon } from '@/components/Icon/Icon';
 import { ContentRenderer } from './ContentRenderer';
 import { ToolCard } from './ToolCard';
 import { ThinkingBlock } from './ThinkingBlock';
-import { ThinkingModeRenderer, parseThinkingSections } from './ThinkingModeRenderer';
-import { ThinkTankRenderer, parseThinkTankSections } from './ThinkTankRenderer';
+import { ThinkTankMessage, isThinkTankResponse } from './ThinkTankMessage';
 import { htmlToMarkdown, copyToClipboard } from '@/utils/export';
 import styles from './MessageBubble.module.css';
 
@@ -24,16 +23,6 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   confidence?: 'high' | 'medium' | 'low';
   uncertainClaims?: string[];
-}
-
-function TextContent({ text, className }: { text: string; className?: string }) {
-  if (parseThinkTankSections(text) !== null) {
-    return <ThinkTankRenderer content={text} className={className} />;
-  }
-  if (parseThinkingSections(text) !== null) {
-    return <ThinkingModeRenderer content={text} className={className} />;
-  }
-  return <ContentRenderer content={text} className={className} />;
 }
 
 function MessageBubbleInner({
@@ -98,7 +87,11 @@ function MessageBubbleInner({
               if (block.type === 'text') {
                 const text = String(block.text ?? '');
                 if (!text) return null;
-                return <TextContent key={i} text={text} className={styles.assistantBubble} />;
+                return isThinkTankResponse(text) ? (
+                  <ThinkTankMessage key={i} content={text} />
+                ) : (
+                  <ContentRenderer key={i} content={text} className={styles.assistantBubble} />
+                );
               }
               return null;
             })}
@@ -114,7 +107,11 @@ function MessageBubbleInner({
               />
             ))}
             {content ? (
-              <TextContent text={content} className={styles.assistantBubble} />
+              isThinkTankResponse(content) ? (
+                <ThinkTankMessage content={content} />
+              ) : (
+                <ContentRenderer content={content} className={styles.assistantBubble} />
+              )
             ) : isStreaming ? (
               <div className={styles.assistantBubble}>
                 <span className={styles.cursor} />

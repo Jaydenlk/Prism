@@ -1,0 +1,210 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 16px;
+}
+
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.title {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.closeBtn:hover {
+  background: var(--bg);
+}
+
+.modeRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  flex-shrink: 0;
+}
+
+.modeLabel {
+  font-size: 13px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.modeButtons {
+  display: flex;
+  gap: 6px;
+}
+
+.modeBtn {
+  padding: 5px 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-2);
+  transition: all 0.15s;
+}
+
+.modeBtnActive {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: white;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--ink-4);
+  padding: 0 20px 8px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-4);
+  font-style: italic;
+  font-family: var(--serif);
+}
+
+.personaGrid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  align-content: start;
+}
+
+@media (max-width: 480px) {
+  .personaGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.personaCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.personaCard:hover {
+  background: var(--bg);
+}
+
+.personaCardSelected {
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+
+.personaCardDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.personaName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.personaDesc {
+  font-size: 11px;
+  color: var(--ink-4);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.cancelBtn {
+  padding: 8px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.cancelBtn:hover {
+  background: var(--bg);
+}
+
+.confirmBtn {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 8px;
+  background: var(--amber);
+  cursor: pointer;
+  font-size: 14px;
+  color: white;
+  font-weight: 500;
+}
+
+.confirmBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.confirmBtn:not(:disabled):hover {
+  opacity: 0.85;
+}

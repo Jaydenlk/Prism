@@ -1,0 +1,51 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.personaCard {
+  border-left: 3px solid var(--amber);
+}
+
+.summaryCard {
+  border-left: 3px solid var(--ink-3);
+  background: var(--bg);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--amber) 6%, transparent);
+}
+
+.summaryHeader {
+  background: color-mix(in srgb, var(--ink-3) 6%, transparent);
+}
+
+.cardIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.cardName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  font-family: var(--serif);
+}
+
+.cardBody {
+  padding: 12px 14px;
+}

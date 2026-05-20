@@ -1125,3 +1125,101 @@ def _skill_install_to_response(install) -> SkillInstallResponse:
         metadata=install.metadata_ or {},
         marketplace_id=install.marketplace_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /skills/personas/available — 可用 persona 列表（Think Tank 模式）
+# ---------------------------------------------------------------------------
+
+
+class PersonaInfo(BaseModel):
+    """单个 persona 信息"""
+    name: str
+    slug: str
+    description: str
+
+
+_persona_router = APIRouter(prefix="/personas", tags=["personas"])
+
+
+def _parse_persona_skill_md(path: str) -> PersonaInfo | None:
+    """解析 SKILL.md 文件的 YAML front matter，提取 name + description。"""
+    import re as _re_local
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return None
+
+    # YAML front matter: --- ... ---
+    match = _re_local.match(r"^---\s*\n(.*?)\n---", text, _re_local.DOTALL)
+    if not match:
+        return None
+
+    fm = match.group(1)
+
+    def _extract(key: str) -> str:
+        km = _re_local.search(rf"^{key}:\s*(.+?)$", fm, _re_local.MULTILINE)
+        if km:
+            return km.group(1).strip().strip('"\'')
+        # multi-line description (starts with |)
+        block_m = _re_local.search(rf"^{key}:\s*\|\s*\n((?:  .+\n?)*)", fm, _re_local.MULTILINE)
+        if block_m:
+            lines = [l.strip() for l in block_m.group(1).splitlines() if l.strip()]
+            return " ".join(lines)
+        return ""
+
+    name = _extract("name")
+    description = _extract("description")
+    if not name:
+        return None
+
+    slug = os.path.basename(os.path.dirname(path))
+    # Trim description to 200 chars
+    if len(description) > 200:
+        description = description[:197] + "..."
+
+    return PersonaInfo(name=name, slug=slug, description=description)
+
+
+def _find_persona_skills_dir() -> str | None:
+    """查找 tempp/persona-skills 目录（支持 worktree + 主仓库两种布局）。"""
+    cwd = os.getcwd()
+    workspace = os.environ.get("PRISM_WORKSPACE", cwd)
+    candidates = [
+        os.path.join(workspace, "tempp", "persona-skills"),
+        os.path.join(cwd, "tempp", "persona-skills"),
+        os.path.join(cwd, "..", "tempp", "persona-skills"),
+        os.path.join(cwd, "..", "..", "tempp", "persona-skills"),
+    ]
+    for c in candidates:
+        resolved = os.path.normpath(c)
+        if os.path.isdir(resolved):
+            return resolved
+    return None
+
+
+@_persona_router.get(
+    "/available",
+    response_model=ApiResponse[list[PersonaInfo]],
+    summary="获取可用 Persona 列表（Think Tank 模式）",
+)
+async def list_available_personas(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[list[PersonaInfo]]:
+    """读取 tempp/persona-skills/*/SKILL.md，返回所有可用 persona。"""
+    import glob as _glob
+
+    personas_dir = _find_persona_skills_dir()
+    if not personas_dir:
+        return ApiResponse(data=[])
+
+    skill_files = sorted(_glob.glob(os.path.join(personas_dir, "*", "SKILL.md")))
+    results: list[PersonaInfo] = []
+    for sf in skill_files:
+        info = _parse_persona_skill_md(sf)
+        if info:
+            results.append(info)
+
+    return ApiResponse(data=results)

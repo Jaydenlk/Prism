@@ -437,6 +437,23 @@ export interface AlertConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Think Tank types
+// ---------------------------------------------------------------------------
+
+export interface PersonaInfo {
+  name: string;
+  slug: string;
+  description: string;
+}
+
+export type ThinkTankDiscussionMode = 'debate' | 'delphi';
+
+export interface ThinkTankConfig {
+  personas: PersonaInfo[];
+  mode: ThinkTankDiscussionMode;
+}
+
+// ---------------------------------------------------------------------------
 // Task types
 // ---------------------------------------------------------------------------
 

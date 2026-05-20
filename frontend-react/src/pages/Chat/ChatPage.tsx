@@ -1,23 +1,46 @@
 import { useState, useEffect, useCallback } from 'react';
 import { uuid } from '@/utils/cn';
 import * as api from '@/api/client';
-import type { Message, SSEEvent } from '@/api/types';
+import type { Message, SSEEvent, ThinkTankConfig } from '@/api/types';
 import { useSSE } from '@/hooks/useSSE';
 import { useSessions } from '@/hooks/useSessions';
 import { useToast } from '@/components/Toast/ToastContext';
 import { PrismMark, PrismGlyph } from '@/components/Icon/Icon';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
-import type { ChatMode } from './Composer';
 import type { ToolState } from './MessageBubble';
 import { PermissionModal } from './PermissionModal';
 import type { PermissionRequest } from './PermissionModal';
 import { PlanPanel } from './PlanPanel';
 import type { PlanStep } from './PlanPanel';
+import { ThinkTankPanel } from './ThinkTankPanel';
 import styles from './ChatPage.module.css';
 
+function buildThinkTankPrompt(userText: string, config: ThinkTankConfig): string {
+  const personaList = config.personas.map(p => `- ${p.name}`).join('\n');
+  const modeDesc =
+    config.mode === 'debate'
+      ? '辩论式：每位 Persona 先独立发言，然后互相引用对方观点进行回应和反驳，最后综合分析。'
+      : '德尔菲式：每位 Persona 先独立分析，汇总后形成共识与分歧，最后输出综合建议。';
+
+  return `[智囊团模式]
+讨论模式：${modeDesc}
+
+请邀请以下 Persona 就用户问题展开多视角讨论：
+${personaList}
+
+输出格式要求：
+- 每位 Persona 的发言使用 "### 🧠 {Persona名称}" 作为标题
+- 综合分析使用 "### 📋 综合分析" 作为标题，包含共识、分歧和行动建议
+- 每位 Persona 用第一人称，保持各自的思维风格和语气
+${config.mode === 'debate' ? '- 辩论式：Persona 之间需要引用和回应彼此的观点' : '- 德尔菲式：最后综合分析要归纳所有 Persona 的核心观点'}
+
+用户问题：
+${userText}`;
+}
+
 export function ChatPage() {
-  const { currentSessionId, setCurrentSessionId, createSession, refreshSessions } = useSessions();
+  const { currentSessionId, createSession, refreshSessions } = useSessions();
   const { addToast } = useToast();
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -31,7 +54,8 @@ export function ChatPage() {
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [planCurrentStep, setPlanCurrentStep] = useState(0);
   const [showPlan, setShowPlan] = useState(false);
-  const [chatMode, setChatMode] = useState<ChatMode>('normal');
+  const [showThinkTankPanel, setShowThinkTankPanel] = useState(false);
+  const [thinkTankConfig, setThinkTankConfig] = useState<ThinkTankConfig | null>(null);
 
   // Load messages when session changes
   useEffect(() => {
@@ -63,12 +87,6 @@ export function ChatPage() {
 
         const msgs = Array.isArray(historyRes) ? historyRes : historyRes.items ?? [];
         setMessages(msgs);
-
-        // Restore mode from session config
-        const sessionMode = (meta as unknown as { config_snapshot?: { mode?: string } }).config_snapshot?.mode;
-        if (sessionMode === 'thinking') setChatMode('thinking');
-        else if (sessionMode === 'think_tank') setChatMode('think_tank');
-        else setChatMode('normal');
 
         // If session is already running, show running state
         if (meta.status === 'running' && meta.blocking_run_id) {
@@ -222,41 +240,25 @@ export function ChatPage() {
     enabled: !!currentSessionId,
   });
 
-  async function handleModeChange(mode: ChatMode) {
-    setChatMode(mode);
-    if (currentSessionId) {
-      try {
-        await api.sessions.update(currentSessionId, {
-          config_snapshot: { mode },
-        });
-      } catch {
-        // Best-effort; mode is stored locally and will apply on next session create
-      }
-    }
-  }
-
   async function handleSend(text: string) {
     let sessionId = currentSessionId;
 
     if (!sessionId) {
       try {
-        if (chatMode === 'thinking') {
-          // Create session with mode in config_snapshot
-          const session = await api.sessions.create({ config_snapshot: { mode: chatMode } });
-          setCurrentSessionId(session.id);
-          await refreshSessions();
-          sessionId = session.id;
-        } else {
-          const session = await createSession();
-          sessionId = session.id;
-        }
+        const session = await createSession();
+        sessionId = session.id;
       } catch {
         addToast('创建会话失败', 'error');
         return;
       }
     }
 
-    // Optimistic user message
+    // If think tank mode is active, wrap the prompt
+    const effectivePrompt = thinkTankConfig
+      ? buildThinkTankPrompt(text, thinkTankConfig)
+      : text;
+
+    // Optimistic user message — always show original text
     const userMsg: Message = {
       id: uuid(),
       run_id: null,
@@ -273,7 +275,7 @@ export function ChatPage() {
     setStreamingTools([]);
 
     try {
-      const res = await api.tasks.submit({ session_id: sessionId, prompt: text });
+      const res = await api.tasks.submit({ session_id: sessionId, prompt: effectivePrompt });
       if (res.accepted_type === 'queued_query') {
         addToast(`任务已排队,第 ${res.queue_position ?? '?'} 位`, 'info');
         setIsRunning(false);
@@ -350,8 +352,8 @@ export function ChatPage() {
               onSend={handleSend}
               onStop={handleStop}
               isRunning={isRunning}
-              mode={chatMode}
-              onModeChange={handleModeChange}
+              thinkTankConfig={thinkTankConfig}
+              onOpenThinkTank={() => setShowThinkTankPanel(true)}
             />
           </div>
           <div className={styles.welcomeExamples}>
@@ -374,6 +376,12 @@ export function ChatPage() {
             </div>
           </div>
         </div>
+        {showThinkTankPanel && (
+          <ThinkTankPanel
+            onConfirm={config => { setThinkTankConfig(config); setShowThinkTankPanel(false); }}
+            onCancel={() => setShowThinkTankPanel(false)}
+          />
+        )}
       </div>
     );
   }
@@ -391,9 +399,15 @@ export function ChatPage() {
         onSend={handleSend}
         onStop={handleStop}
         isRunning={isRunning}
-        mode={chatMode}
-        onModeChange={handleModeChange}
+        thinkTankConfig={thinkTankConfig}
+        onOpenThinkTank={() => setShowThinkTankPanel(true)}
       />
+      {showThinkTankPanel && (
+        <ThinkTankPanel
+          onConfirm={config => { setThinkTankConfig(config); setShowThinkTankPanel(false); }}
+          onCancel={() => setShowThinkTankPanel(false)}
+        />
+      )}
       {showPlan && planSteps.length > 0 && (
         <PlanPanel
           steps={planSteps}

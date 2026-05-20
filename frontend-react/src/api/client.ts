@@ -48,6 +48,7 @@ import type {
   PagedResponse,
   SSETicketResponse,
   Memory,
+  PersonaInfo,
 } from './types';
 
 declare global {
@@ -887,6 +888,16 @@ export const im = {
   },
   unbind(bindingId: string): Promise<null> {
     return request<null>('DELETE', `/im/bindings/${bindingId}`);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Personas namespace (Think Tank mode)
+// ---------------------------------------------------------------------------
+
+export const personas = {
+  listAvailable(): Promise<PersonaInfo[]> {
+    return request<PersonaInfo[]>('GET', '/personas/available');
   },
 };
 

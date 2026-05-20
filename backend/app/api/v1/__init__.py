@@ -29,7 +29,7 @@ from app.api.v1.admin import router as admin_router
 from app.api.v1.providers import router as providers_router
 from app.api.v1 import harness
 from app.api.v1.marketplaces import router as marketplaces_router
-from app.api.v1.skills import router as skills_router
+from app.api.v1.skills import router as skills_router, _persona_router as personas_router
 from app.api.v1.plugins import router as plugins_router
 from app.api.v1.sessions import router as sessions_router
 from app.api.v1.tasks import router as tasks_router
@@ -52,6 +52,7 @@ api_v1_router.include_router(providers_router)
 api_v1_router.include_router(harness.router)
 api_v1_router.include_router(marketplaces_router)
 api_v1_router.include_router(skills_router)
+api_v1_router.include_router(personas_router)
 api_v1_router.include_router(plugins_router)
 api_v1_router.include_router(sessions_router)
 api_v1_router.include_router(tasks_router)
