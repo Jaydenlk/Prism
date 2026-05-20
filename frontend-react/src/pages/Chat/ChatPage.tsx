@@ -11,6 +11,8 @@ import { Composer } from './Composer';
 import type { ToolState } from './MessageBubble';
 import { PermissionModal } from './PermissionModal';
 import type { PermissionRequest } from './PermissionModal';
+import { QuestionModal } from './QuestionModal';
+import type { QuestionRequest } from './QuestionModal';
 import { PlanPanel } from './PlanPanel';
 import type { PlanStep } from './PlanPanel';
 import { ThinkTankPanel } from './ThinkTankPanel';
@@ -51,6 +53,7 @@ export function ChatPage() {
   const [loadError, setLoadError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null);
+  const [questionRequest, setQuestionRequest] = useState<QuestionRequest | null>(null);
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [planCurrentStep, setPlanCurrentStep] = useState(0);
   const [showPlan, setShowPlan] = useState(false);
@@ -204,6 +207,15 @@ export function ChatPage() {
             description,
             input_preview: inputPreview,
           });
+        }
+        break;
+      }
+
+      case 'question_ask': {
+        const reqId = evt.request_id as string | undefined;
+        const questions = evt.questions as QuestionRequest['questions'] | undefined;
+        if (reqId && questions) {
+          setQuestionRequest({ request_id: reqId, questions });
         }
         break;
       }
@@ -441,6 +453,13 @@ export function ChatPage() {
           request={permissionRequest}
           sessionId={currentSessionId}
           onResolved={() => setPermissionRequest(null)}
+        />
+      )}
+      {questionRequest && currentSessionId && (
+        <QuestionModal
+          request={questionRequest}
+          sessionId={currentSessionId}
+          onResolved={() => setQuestionRequest(null)}
         />
       )}
     </div>

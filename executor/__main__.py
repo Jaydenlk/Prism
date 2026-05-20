@@ -593,6 +593,10 @@ async def main() -> None:
         from executor.tools.builtin.skill_invoke import SkillInvokeTool
         registry.register(SkillInvokeTool(skill_loader))
 
+        # Register ask_user_question tool (needs callback for HTTP + Redis BLPOP).
+        from executor.tools.builtin.ask_user_question import AskUserQuestionTool
+        registry.register(AskUserQuestionTool(callback))
+
         plugin_host = PluginHost(
             skill_loader=skill_loader,
             hook_system=hook_system,

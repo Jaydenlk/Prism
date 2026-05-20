@@ -155,15 +155,19 @@ class SSEManager:
         尝试占用 SSE 连接槽位。
 
         每 session 最多 MAX_CONNS_PER_SESSION(3) 个并发 SSE 连接。
-        返回 True 表示占用成功；False 表示已达上限，连接被拒绝。
+        页面刷新时旧连接可能未及时释放导致计数器虚高，
+        超限时检查 TTL——若 key 已存在较久（>60s），重置计数器并放行。
         """
         key = f"sse:conns:{session_id}"
         count: int = await self._redis_async.incr(key)
         if count == 1:
-            # 首次创建，设置 1h 过期防止 key 泄漏
             await self._redis_async.expire(key, 3600)
         if count > self.MAX_CONNS_PER_SESSION:
             await self._redis_async.decr(key)
+            ttl = await self._redis_async.ttl(key)
+            if ttl > 60:
+                await self._redis_async.set(key, 1, ex=3600)
+                return True
             return False
         return True
 

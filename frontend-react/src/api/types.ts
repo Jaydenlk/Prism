@@ -478,6 +478,7 @@ export type SSEEventType =
   | 'run_error'
   | 'run_crashed'
   | 'permission_ask'
+  | 'question_ask'
   | 'harness_event'
   | 'coordinator_plan_update'
   | 'session_title'

@@ -448,6 +448,7 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
   'run_error',
   'run_crashed',
   'permission_ask',
+  'question_ask',
   'harness_event',
   'coordinator_plan_update',
   'session_title',
@@ -540,6 +541,11 @@ export const sessions = {
   },
   permissionAnswer(id: string, body: Record<string, unknown>): Promise<null> {
     return request<null>('POST', `/sessions/${id}/permission-answer`, { json: body });
+  },
+  questionAnswer(id: string, requestId: string, answers: Record<string, unknown>): Promise<null> {
+    return request<null>('POST', `/sessions/${id}/question-answer`, {
+      json: { request_id: requestId, answers },
+    });
   },
 };
 

@@ -437,6 +437,59 @@ async def permission_answer(
 
 
 # ---------------------------------------------------------------------------
+# v4 Task 7.3: question-answer 端点
+# ---------------------------------------------------------------------------
+
+class QuestionAnswerRequest(BaseModel):
+    """前端用户回答 question ask 请求体。"""
+
+    request_id: str
+    answers: dict
+
+
+@router.post(
+    "/{session_id}/question-answer",
+    status_code=200,
+)
+async def question_answer(
+    session_id: str,
+    body: QuestionAnswerRequest,
+    user: Annotated[User, Depends(get_current_user)] = None,
+    db: Annotated[Session, Depends(get_db)] = None,
+) -> dict[str, Any]:
+    """
+    用户回答 question ask。
+
+    流程：
+      1. 校验 session 归属（铁律 4）
+      2. RPUSH ask:question:{request_id} {answers_json} → 触发子进程 BLPOP 返回
+
+    Redis key 格式：ask:question:{request_id}
+    """
+    import redis.asyncio as aioredis
+
+    svc = SessionService(db)
+    svc.get_session(user.id, session_id)
+
+    redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        await redis_client.rpush(
+            f"ask:question:{body.request_id}",
+            json.dumps(body.answers),
+        )
+    finally:
+        await redis_client.aclose()
+
+    logger.info(
+        "question.answered",
+        request_id=body.request_id,
+        user_id=str(user.id),
+    )
+
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
 # Fork endpoint
 # ---------------------------------------------------------------------------
 
