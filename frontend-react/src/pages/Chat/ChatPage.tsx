@@ -8,6 +8,7 @@ import { useToast } from '@/components/Toast/ToastContext';
 import { PrismMark, PrismGlyph } from '@/components/Icon/Icon';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
+import type { ChatMode } from './Composer';
 import type { ToolState } from './MessageBubble';
 import { PermissionModal } from './PermissionModal';
 import type { PermissionRequest } from './PermissionModal';
@@ -16,7 +17,7 @@ import type { PlanStep } from './PlanPanel';
 import styles from './ChatPage.module.css';
 
 export function ChatPage() {
-  const { currentSessionId, createSession, refreshSessions } = useSessions();
+  const { currentSessionId, setCurrentSessionId, createSession, refreshSessions } = useSessions();
   const { addToast } = useToast();
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -30,6 +31,7 @@ export function ChatPage() {
   const [planSteps, setPlanSteps] = useState<PlanStep[]>([]);
   const [planCurrentStep, setPlanCurrentStep] = useState(0);
   const [showPlan, setShowPlan] = useState(false);
+  const [chatMode, setChatMode] = useState<ChatMode>('normal');
 
   // Load messages when session changes
   useEffect(() => {
@@ -61,6 +63,12 @@ export function ChatPage() {
 
         const msgs = Array.isArray(historyRes) ? historyRes : historyRes.items ?? [];
         setMessages(msgs);
+
+        // Restore mode from session config
+        const sessionMode = (meta as unknown as { config_snapshot?: { mode?: string } }).config_snapshot?.mode;
+        if (sessionMode === 'thinking') setChatMode('thinking');
+        else if (sessionMode === 'think_tank') setChatMode('think_tank');
+        else setChatMode('normal');
 
         // If session is already running, show running state
         if (meta.status === 'running' && meta.blocking_run_id) {
@@ -214,13 +222,34 @@ export function ChatPage() {
     enabled: !!currentSessionId,
   });
 
+  async function handleModeChange(mode: ChatMode) {
+    setChatMode(mode);
+    if (currentSessionId) {
+      try {
+        await api.sessions.update(currentSessionId, {
+          config_snapshot: { mode },
+        });
+      } catch {
+        // Best-effort; mode is stored locally and will apply on next session create
+      }
+    }
+  }
+
   async function handleSend(text: string) {
     let sessionId = currentSessionId;
 
     if (!sessionId) {
       try {
-        const session = await createSession();
-        sessionId = session.id;
+        if (chatMode === 'thinking') {
+          // Create session with mode in config_snapshot
+          const session = await api.sessions.create({ config_snapshot: { mode: chatMode } });
+          setCurrentSessionId(session.id);
+          await refreshSessions();
+          sessionId = session.id;
+        } else {
+          const session = await createSession();
+          sessionId = session.id;
+        }
       } catch {
         addToast('创建会话失败', 'error');
         return;
@@ -321,6 +350,8 @@ export function ChatPage() {
               onSend={handleSend}
               onStop={handleStop}
               isRunning={isRunning}
+              mode={chatMode}
+              onModeChange={handleModeChange}
             />
           </div>
           <div className={styles.welcomeExamples}>
@@ -360,6 +391,8 @@ export function ChatPage() {
         onSend={handleSend}
         onStop={handleStop}
         isRunning={isRunning}
+        mode={chatMode}
+        onModeChange={handleModeChange}
       />
       {showPlan && planSteps.length > 0 && (
         <PlanPanel

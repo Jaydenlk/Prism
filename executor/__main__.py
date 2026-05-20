@@ -87,6 +87,7 @@ class RunRow:
     provider_id: str | None
     agent_type: str | None
     status: str
+    session_id: str | None = None
 
 
 @dataclass
@@ -137,12 +138,13 @@ def _decrypt_api_key(envelope: str, key_hex: str) -> str:
 # DB 读取函数（裸 SQL，同步，sqlalchemy.create_engine）
 # ---------------------------------------------------------------------------
 
-def _fetch_run_and_provider(run_id: str) -> tuple[RunRow, ProviderRow]:
-    """从 DB 读取 Run 行 + Provider 行.
+def _fetch_run_and_provider(run_id: str) -> tuple[RunRow, ProviderRow, dict]:
+    """从 DB 读取 Run 行 + Provider 行 + Session config_snapshot.
 
     1. 按 run_id 查 runs 表
-    2. 按 run.provider_id 查 providers 表；若 NULL 取最高 priority 的 scope=system provider
-    返回 (RunRow, ProviderRow)，失败时抛 RuntimeError。
+    2. 按 run.session_id 查 sessions.config_snapshot
+    3. 按 run.provider_id 查 providers 表；若 NULL 取最高 priority 的 scope=system provider
+    返回 (RunRow, ProviderRow, session_config)，失败时抛 RuntimeError。
     """
     from sqlalchemy import create_engine, text as sa_text
 
@@ -157,7 +159,7 @@ def _fetch_run_and_provider(run_id: str) -> tuple[RunRow, ProviderRow]:
             # 1. 读取 Run
             run_result = conn.execute(
                 sa_text(
-                    "SELECT id, prompt, model, provider_id, agent_type, status "
+                    "SELECT id, prompt, model, provider_id, agent_type, status, session_id "
                     "FROM runs WHERE id = :run_id"
                 ),
                 {"run_id": run_id},
@@ -173,7 +175,18 @@ def _fetch_run_and_provider(run_id: str) -> tuple[RunRow, ProviderRow]:
                 provider_id=run_result[3],
                 agent_type=run_result[4],
                 status=run_result[5],
+                session_id=run_result[6],
             )
+
+            # 2. 读取 Session config_snapshot（获取 mode 等配置）
+            session_config: dict = {}
+            if run.session_id:
+                sess_result = conn.execute(
+                    sa_text("SELECT config_snapshot FROM sessions WHERE id = :sid"),
+                    {"sid": run.session_id},
+                ).fetchone()
+                if sess_result and isinstance(sess_result[0], dict):
+                    session_config = sess_result[0]
 
             # 2. 读取 Provider
             if run.provider_id:
@@ -219,7 +232,7 @@ def _fetch_run_and_provider(run_id: str) -> tuple[RunRow, ProviderRow]:
     finally:
         engine.dispose()
 
-    return run, provider
+    return run, provider, session_config
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +424,7 @@ async def main() -> None:
         )
 
         try:
-            run, provider = await asyncio.to_thread(
+            run, provider, session_config = await asyncio.to_thread(
                 _fetch_run_and_provider, args.run_id
             )
         except Exception as db_exc:
@@ -619,9 +632,71 @@ async def main() -> None:
 
         # Refresh prompt with newly registered MCP tools + skill descriptions
         assembler.update_tools(registry.list_definitions())
-        assembler.set_extra_dynamic_tail(
-            skill_loader.get_descriptions_for_prompt(agent_type)
-        )
+
+        skill_tail = skill_loader.get_descriptions_for_prompt(agent_type)
+        session_mode = session_config.get("mode", "normal")
+        if session_mode == "thinking":
+            thinking_prompt = (
+                "你现在进入深度思考模式。请严格按以下结构回答：\n\n"
+                "## 🔍 推理链\n"
+                "逐步展开你的思考过程。每一步都要标注推理依据，不要跳跃。至少5个推理步骤。\n\n"
+                "## ❓ 自我追问\n"
+                "对上述推理链的结论提出3-5个挑战性追问（例如："这个假设成立吗？""有没有反例？""如果条件变了呢？"），并逐一认真回答每个追问。\n\n"
+                "## 💡 最终结论\n"
+                "综合推理链和自我追问的结果，给出最终答案。如果自我追问改变了你的结论，说明为什么。"
+            )
+            tail_parts = [p for p in [thinking_prompt, skill_tail] if p]
+            assembler.set_extra_dynamic_tail("\n\n".join(tail_parts) if tail_parts else None)
+        elif session_mode == "think_tank":
+            personas = session_config.get("think_tank_config", {}).get("personas", [])
+            sub_mode = session_config.get("think_tank_config", {}).get("sub_mode", "debate")
+            persona_contents = []
+            for p_name in personas:
+                for skill_data in skills_data:
+                    if skill_data.get("skill_name", "").startswith(p_name.split("-")[0]):
+                        p_path = skill_data.get("install_path", "")
+                        if p_path:
+                            import pathlib
+                            skill_md = pathlib.Path(p_path) / "SKILL.md"
+                            if skill_md.exists():
+                                persona_contents.append(skill_md.read_text(encoding="utf-8"))
+            if sub_mode == "delphi":
+                format_instruction = (
+                    "请每个智囊团成员独立回答（不参考其他人的观点），然后综合分析。\n"
+                    "格式：\n"
+                    "### 🧠 {成员名}\n[以该成员的思维方式和表达风格独立回答]\n\n"
+                    "（所有成员回答完后）\n"
+                    "### 📋 综合分析\n"
+                    "- **共识**：各方一致同意的部分\n"
+                    "- **分歧**：各方观点不同的部分及各自理由\n"
+                    "- **结论**：综合所有视角的最终建议\n"
+                    "- **行动建议**：具体可执行的下一步"
+                )
+            else:
+                format_instruction = (
+                    "请智囊团成员依次发言，后发言者需引用并回应前面成员的观点（可赞同、反驳或补充新角度）。\n"
+                    "格式：\n"
+                    "### 🧠 {第一位成员名}\n[以该成员的思维方式和表达风格首先发言]\n\n"
+                    "### 🔥 {第二位成员名}\n[引用第一位的观点并反驳/补充，用自己的风格]\n\n"
+                    "### 💡 {第三位成员名}\n[从新角度切入，引用前两位的观点]\n\n"
+                    "（所有成员发言完后）\n"
+                    "### 📋 综合分析\n"
+                    "- **共识**：各方一致同意的部分\n"
+                    "- **分歧**：各方观点不同的部分及各自理由\n"
+                    "- **少数派报告**：被多数否定但值得记录的观点\n"
+                    "- **结论**：综合所有视角的最终建议\n"
+                    "- **行动建议**：具体可执行的下一步"
+                )
+            think_tank_prompt = (
+                "你现在进入智囊团讨论模式。以下是参与讨论的智囊团成员的思维操作系统：\n\n"
+                + "\n\n---\n\n".join(persona_contents)
+                + "\n\n---\n\n"
+                + format_instruction
+            )
+            tail_parts = [p for p in [think_tank_prompt, skill_tail] if p]
+            assembler.set_extra_dynamic_tail("\n\n".join(tail_parts) if tail_parts else None)
+        else:
+            assembler.set_extra_dynamic_tail(skill_tail)
 
         # ----------------------------------------------------------------
         # Step 5: Harness Runtime — wires middleware pipeline + permission

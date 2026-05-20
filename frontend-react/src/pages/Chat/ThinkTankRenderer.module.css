@@ -1,0 +1,44 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.personaCard {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.synthesisCard {
+  border: 2px solid var(--amber);
+  border-radius: 12px;
+  padding: 16px;
+  background: rgba(var(--amber-rgb, 196, 160, 0), 0.06);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cardIcon {
+  font-size: 18px;
+}
+
+.cardName {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cardBody {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
