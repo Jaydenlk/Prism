@@ -59,6 +59,7 @@ export function ChatPage() {
   const [showPlan, setShowPlan] = useState(false);
   const [showThinkTankPanel, setShowThinkTankPanel] = useState(false);
   const [thinkTankConfig, setThinkTankConfig] = useState<ThinkTankConfig | null>(null);
+  const [activeSkill, setActiveSkill] = useState<string | null>(null);
 
   // Load messages when session changes
   useEffect(() => {
@@ -120,6 +121,10 @@ export function ChatPage() {
       case 'tool_start': {
         const toolId = evt.tool_use_id as string;
         const toolName = (evt.tool_name as string | undefined) ?? 'tool';
+        if (toolName === 'skill_invoke') {
+          const skillName = (evt.input as Record<string, unknown> | undefined)?.skill_name as string | undefined;
+          if (skillName) setActiveSkill(skillName);
+        }
         setStreamingTools(prev => [
           ...prev,
           { id: toolId, name: toolName, status: 'running' },
@@ -175,6 +180,7 @@ export function ChatPage() {
         setIsRunning(false);
         setStreamingText('');
         setStreamingTools([]);
+        setActiveSkill(null);
         refreshSessions();
         break;
       }
@@ -421,6 +427,14 @@ export function ChatPage() {
 
   return (
     <div className={styles.page}>
+      {isRunning && (
+        <div className={styles.statusBar}>
+          <span className={styles.statusDot} />
+          <span className={styles.statusText}>
+            {activeSkill ? `使用技能: ${activeSkill}` : '处理中…'}
+          </span>
+        </div>
+      )}
       <MessageList
         messages={messages}
         streamingContent={streamingText}

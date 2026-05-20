@@ -5,6 +5,42 @@
   overflow: hidden;
 }
 
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--amber) 20%, transparent);
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--amber);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  animation: dotBlink 1s ease-in-out infinite;
+}
+
+@keyframes dotBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.statusText {
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+
 .loadingState {
   display: flex;
   flex: 1;
