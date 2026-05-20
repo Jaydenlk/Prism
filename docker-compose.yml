@@ -104,6 +104,7 @@ services:
       # default admin creds for one-click LoginScreen fill) work out of box.
       # Production deployments must set PRISM_ENV=production in .env.
       PRISM_ENV: ${PRISM_ENV:-development}
+      PRISM_WORKSPACE: /app/data
     depends_on:
       postgres:
         condition: service_healthy

@@ -321,7 +321,7 @@ async def install_skill(
                 detail=f"content_base64 解码失败: {exc}",
             )
 
-        workspace = os.environ.get("PRISM_WORKSPACE", os.getcwd())
+        workspace = os.environ.get("PRISM_WORKSPACE", "/app/data")
         ns = "@marketplace" if request.source == "marketplace" else "@local"
         skill_dir = os.path.join(workspace, ".prism", "skills", ns, effective_skill_name)
         os.makedirs(skill_dir, exist_ok=True)
@@ -350,7 +350,7 @@ async def install_skill(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="source='github' 时 source_url 为必填",
             )
-        workspace = os.environ.get("PRISM_WORKSPACE", os.getcwd())
+        workspace = os.environ.get("PRISM_WORKSPACE", "/app/data")
         try:
             resolved_install_path = await _download_github_skill(
                 source_url=request.source_url,
@@ -1085,7 +1085,7 @@ def _get_registry():
         SkillsRegistry,
     )
 
-    workspace = os.environ.get("PRISM_WORKSPACE", os.getcwd())
+    workspace = os.environ.get("PRISM_WORKSPACE", "/app/data")
     install_dir = os.path.join(workspace, ".prism", "skills")
     return SkillsRegistry(
         sources=[
@@ -1222,4 +1222,5 @@ async def list_available_personas(
         if info:
             results.append(info)
 
+    results.sort(key=lambda p: p.name.lower())
     return ApiResponse(data=results)
